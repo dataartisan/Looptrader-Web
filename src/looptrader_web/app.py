@@ -371,12 +371,14 @@ def trailing_stops():
         db = SessionLocal()
         try:
             trailing_stops = db.query(TrailingStopState).all()
-            return render_template('trailing_stops/list.html', trailing_stops=trailing_stops)
+            # Also need bots collection for stats panel in template
+            bots = db.query(Bot).all()
+            return render_template('trailing_stops/list.html', trailing_stops=trailing_stops, bots=bots)
         finally:
             db.close()
     except Exception as e:
         flash(f'Error loading trailing stops: {str(e)}', 'danger')
-        return render_template('trailing_stops/list.html', trailing_stops=[])
+        return render_template('trailing_stops/list.html', trailing_stops=[], bots=[])
 
 # API endpoints for AJAX calls
 @app.route('/api/stats')
