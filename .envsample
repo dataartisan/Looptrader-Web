@@ -1,0 +1,27 @@
+# Database configuration (should match LoopTrader Pro)
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=admin
+DB_PASSWORD=looptraderdbpassword
+DB_NAME=looptrader
+DATABASE_URL=postgresql://admin:looptraderdbpassword@localhost:5432/looptrader
+
+# Flask configuration
+FLASK_ENV=development
+FLASK_DEBUG=True
+SECRET_KEY=your-secret-key-change-in-production
+
+# LoopTrader Pro API
+LOOPTRADER_API_HOST=localhost
+LOOPTRADER_API_PORT=8000
+
+# AdminLTE Configuration
+ADMIN_NAME=LoopTrader Administrator
+ADMIN_EMAIL=admin@looptrader.com
+ADMIN_USERNAME=admin
+# Use only one of the following (prefer hash in production):
+# Plain password (development only)
+ADMIN_PASSWORD=changeme
+# Or a Werkzeug generated hash (comment ADMIN_PASSWORD when using this)
+# ADMIN_PASSWORD_HASH=pbkdf2:sha256:260000$...
+
