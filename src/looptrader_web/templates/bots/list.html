@@ -81,13 +81,14 @@
               <th>State</th>
               <th>Active Positions</th>
               <th>Total Positions</th>
+              <th>Planned / Remaining</th>
               <th>Trailing Stop</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {% for bot in bots %}
-            <tr>
+            <tr class="bot-row" data-href="{{ url_for('bot_detail', bot_id=bot.id) }}" style="cursor:pointer;">
               <td>
                 <strong><a href="{{ url_for('bot_detail', bot_id=bot.id) }}">{{ bot.name }}</a></strong>
                 <br><small class="text-muted">ID: {{ bot.id }}</small>
@@ -111,6 +112,10 @@
                 <span class="badge badge-info">
                   {{ bot.total_positions }}
                 </span>
+              </td>
+              <td>
+                <span class="badge badge-primary" title="Planned capacity">{{ bot.planned_position_capacity }}</span>
+                <span class="badge badge-{{ 'success' if bot.remaining_position_slots > 0 else 'secondary' }}" title="Remaining open slots">{{ bot.remaining_position_slots }}</span>
               </td>
               <td>
                 {% if bot.has_trailing_stop %}
@@ -365,5 +370,18 @@ function showToast(type, message) {
     $('.toast-container').append(toast);
     $('.toast').last().toast('show');
 }
+</script>
+<script>
+// Make entire bot row clickable (excluding direct button clicks)
+document.addEventListener('DOMContentLoaded', function(){
+  document.querySelectorAll('tr.bot-row').forEach(function(row){
+    row.addEventListener('click', function(e){
+      const target = e.target;
+      if(target.closest('a,button')) return; // ignore clicks on interactive elements
+      const href = this.getAttribute('data-href');
+      if(href) window.location = href;
+    });
+  });
+});
 </script>
 {% endblock %}

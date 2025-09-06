@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ app_name }}{% endblock %}</title>
 
-  <!-- Google Font (Inter as modern replacement) -->
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
-  <!-- Font Awesome 6 -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLbJp1J+4qemlGAqZ5G4KuX3sXIkYVJ+mU30+FJ8l+X0F2JQ6E6sZP4YxT6lucW6w==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <!-- AdminLTE v4 (Bootstrap 5) -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@4.0.0-rc4/dist/css/adminlte.min.css">
-  <!-- DataTables Bootstrap 5 -->
-  <link rel="stylesheet" href="https://cdn.datatables.net/2.0.7/css/dataTables.bootstrap5.min.css">
+  <!-- Google Font: Source Sans Pro -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700&display=fallback">
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <!-- AdminLTE 3.2 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
+  <!-- DataTables Bootstrap 4 -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.11.3/css/dataTables.bootstrap4.min.css">
   <!-- Theme custom overrides -->
   
   {% block extra_css %}{% endblock %}
@@ -31,47 +31,15 @@
     .card-header {
       border-bottom: 1px solid rgba(0,0,0,.125);
     }
-    /* App style button (recreate v3 .btn-app look for v4) */
-    .btn-app {
-      border-radius: .5rem;
-      position: relative;
-      padding: .9rem .4rem .6rem;
-      margin: 0 0 .75rem .75rem;
-      min-width: 90px;
-      height: 70px;
-      text-align: center;
-      color: #343a40;
-      border: 1px solid var(--bs-border-color,#dee2e6);
-      background: var(--bs-body-bg,#f8f9fa);
-      font-size: .75rem;
-      font-weight: 500;
-      transition: all .15s ease;
-    }
-    .btn-app:hover { background: var(--bs-gray-200,#e9ecef); text-decoration:none; }
-    .btn-app > .fa, .btn-app > .fas, .btn-app > .far, .btn-app > .fab, .btn-app > .fal, .btn-app > .fad, .btn-app > .svg-inline--fa { font-size: 1.4rem; display:block; margin-bottom:.25rem; }
-    /* Badge compatibility: map v3 badge-* to Bootstrap 5 bg-* */
-    .badge.badge-primary { background-color: var(--bs-primary); }
-    .badge.badge-secondary { background-color: var(--bs-secondary); }
-    .badge.badge-success { background-color: var(--bs-success); }
-    .badge.badge-danger { background-color: var(--bs-danger); }
-    .badge.badge-warning { background-color: var(--bs-warning); color:#000; }
-    .badge.badge-info { background-color: var(--bs-info); }
-    .badge.badge-light { background-color: var(--bs-light); color:#000; }
-    .badge.badge-dark { background-color: var(--bs-dark); }
-    /* Dark mode adjustments */
-    body.dark-mode { --bs-body-bg:#121212; --bs-body-color:#e2e2e2; }
-    body.dark-mode .card { background-color:#1e1e1e; color:#e2e2e2; }
-    body.dark-mode .main-header.navbar { background-color:#1f2933; }
-    body.dark-mode .main-sidebar { background-color:#111927; }
+  .btn-app { border-radius:3px; position:relative; padding:15px 5px; margin:0 0 10px 10px; min-width:80px; height:60px; text-align:center; color:#444; border:1px solid #ddd; background:#f4f4f4; font-size:12px; }
+  .btn-app > .fa, .btn-app > .fas { font-size:20px; display:block; }
+  /* Keep error overlay (optional) */
+  #globalErrorOverlay { position:fixed; inset:0; background:rgba(0,0,0,.85); color:#fff; z-index:20000; display:none; align-items:center; justify-content:center; padding:2rem; font-family:monospace; overflow:auto; }
   </style>
 </head>
-<body class="hold-transition sidebar-mini layout-fixed" data-bs-theme="light">
+<body class="hold-transition sidebar-mini layout-fixed">
 <div class="wrapper">
-
-  <!-- Preloader -->
-  <div class="preloader flex-column justify-content-center align-items-center">
-    <img class="animation__shake" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23007bff'%3E%3Cpath d='M12 2L2 7v10c0 5.55 3.84 9.739 9 11 5.16-1.261 9-5.45 9-11V7l-10-5z'/%3E%3C/svg%3E" alt="LoopTrader" height="60" width="60">
-  </div>
+  <div id="globalErrorOverlay"><pre id="globalErrorText"></pre></div>
 
   <!-- Navbar -->
   <nav class="main-header navbar navbar-expand navbar-white navbar-light">
@@ -130,14 +98,7 @@
       </li>
       
       <li class="nav-item">
-        <a class="nav-link" id="darkModeToggle" href="#" role="button" title="Toggle dark mode">
-          <i class="fas fa-moon"></i>
-        </a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link" data-widget="fullscreen" href="#" role="button" title="Fullscreen">
-          <i class="fas fa-expand"></i>
-        </a>
+        <a class="nav-link" data-widget="fullscreen" href="#" role="button" title="Fullscreen"><i class="fas fa-expand-arrows-alt"></i></a>
       </li>
     </ul>
   </nav>
@@ -288,71 +249,60 @@
 </div>
 <!-- ./wrapper -->
 
-<!-- jQuery (needed for some plugins; can be removed if fully migrating to vanilla) -->
-<script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-eKhayi8LEQwp4NKxN+CfCh+3qOVUtJn3QNZ0TciWLP4=" crossorigin="anonymous"></script>
-<!-- Bootstrap 5 Bundle -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
-<!-- DataTables 2 + Bootstrap 5 integration -->
-<script src="https://cdn.datatables.net/2.0.7/js/dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/2.0.7/js/dataTables.bootstrap5.min.js"></script>
-<!-- AdminLTE v4 -->
-<script src="https://cdn.jsdelivr.net/npm/admin-lte@4.0.0-rc4/dist/js/adminlte.min.js"></script>
+<!-- jQuery -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<!-- Bootstrap 4 -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+<!-- DataTables 1.11 -->
+<script src="https://cdn.datatables.net/1.11.3/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.11.3/js/dataTables.bootstrap4.min.js"></script>
+<!-- AdminLTE 3.2 -->
+<script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
 
 <!-- Custom scripts -->
 <script>
-  // Dark mode toggle
+  // Convert Flask flash messages to alerts (v3 simple fallback)
   (function(){
-    const body = document.body;
-    const toggle = document.getElementById('darkModeToggle');
-    const stored = localStorage.getItem('lt_dark');
-    if(stored === '1'){ body.classList.add('dark-mode'); body.dataset.bsTheme='dark'; }
-    toggle?.addEventListener('click', function(e){
-      e.preventDefault();
-      body.classList.toggle('dark-mode');
-      const dark = body.classList.contains('dark-mode');
-      body.dataset.bsTheme = dark ? 'dark' : 'light';
-      localStorage.setItem('lt_dark', dark ? '1':'0');
-      this.querySelector('i').classList.toggle('fa-moon', !dark);
-      this.querySelector('i').classList.toggle('fa-sun', dark);
+    const raw = document.getElementById('flash-messages-data')?.textContent || '[]';
+    let msgs=[]; try { msgs = JSON.parse(raw); } catch(e){}
+    if(!msgs.length) return;
+    const area = document.querySelector('.content-header .container-fluid');
+    if(!area) return;
+    msgs.forEach(([cat,msg])=>{
+      const div=document.createElement('div');
+      const c = cat==='error'?'danger':cat;
+      div.className='alert alert-'+c+' alert-dismissible fade show';
+      div.innerHTML = msg + '<button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>';
+      area.prepend(div);
+      setTimeout(()=>{ $(div).alert('close'); },5000);
     });
   })();
 
-  // Convert Flask flash messages (rendered server-side into a JS var) to Bootstrap 5 toasts
-  (function(){
-    // Parse flash messages embedded as JSON
-    let flashData = [];
-    try {
-      const raw = document.getElementById('flash-messages-data')?.textContent || '[]';
-      flashData = JSON.parse(raw);
-    } catch(e) { console.warn('Failed parsing flash messages', e); }
-    if(!flashData || !flashData.length) return;
-    const container = document.getElementById('toastContainer');
-    flashData.forEach(function(item){
-      const [category, message] = item;
-      const color = category === 'error' ? 'danger' : category;
-      const toastEl = document.createElement('div');
-      toastEl.className = 'toast align-items-center text-bg-'+(color)+' border-0 mb-2';
-      toastEl.setAttribute('role','alert');
-      toastEl.setAttribute('aria-live','assertive');
-      toastEl.setAttribute('aria-atomic','true');
-      toastEl.innerHTML = '<div class="d-flex"><div class="toast-body">'+message+'</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button></div>';
-      container.appendChild(toastEl);
-      const t = new bootstrap.Toast(toastEl, { delay: 5000 });
-      t.show();
-    });
-  })();
-
-  // Initialize DataTables (Bootstrap 5)
+  // Initialize DataTables
   document.addEventListener('DOMContentLoaded', function(){
-    document.querySelectorAll('.data-table').forEach(function(table){
-      new DataTable(table, {
-        responsive: true,
-        pageLength: 25,
-        layout: { topStart: 'pageLength', topEnd: 'search' },
-        language: { search: 'Search:', paginate: { next: 'Next', previous: 'Previous' } }
-      });
+    $('.data-table').DataTable({
+      responsive:true,
+      lengthChange:false,
+      autoWidth:false,
+      pageLength:25,
+      language:{ search:'Search:', paginate:{ next:'Next', previous:'Previous' } }
     });
   });
+  // Global JS error capture
+  (function(){
+    const overlay = document.getElementById('globalErrorOverlay');
+    const text = document.getElementById('globalErrorText');
+    window.addEventListener('error', function(e){
+      if(!overlay || !text) return;
+      overlay.style.display='flex';
+      text.textContent = 'JS Error: '+ e.message +'\n'+ (e.filename||'') + ':' + (e.lineno||'') + '\n' + (e.error && e.error.stack ? e.error.stack : '');
+    });
+    window.addEventListener('unhandledrejection', function(e){
+      if(!overlay || !text) return;
+      overlay.style.display='flex';
+      text.textContent = 'Unhandled Promise Rejection: '+ (e.reason && e.reason.message ? e.reason.message : e.reason);
+    });
+  })();
 </script>
 
 {% block extra_js %}{% endblock %}

@@ -157,6 +157,26 @@ class Bot(Base):
             return recent_position.account_id
         return None
 
+    # --- Derived capacity helpers (no schema change) ---
+    @property
+    def planned_position_capacity(self) -> int:
+        """Return configured max positions this bot is expected to open.
+
+        Uses environment variable BOT_DEFAULT_MAX_POSITIONS if present (int),
+        else falls back to 1. This avoids schema migration while exposing
+        planned capacity to the UI.
+        """
+        try:
+            return int(os.getenv('BOT_DEFAULT_MAX_POSITIONS', '1'))
+        except ValueError:
+            return 1
+
+    @property
+    def remaining_position_slots(self) -> int:
+        """Remaining open position slots based on active positions."""
+        remain = self.planned_position_capacity - self.active_positions_count
+        return remain if remain > 0 else 0
+
 class Position(Base):
     """Position model matching LoopTrader Pro"""
     __tablename__ = "Position"
