@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- Main row -->
+<div class="row">
+  <!-- Left col -->
+  <section class="col-lg-12">
+    <!-- Custom tabs (Charts with tabs)-->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">
+          <i class="fas fa-chart-pie mr-1"></i>
+          LoopTrader Pro Dashboard
+        </h3>
+      </div><!-- /.card-header -->
+      <div class="card-body">
+        <!-- Stats Row -->
+        <div class="row">
+          <div class="col-lg-3 col-6">
+            <a href="{{ url_for('bots') }}" class="text-reset" style="text-decoration:none;">
+            <div class="info-box mb-3 bg-info" style="cursor:pointer;">
+              <span class="info-box-icon"><i class="fas fa-robot"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Total Bots</span>
+                <span class="info-box-number" id="stat-total-bots">{{ stats.get('total_bots', 0) }}</span>
+              </div>
+            </div>
+            </a>
+          </div>
+          
+          <div class="col-lg-3 col-6">
+            <a href="{{ url_for('bots', filter='active') }}" class="text-reset" style="text-decoration:none;">
+            <div class="info-box mb-3 bg-success" style="cursor:pointer;">
+              <span class="info-box-icon"><i class="fas fa-play"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Active Bots</span>
+                <span class="info-box-number" id="stat-active-bots">{{ stats.get('active_bots', 0) }}</span>
+              </div>
+            </div>
+            </a>
+          </div>
+          
+          <div class="col-lg-3 col-6">
+            <a href="{{ url_for('bots', filter='inactive') }}" class="text-reset" style="text-decoration:none;">
+            <div class="info-box mb-3 bg-warning" style="cursor:pointer;">
+              <span class="info-box-icon"><i class="fas fa-pause"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Inactive Bots</span>
+                <span class="info-box-number" id="stat-inactive-bots">{{ stats.get('paused_bots', 0) }}</span>
+              </div>
+            </div>
+            </a>
+          </div>
+          
+          <div class="col-lg-3 col-6">
+            <a href="{{ url_for('positions', status='active') }}" class="text-reset" style="text-decoration:none;">
+            <div class="info-box mb-3 bg-primary" style="cursor:pointer;">
+              <span class="info-box-icon"><i class="fas fa-chart-line"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Active Positions</span>
+                <span class="info-box-number" id="stat-active-positions">{{ stats.get('active_positions', 0) }}</span>
+              </div>
+            </div>
+            </a>
+          </div>
+          
+          <div class="col-lg-3 col-6">
+            <a href="{{ url_for('accounts') }}" class="text-reset" style="text-decoration:none;">
+            <div class="info-box mb-3 bg-secondary" style="cursor:pointer;">
+              <span class="info-box-icon"><i class="fas fa-user"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Accounts</span>
+                <span class="info-box-number" id="stat-accounts">{{ stats.get('total_accounts', 0) }}</span>
+              </div>
+            </div>
+            </a>
+          </div>
+          
+          <div class="col-lg-3 col-6">
+            <div class="info-box mb-3 bg-danger">
+              <span class="info-box-icon"><i class="fas fa-database"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Database</span>
+                <span class="info-box-number">
+                  {% if db_status == 'connected' %}
+                    <i class="fas fa-check text-white"></i> OK
+                  {% else %}
+                    <i class="fas fa-times text-white"></i> Error
+                  {% endif %}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- /.stats row -->
+        
+        <!-- Quick Actions -->
+        <div class="row mt-4">
+          <div class="col-12">
+            <h5>Quick Actions</h5>
+          </div>
+          <div class="col-6 col-md-3">
+            <a href="{{ url_for('bots') }}" class="btn btn-app btn-primary">
+              <i class="fas fa-robot"></i> View Bots
+            </a>
+          </div>
+          <div class="col-6 col-md-3">
+            <a href="{{ url_for('accounts') }}" class="btn btn-app btn-info">
+              <i class="fas fa-user"></i> Accounts
+            </a>
+          </div>
+          <div class="col-6 col-md-3">
+            <a href="{{ url_for('positions') }}" class="btn btn-app btn-warning">
+              <i class="fas fa-chart-line"></i> Positions
+            </a>
+          </div>
+          <div class="col-6 col-md-3">
+            <form method="post" action="{{ url_for('pause_all') }}" style="display: inline;">
+              <button type="submit" class="btn btn-app btn-danger" onclick="return confirm('Pause all bots?')">
+                <i class="fas fa-pause"></i> Pause All
+              </button>
+            </form>
+          </div>
+          <div class="col-6 col-md-3">
+            <form method="post" action="{{ url_for('resume_all') }}" style="display: inline;">
+              <button type="submit" class="btn btn-app btn-success" onclick="return confirm('Resume all bots?')">
+                <i class="fas fa-play"></i> Resume All
+              </button>
+            </form>
+          </div>
+          <div class="col-6 col-md-3">
+            <form method="post" action="{{ url_for('close_all') }}" style="display: inline;">
+              <button type="submit" class="btn btn-app btn-warning" onclick="return confirm('Close ALL active positions? This cannot be undone!')">
+                <i class="fas fa-times-circle"></i> Close All Positions
+              </button>
+            </form>
+          </div>
+        </div>
+        <!-- /.quick actions -->
+      </div><!-- /.card-body -->
+    </div>
+    <!-- /.card -->
+
+    <!-- Recent Positions -->
+    <div class="card mt-3">
+      <div class="card-header">
+        <h3 class="card-title">Recent Positions</h3>
+      </div>
+      <div class="card-body">
+        {% if recent_positions %}
+        <div class="table-responsive">
+          <table class="table table-head-fixed text-nowrap">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Bot</th>
+                <th>Status</th>
+                <th>Opened</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for position in recent_positions %}
+              <tr>
+                <td>{{ position.id }}</td>
+                <td>
+                  {% if position.bot %}
+                    <a href="{{ url_for('bot_detail', bot_id=position.bot.id) }}">
+                      {{ position.bot.name }}
+                    </a>
+                  {% else %}
+                    N/A
+                  {% endif %}
+                </td>
+                <td>
+                  <span class="badge badge-{{ position.status_badge_class }}">
+                    {{ position.status_text }}
+                  </span>
+                </td>
+                <td>{{ position.opened_datetime.strftime('%Y-%m-%d %H:%M') if position.opened_datetime else 'N/A' }}</td>
+                <td>{{ position.duration_text }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-muted">No recent positions found.</p>
+        {% endif %}
+      </div>
+      <div class="card-footer">
+        <a href="{{ url_for('positions') }}" class="btn btn-primary btn-sm">View All Positions</a>
+      </div>
+    </div>
+    <!-- /.card -->
+  </section>
+  <!-- /.Left col -->
+</div>
+<!-- /.row (main row) -->
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function(){
+    function updateStats(){
+      fetch('{{ url_for("api_stats") }}')
+        .then(r => r.json())
+        .then(data => {
+          const map = [
+            ['stat-total-bots','total_bots'],
+            ['stat-active-bots','active_bots'],
+            ['stat-inactive-bots','paused_bots'],
+            ['stat-active-positions','active_positions'],
+            ['stat-accounts','total_accounts']
+          ];
+            map.forEach(([id,key]) => { const el=document.getElementById(id); if(el && key in data){ el.textContent=data[key]; }});
+        })
+        .catch(err => console.warn('Stats refresh failed', err));
+    }
+    setInterval(updateStats, 15000);
+  })();
+</script>
+{% endblock %}

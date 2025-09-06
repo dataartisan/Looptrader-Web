@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ app_name }}{% endblock %}</title>
+
+  <!-- Google Font (Inter as modern replacement) -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+  <!-- Font Awesome 6 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLbJp1J+4qemlGAqZ5G4KuX3sXIkYVJ+mU30+FJ8l+X0F2JQ6E6sZP4YxT6lucW6w==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <!-- AdminLTE v4 (Bootstrap 5) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@4.0.0-rc4/dist/css/adminlte.min.css">
+  <!-- DataTables Bootstrap 5 -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/2.0.7/css/dataTables.bootstrap5.min.css">
+  <!-- Theme custom overrides -->
+  
+  {% block extra_css %}{% endblock %}
+  
+  <style>
+    .brand-link {
+      border-bottom: 1px solid #4f5962;
+    }
+    .navbar-badge {
+      font-size: 10px;
+      font-weight: bold;
+    }
+    .info-box-icon {
+      border-radius: 6px 0 0 6px;
+    }
+    .card-header {
+      border-bottom: 1px solid rgba(0,0,0,.125);
+    }
+    /* App style button (recreate v3 .btn-app look for v4) */
+    .btn-app {
+      border-radius: .5rem;
+      position: relative;
+      padding: .9rem .4rem .6rem;
+      margin: 0 0 .75rem .75rem;
+      min-width: 90px;
+      height: 70px;
+      text-align: center;
+      color: #343a40;
+      border: 1px solid var(--bs-border-color,#dee2e6);
+      background: var(--bs-body-bg,#f8f9fa);
+      font-size: .75rem;
+      font-weight: 500;
+      transition: all .15s ease;
+    }
+    .btn-app:hover { background: var(--bs-gray-200,#e9ecef); text-decoration:none; }
+    .btn-app > .fa, .btn-app > .fas, .btn-app > .far, .btn-app > .fab, .btn-app > .fal, .btn-app > .fad, .btn-app > .svg-inline--fa { font-size: 1.4rem; display:block; margin-bottom:.25rem; }
+    /* Badge compatibility: map v3 badge-* to Bootstrap 5 bg-* */
+    .badge.badge-primary { background-color: var(--bs-primary); }
+    .badge.badge-secondary { background-color: var(--bs-secondary); }
+    .badge.badge-success { background-color: var(--bs-success); }
+    .badge.badge-danger { background-color: var(--bs-danger); }
+    .badge.badge-warning { background-color: var(--bs-warning); color:#000; }
+    .badge.badge-info { background-color: var(--bs-info); }
+    .badge.badge-light { background-color: var(--bs-light); color:#000; }
+    .badge.badge-dark { background-color: var(--bs-dark); }
+    /* Dark mode adjustments */
+    body.dark-mode { --bs-body-bg:#121212; --bs-body-color:#e2e2e2; }
+    body.dark-mode .card { background-color:#1e1e1e; color:#e2e2e2; }
+    body.dark-mode .main-header.navbar { background-color:#1f2933; }
+    body.dark-mode .main-sidebar { background-color:#111927; }
+  </style>
+</head>
+<body class="hold-transition sidebar-mini layout-fixed" data-bs-theme="light">
+<div class="wrapper">
+
+  <!-- Preloader -->
+  <div class="preloader flex-column justify-content-center align-items-center">
+    <img class="animation__shake" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23007bff'%3E%3Cpath d='M12 2L2 7v10c0 5.55 3.84 9.739 9 11 5.16-1.261 9-5.45 9-11V7l-10-5z'/%3E%3C/svg%3E" alt="LoopTrader" height="60" width="60">
+  </div>
+
+  <!-- Navbar -->
+  <nav class="main-header navbar navbar-expand navbar-white navbar-light">
+    <!-- Left navbar links -->
+    <ul class="navbar-nav">
+      <li class="nav-item">
+        <a class="nav-link" data-widget="pushmenu" href="#" role="button"><i class="fas fa-bars"></i></a>
+      </li>
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="{{ url_for('dashboard') }}" class="nav-link">Home</a>
+      </li>
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="{{ url_for('bots') }}" class="nav-link">Bots</a>
+      </li>
+            <li class="nav-item">
+              <a href="{{ url_for('accounts') }}" class="nav-link {{ 'active' if request.endpoint == 'accounts' else '' }}">
+                <i class="fas fa-university nav-icon"></i>
+                <p>Accounts</p>
+              </a>
+            </li>
+    </ul>
+
+    <!-- Right navbar links -->
+    <ul class="navbar-nav ml-auto">
+      <!-- Messages Dropdown Menu -->
+      <li class="nav-item dropdown">
+        <a class="nav-link" data-toggle="dropdown" href="#">
+          <i class="far fa-comments"></i>
+          <span class="badge badge-danger navbar-badge">3</span>
+        </a>
+      </li>
+      <!-- Notifications Dropdown Menu -->
+      <li class="nav-item dropdown">
+        <a class="nav-link" data-toggle="dropdown" href="#">
+          <i class="far fa-bell"></i>
+          <span class="badge badge-warning navbar-badge">15</span>
+        </a>
+      </li>
+      
+      <!-- User Menu -->
+      <li class="nav-item dropdown">
+        <a class="nav-link" data-toggle="dropdown" href="#">
+          <i class="far fa-user"></i>
+        </a>
+        <div class="dropdown-menu dropdown-menu-lg dropdown-menu-right">
+          <span class="dropdown-item dropdown-header">{{ admin_name }}</span>
+          <div class="dropdown-divider"></div>
+          <a href="#" class="dropdown-item">
+            <i class="fas fa-user mr-2"></i> Profile
+          </a>
+          <div class="dropdown-divider"></div>
+          <a href="{{ url_for('logout') }}" class="dropdown-item">
+            <i class="fas fa-sign-out-alt mr-2"></i> Logout
+          </a>
+        </div>
+      </li>
+      
+      <li class="nav-item">
+        <a class="nav-link" id="darkModeToggle" href="#" role="button" title="Toggle dark mode">
+          <i class="fas fa-moon"></i>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" data-widget="fullscreen" href="#" role="button" title="Fullscreen">
+          <i class="fas fa-expand"></i>
+        </a>
+      </li>
+    </ul>
+  </nav>
+  <!-- /.navbar -->
+
+  <!-- Main Sidebar Container -->
+  <aside class="main-sidebar sidebar-dark-primary elevation-4">
+    <!-- Brand Logo -->
+    <a href="{{ url_for('dashboard') }}" class="brand-link">
+      <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ffffff'%3E%3Cpath d='M12 2L2 7v10c0 5.55 3.84 9.739 9 11 5.16-1.261 9-5.45 9-11V7l-10-5z'/%3E%3C/svg%3E" alt="LoopTrader" class="brand-image img-circle elevation-3" style="opacity: .8">
+      <span class="brand-text font-weight-light">{{ app_name }}</span>
+    </a>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <!-- Sidebar user panel (optional) -->
+      <div class="user-panel mt-3 pb-3 mb-3 d-flex">
+        <div class="image">
+          <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%236c757d'%3E%3Cpath d='M12 2C13.1 2 14 2.9 14 4C14 5.1 13.1 6 12 6C10.9 6 10 5.1 10 4C10 2.9 10.9 2 12 2ZM21 9V7L15 1H5C3.9 1 3 1.9 3 3V21C3 22.1 3.9 23 5 23H19C20.1 23 21 22.1 21 21V9H21ZM8 12V14H16V12H8Z'/%3E%3C/svg%3E" class="img-circle elevation-2" alt="User Image">
+        </div>
+        <div class="info">
+          <a href="#" class="d-block">{{ admin_name }}</a>
+        </div>
+      </div>
+
+      <!-- Sidebar Menu -->
+      <nav class="mt-2">
+        <ul class="nav nav-pills nav-sidebar flex-column" data-widget="treeview" role="menu" data-accordion="false">
+          
+          <!-- Dashboard -->
+          <li class="nav-item">
+            <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
+              <i class="nav-icon fas fa-tachometer-alt"></i>
+              <p>Dashboard</p>
+            </a>
+          </li>
+
+          <!-- Bot Management -->
+          <li class="nav-item {% if request.endpoint and request.endpoint.startswith('bot') %}menu-open{% endif %}">
+            <a href="#" class="nav-link {% if request.endpoint and request.endpoint.startswith('bot') %}active{% endif %}">
+              <i class="nav-icon fas fa-robot"></i>
+              <p>
+                Bot Management
+                <i class="fas fa-angle-left right"></i>
+              </p>
+            </a>
+            <ul class="nav nav-treeview">
+              <li class="nav-item">
+                <a href="{{ url_for('bots') }}" class="nav-link {% if request.endpoint == 'bots' %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>All Bots</p>
+                </a>
+              </li>
+            <li class="nav-item">
+              <a href="{{ url_for('accounts') }}" class="nav-link {{ 'active' if request.endpoint == 'accounts' else '' }}">
+                <i class="fas fa-university nav-icon"></i>
+                <p>Accounts</p>
+              </a>
+            </li>
+            </ul>
+          </li>
+
+          </li>
+
+          <!-- Position Management -->
+          <li class="nav-item">
+            <a href="{{ url_for('positions') }}" class="nav-link {% if request.endpoint == 'positions' %}active{% endif %}">
+              <i class="nav-icon fas fa-chart-line"></i>
+              <p>Positions</p>
+            </a>
+          </li>
+
+          <!-- Trailing Stops -->
+          <li class="nav-item">
+            <a href="{{ url_for('trailing_stops') }}" class="nav-link {% if request.endpoint == 'trailing_stops' %}active{% endif %}">
+              <i class="nav-icon fas fa-stop-circle"></i>
+              <p>Trailing Stops</p>
+            </a>
+          </li>
+
+          </li>
+
+          <!-- Divider -->
+          <li class="nav-header">SYSTEM</li>
+
+          <!-- API Health -->
+          <li class="nav-item">
+            <a href="{{ url_for('health_check') }}" class="nav-link">
+              <i class="nav-icon fas fa-heartbeat"></i>
+              <p>API Health</p>
+            </a>
+          </li>
+
+        </ul>
+      </nav>
+      <!-- /.sidebar-menu -->
+    </div>
+    <!-- /.sidebar -->
+  </aside>
+
+  <!-- Content Wrapper. Contains page content -->
+  <div class="content-wrapper">
+    <!-- Content Header (Page header) -->
+    <div class="content-header">
+      <div class="container-fluid">
+        <div class="row mb-2">
+          <div class="col-sm-6">
+            <h1 class="m-0">{% block page_title %}Dashboard{% endblock %}</h1>
+          </div><!-- /.col -->
+          <div class="col-sm-6">
+            <ol class="breadcrumb float-sm-right">
+              {% block breadcrumb %}
+              <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Home</a></li>
+              <li class="breadcrumb-item active">Dashboard</li>
+              {% endblock %}
+            </ol>
+          </div><!-- /.col -->
+        </div><!-- /.row -->
+      </div><!-- /.container-fluid -->
+    </div>
+    <!-- /.content-header -->
+
+    <!-- Toast Container (flash messages) -->
+    <div aria-live="polite" aria-atomic="true" class="position-relative" style="z-index:1080;">
+      <div id="toastContainer" class="toast-container position-fixed top-0 end-0 p-3"></div>
+    </div>
+  <!-- Flash messages data (parsed by JS) -->
+  <script id="flash-messages-data" type="application/json">{{ get_flashed_messages(with_categories=true)|tojson|safe }}</script>
+
+    <!-- Main content -->
+    <section class="content">
+      <div class="container-fluid">
+        {% block content %}{% endblock %}
+      </div><!-- /.container-fluid -->
+    </section>
+    <!-- /.content -->
+  </div>
+  <!-- /.content-wrapper -->
+
+  <footer class="main-footer">
+    <strong>Copyright &copy; {{ current_year }} <a href="#">{{ app_name }}</a>.</strong>
+    All rights reserved.
+    <div class="float-right d-none d-sm-inline-block">
+      <b>Version</b> {{ app_version }}
+    </div>
+  </footer>
+
+</div>
+<!-- ./wrapper -->
+
+<!-- jQuery (needed for some plugins; can be removed if fully migrating to vanilla) -->
+<script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-eKhayi8LEQwp4NKxN+CfCh+3qOVUtJn3QNZ0TciWLP4=" crossorigin="anonymous"></script>
+<!-- Bootstrap 5 Bundle -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+<!-- DataTables 2 + Bootstrap 5 integration -->
+<script src="https://cdn.datatables.net/2.0.7/js/dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/2.0.7/js/dataTables.bootstrap5.min.js"></script>
+<!-- AdminLTE v4 -->
+<script src="https://cdn.jsdelivr.net/npm/admin-lte@4.0.0-rc4/dist/js/adminlte.min.js"></script>
+
+<!-- Custom scripts -->
+<script>
+  // Dark mode toggle
+  (function(){
+    const body = document.body;
+    const toggle = document.getElementById('darkModeToggle');
+    const stored = localStorage.getItem('lt_dark');
+    if(stored === '1'){ body.classList.add('dark-mode'); body.dataset.bsTheme='dark'; }
+    toggle?.addEventListener('click', function(e){
+      e.preventDefault();
+      body.classList.toggle('dark-mode');
+      const dark = body.classList.contains('dark-mode');
+      body.dataset.bsTheme = dark ? 'dark' : 'light';
+      localStorage.setItem('lt_dark', dark ? '1':'0');
+      this.querySelector('i').classList.toggle('fa-moon', !dark);
+      this.querySelector('i').classList.toggle('fa-sun', dark);
+    });
+  })();
+
+  // Convert Flask flash messages (rendered server-side into a JS var) to Bootstrap 5 toasts
+  (function(){
+    // Parse flash messages embedded as JSON
+    let flashData = [];
+    try {
+      const raw = document.getElementById('flash-messages-data')?.textContent || '[]';
+      flashData = JSON.parse(raw);
+    } catch(e) { console.warn('Failed parsing flash messages', e); }
+    if(!flashData || !flashData.length) return;
+    const container = document.getElementById('toastContainer');
+    flashData.forEach(function(item){
+      const [category, message] = item;
+      const color = category === 'error' ? 'danger' : category;
+      const toastEl = document.createElement('div');
+      toastEl.className = 'toast align-items-center text-bg-'+(color)+' border-0 mb-2';
+      toastEl.setAttribute('role','alert');
+      toastEl.setAttribute('aria-live','assertive');
+      toastEl.setAttribute('aria-atomic','true');
+      toastEl.innerHTML = '<div class="d-flex"><div class="toast-body">'+message+'</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button></div>';
+      container.appendChild(toastEl);
+      const t = new bootstrap.Toast(toastEl, { delay: 5000 });
+      t.show();
+    });
+  })();
+
+  // Initialize DataTables (Bootstrap 5)
+  document.addEventListener('DOMContentLoaded', function(){
+    document.querySelectorAll('.data-table').forEach(function(table){
+      new DataTable(table, {
+        responsive: true,
+        pageLength: 25,
+        layout: { topStart: 'pageLength', topEnd: 'search' },
+        language: { search: 'Search:', paginate: { next: 'Next', previous: 'Previous' } }
+      });
+    });
+  });
+</script>
+
+{% block extra_js %}{% endblock %}
+
+</body>
+</html>
