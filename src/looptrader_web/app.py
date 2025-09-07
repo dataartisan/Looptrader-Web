@@ -363,6 +363,64 @@ def close_all():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
+@app.route('/pause_selected', methods=['POST'])
+@login_required
+def pause_selected():
+    try:
+        bot_ids = request.form.getlist('bot_ids')
+        if not bot_ids:
+            return jsonify({'success': False, 'message': 'No bots selected'})
+        
+        # Convert to integers and pause each bot
+        count = 0
+        db = SessionLocal()
+        try:
+            for bot_id in bot_ids:
+                try:
+                    bot_id_int = int(bot_id)
+                    bot = db.query(Bot).filter(Bot.id == bot_id_int).first()
+                    if bot and not bot.paused:
+                        bot.paused = True
+                        count += 1
+                except ValueError:
+                    continue  # Skip invalid bot IDs
+            
+            db.commit()
+            return jsonify({'success': True, 'count': count, 'message': f'{count} bots paused successfully'})
+        finally:
+            db.close()
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/resume_selected', methods=['POST'])
+@login_required
+def resume_selected():
+    try:
+        bot_ids = request.form.getlist('bot_ids')
+        if not bot_ids:
+            return jsonify({'success': False, 'message': 'No bots selected'})
+        
+        # Convert to integers and resume each bot
+        count = 0
+        db = SessionLocal()
+        try:
+            for bot_id in bot_ids:
+                try:
+                    bot_id_int = int(bot_id)
+                    bot = db.query(Bot).filter(Bot.id == bot_id_int).first()
+                    if bot and bot.paused:
+                        bot.paused = False
+                        count += 1
+                except ValueError:
+                    continue  # Skip invalid bot IDs
+            
+            db.commit()
+            return jsonify({'success': True, 'count': count, 'message': f'{count} bots resumed successfully'})
+        finally:
+            db.close()
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
 # Account management routes
 @app.route('/accounts')
 @login_required
