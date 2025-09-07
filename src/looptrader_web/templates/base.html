@@ -54,12 +54,9 @@
       <li class="nav-item d-none d-sm-inline-block">
         <a href="{{ url_for('bots') }}" class="nav-link">Bots</a>
       </li>
-            <li class="nav-item">
-              <a href="{{ url_for('accounts') }}" class="nav-link {{ 'active' if request.endpoint == 'accounts' else '' }}">
-                <i class="fas fa-university nav-icon"></i>
-                <p>Accounts</p>
-              </a>
-            </li>
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="{{ url_for('accounts') }}" class="nav-link {{ 'active' if request.endpoint == 'accounts' else '' }}">Accounts</a>
+      </li>
     </ul>
 
     <!-- Right navbar links -->
@@ -152,15 +149,15 @@
                   <p>All Bots</p>
                 </a>
               </li>
-            <li class="nav-item">
-              <a href="{{ url_for('accounts') }}" class="nav-link {{ 'active' if request.endpoint == 'accounts' else '' }}">
-                <i class="fas fa-university nav-icon"></i>
-                <p>Accounts</p>
-              </a>
-            </li>
             </ul>
           </li>
 
+          <!-- Accounts -->
+          <li class="nav-item">
+            <a href="{{ url_for('accounts') }}" class="nav-link {{ 'active' if request.endpoint == 'accounts' else '' }}">
+              <i class="nav-icon fas fa-university"></i>
+              <p>Accounts</p>
+            </a>
           </li>
 
           <!-- Position Management -->
@@ -172,13 +169,28 @@
           </li>
 
           <!-- Trailing Stops -->
-          <li class="nav-item">
-            <a href="{{ url_for('trailing_stops') }}" class="nav-link {% if request.endpoint == 'trailing_stops' %}active{% endif %}">
+          <li class="nav-item {% if request.endpoint and request.endpoint.startswith('trailing') %}menu-open{% endif %}">
+            <a href="#" class="nav-link {% if request.endpoint and request.endpoint.startswith('trailing') %}active{% endif %}">
               <i class="nav-icon fas fa-stop-circle"></i>
-              <p>Trailing Stops</p>
+              <p>
+                Trailing Stops
+                <i class="fas fa-angle-left right"></i>
+              </p>
             </a>
-          </li>
-
+            <ul class="nav nav-treeview">
+              <li class="nav-item">
+                <a href="{{ url_for('trailing_stops') }}" class="nav-link {% if request.endpoint == 'trailing_stops' %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>View All</p>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a href="{{ url_for('add_trailing_stops') }}" class="nav-link {% if request.endpoint == 'add_trailing_stops' %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>Manage Trailing Stops</p>
+                </a>
+              </li>
+            </ul>
           </li>
 
           <!-- Divider -->

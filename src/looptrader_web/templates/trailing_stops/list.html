@@ -10,12 +10,43 @@
 {% endblock %}
 
 {% block content %}
+<!-- Bulk Actions Row -->
+<div class="row mb-3">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">
+          <i class="fas fa-cogs mr-2"></i>Bulk Actions
+        </h3>
+      </div>
+      <div class="card-body">
+        <form id="bulk-form" method="post" action="{{ url_for('trailing_stops') }}">
+          <div class="btn-group" role="group">
+            <button type="button" class="btn btn-success" onclick="saveAllChanges()">
+              <i class="fas fa-save"></i> Save All Changes
+            </button>
+            <button type="button" class="btn btn-danger" onclick="removeSelected()">
+              <i class="fas fa-trash"></i> Remove Selected
+            </button>
+          </div>
+          <div class="float-right">
+            <button type="button" class="btn btn-primary" onclick="location.reload()">
+              <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+            <span id="selected-count" class="ml-3 text-muted">0 selected</span>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="row">
   <div class="col-12">
     <div class="card">
       <div class="card-header">
         <h3 class="card-title">
-          <i class="fas fa-stop-circle mr-2"></i>All Trailing Stops
+          <i class="fas fa-stop-circle mr-2"></i>Active Trailing Stops
         </h3>
         <div class="card-tools">
           <button type="button" class="btn btn-sm btn-primary" onclick="location.reload()">
@@ -27,25 +58,43 @@
       <div class="card-body">
         {% if trailing_stops %}
         <div class="table-responsive">
-          <table class="table table-striped table-hover data-table">
+          <table class="table table-striped table-hover">
             <thead>
               <tr>
-                <th>ID</th>
-                <th>Bot</th>
+                <th width="50">
+                  <div class="custom-control custom-checkbox">
+                    <input type="checkbox" class="custom-control-input" id="select_all">
+                    <label class="custom-control-label" for="select_all"></label>
+                  </div>
+                </th>
+                <th>Bot ID</th>
+                <th>Bot Name</th>
                 <th>Status</th>
-                <th>Activation Threshold</th>
-                <th>Trailing %</th>
+                <th>Activation Threshold (%)</th>
+                <th>Trailing (%)</th>
                 <th>Entry Value</th>
                 <th>High Water Mark</th>
-                <th>Created</th>
-                <th>Updated</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {% for trailing_stop in trailing_stops %}
-              <tr>
-                <td>{{ trailing_stop.id }}</td>
+              <tr data-bot-id="{{ trailing_stop.bot.id if trailing_stop.bot else '' }}">
+                <td>
+                  <div class="custom-control custom-checkbox">
+                    <input type="checkbox" class="custom-control-input bot-checkbox" 
+                           id="bot_{{ trailing_stop.bot.id if trailing_stop.bot else trailing_stop.id }}" 
+                           name="selected_bots" value="{{ trailing_stop.bot.id if trailing_stop.bot else '' }}">
+                    <label class="custom-control-label" for="bot_{{ trailing_stop.bot.id if trailing_stop.bot else trailing_stop.id }}"></label>
+                  </div>
+                </td>
+                <td>
+                  {% if trailing_stop.bot %}
+                    {{ trailing_stop.bot.id }}
+                  {% else %}
+                    <span class="text-muted">N/A</span>
+                  {% endif %}
+                </td>
                 <td>
                   {% if trailing_stop.bot %}
                     <a href="{{ url_for('bot_detail', bot_id=trailing_stop.bot.id) }}">
@@ -62,14 +111,24 @@
                 </td>
                 <td>
                   {% if trailing_stop.activation_threshold %}
-                    {{ "%.2f"|format(trailing_stop.activation_threshold) }}%
+                    <input type="number" step="0.01" 
+                           class="form-control form-control-sm editable-field" 
+                           style="width: 80px; display: inline-block;"
+                           data-field="activation_threshold"
+                           data-bot-id="{{ trailing_stop.bot.id if trailing_stop.bot else '' }}"
+                           value="{{ "%.2f"|format(trailing_stop.activation_threshold) }}">
                   {% else %}
                     <span class="text-muted">N/A</span>
                   {% endif %}
                 </td>
                 <td>
                   {% if trailing_stop.trailing_percentage %}
-                    {{ "%.2f"|format(trailing_stop.trailing_percentage) }}%
+                    <input type="number" step="0.01" 
+                           class="form-control form-control-sm editable-field" 
+                           style="width: 80px; display: inline-block;"
+                           data-field="trailing_percentage"
+                           data-bot-id="{{ trailing_stop.bot.id if trailing_stop.bot else '' }}"
+                           value="{{ "%.2f"|format(trailing_stop.trailing_percentage) }}">
                   {% else %}
                     <span class="text-muted">N/A</span>
                   {% endif %}
@@ -89,25 +148,28 @@
                   {% endif %}
                 </td>
                 <td>
-                  {% if trailing_stop.created_at %}
-                    {{ trailing_stop.created_at.strftime('%Y-%m-%d %H:%M') }}
-                  {% else %}
-                    <span class="text-muted">N/A</span>
-                  {% endif %}
-                </td>
-                <td>
-                  {% if trailing_stop.updated_at %}
-                    {{ trailing_stop.updated_at.strftime('%Y-%m-%d %H:%M') }}
-                  {% else %}
-                    <span class="text-muted">N/A</span>
-                  {% endif %}
-                </td>
-                <td>
-                  <form method="post" action="{{ url_for('delete_trailing_stop_route', bot_id=trailing_stop.bot.id) }}" style="display:inline;" onsubmit="return confirm('Delete trailing stop for bot {{ trailing_stop.bot.name }}?');">
-                    <button type="submit" class="btn btn-sm btn-danger" title="Delete Trailing Stop">
+                  <div class="btn-group btn-group-sm" role="group">
+                    <button type="button" class="btn btn-success btn-sm save-btn" 
+                            data-bot-id="{{ trailing_stop.bot.id if trailing_stop.bot else '' }}"
+                            title="Save Changes">
+                      <i class="fas fa-save"></i>
+                    </button>
+                    <button type="button" class="btn btn-danger btn-sm remove-btn" 
+                            data-bot-id="{{ trailing_stop.bot.id if trailing_stop.bot else '' }}"
+                            title="Remove Trailing Stop">
                       <i class="fas fa-trash"></i>
                     </button>
-                  </form>
+                    <button type="button" class="btn btn-info btn-sm toggle-btn" 
+                            data-bot-id="{{ trailing_stop.bot.id if trailing_stop.bot else '' }}"
+                            data-active="{{ trailing_stop.is_active|lower }}"
+                            title="Toggle Active/Inactive">
+                      {% if trailing_stop.is_active %}
+                        <i class="fas fa-pause"></i>
+                      {% else %}
+                        <i class="fas fa-play"></i>
+                      {% endif %}
+                    </button>
+                  </div>
                 </td>
               </tr>
               {% endfor %}
@@ -175,4 +237,207 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    // Handle select all checkbox
+    $('#select_all').change(function() {
+        $('.bot-checkbox').prop('checked', $(this).is(':checked'));
+        updateSelectedCount();
+    });
+
+    // Handle individual checkbox changes
+    $('.bot-checkbox').change(function() {
+        updateSelectedCount();
+        
+        // Update select all checkbox state
+        const totalCheckboxes = $('.bot-checkbox').length;
+        const checkedCheckboxes = $('.bot-checkbox:checked').length;
+        
+        if (checkedCheckboxes === 0) {
+            $('#select_all').prop('indeterminate', false).prop('checked', false);
+        } else if (checkedCheckboxes === totalCheckboxes) {
+            $('#select_all').prop('indeterminate', false).prop('checked', true);
+        } else {
+            $('#select_all').prop('indeterminate', true).prop('checked', false);
+        }
+    });
+
+    function updateSelectedCount() {
+        const count = $('.bot-checkbox:checked').length;
+        $('#selected-count').text(count + ' selected');
+    }
+
+    // Individual save button
+    $('.save-btn').click(function() {
+        const botId = $(this).data('bot-id');
+        saveTrailingStop(botId);
+    });
+
+    // Individual remove button
+    $('.remove-btn').click(function() {
+        const botId = $(this).data('bot-id');
+        if (confirm('Remove trailing stop for this bot?')) {
+            removeTrailingStop(botId);
+        }
+    });
+
+    // Toggle active/inactive button
+    $('.toggle-btn').click(function() {
+        const botId = $(this).data('bot-id');
+        const isActive = $(this).data('active') === 'true';
+        toggleTrailingStop(botId, !isActive);
+    });
+
+    // Highlight changed fields
+    $('.editable-field').on('input', function() {
+        $(this).addClass('border-warning');
+    });
+
+    function saveTrailingStop(botId) {
+        const row = $(`tr[data-bot-id="${botId}"]`);
+        const activationThreshold = row.find('input[data-field="activation_threshold"]').val();
+        const trailingPercentage = row.find('input[data-field="trailing_percentage"]').val();
+        
+        if (!activationThreshold || !trailingPercentage) {
+            alert('Please enter both activation threshold and trailing percentage.');
+            return;
+        }
+
+        $.ajax({
+            url: '{{ url_for("update_trailing_stop") }}',
+            method: 'POST',
+            data: {
+                bot_id: botId,
+                activation_threshold: activationThreshold,
+                trailing_percentage: trailingPercentage
+            },
+            success: function(response) {
+                if (response.success) {
+                    // Remove warning border
+                    row.find('.editable-field').removeClass('border-warning');
+                    showMessage('Trailing stop updated successfully', 'success');
+                } else {
+                    showMessage('Failed to update trailing stop: ' + response.message, 'danger');
+                }
+            },
+            error: function() {
+                showMessage('Error updating trailing stop', 'danger');
+            }
+        });
+    }
+
+    function removeTrailingStop(botId) {
+        $.ajax({
+            url: '{{ url_for("remove_trailing_stop") }}',
+            method: 'POST',
+            data: {
+                bot_id: botId
+            },
+            success: function(response) {
+                if (response.success) {
+                    $(`tr[data-bot-id="${botId}"]`).fadeOut(function() {
+                        $(this).remove();
+                        updateSelectedCount();
+                    });
+                    showMessage('Trailing stop removed successfully', 'success');
+                } else {
+                    showMessage('Failed to remove trailing stop: ' + response.message, 'danger');
+                }
+            },
+            error: function() {
+                showMessage('Error removing trailing stop', 'danger');
+            }
+        });
+    }
+
+    function toggleTrailingStop(botId, activate) {
+        $.ajax({
+            url: '{{ url_for("toggle_trailing_stop") }}',
+            method: 'POST',
+            data: {
+                bot_id: botId,
+                is_active: activate
+            },
+            success: function(response) {
+                if (response.success) {
+                    const button = $(`.toggle-btn[data-bot-id="${botId}"]`);
+                    const icon = button.find('i');
+                    
+                    if (activate) {
+                        icon.removeClass('fas fa-play').addClass('fas fa-pause');
+                        button.data('active', 'true');
+                    } else {
+                        icon.removeClass('fas fa-pause').addClass('fas fa-play');
+                        button.data('active', 'false');
+                    }
+                    
+                    showMessage(`Trailing stop ${activate ? 'activated' : 'deactivated'} successfully`, 'success');
+                } else {
+                    showMessage('Failed to toggle trailing stop: ' + response.message, 'danger');
+                }
+            },
+            error: function() {
+                showMessage('Error toggling trailing stop', 'danger');
+            }
+        });
+    }
+
+    function showMessage(message, type) {
+        // Create a temporary alert
+        const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
+        const alert = $(`<div class="alert ${alertClass} alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+            </button>
+        </div>`);
+        
+        $('.card-body').prepend(alert);
+        
+        // Auto-dismiss after 3 seconds
+        setTimeout(() => {
+            alert.alert('close');
+        }, 3000);
+    }
+
+    // Initial count update
+    updateSelectedCount();
+});
+
+// Global functions for bulk actions
+function saveAllChanges() {
+    const changedRows = $('.editable-field.border-warning').closest('tr');
+    if (changedRows.length === 0) {
+        alert('No changes to save.');
+        return;
+    }
+    
+    if (confirm(`Save changes for ${changedRows.length} trailing stop(s)?`)) {
+        changedRows.each(function() {
+            const botId = $(this).data('bot-id');
+            const saveBtn = $(this).find('.save-btn');
+            saveBtn.click();
+        });
+    }
+}
+
+function removeSelected() {
+    const selectedBots = $('.bot-checkbox:checked');
+    if (selectedBots.length === 0) {
+        alert('Please select at least one trailing stop to remove.');
+        return;
+    }
+    
+    if (confirm(`Remove ${selectedBots.length} trailing stop(s)? This cannot be undone.`)) {
+        selectedBots.each(function() {
+            const botId = $(this).val();
+            const removeBtn = $(this).closest('tr').find('.remove-btn');
+            removeBtn.click();
+        });
+    }
+}
+</script>
 {% endblock %}

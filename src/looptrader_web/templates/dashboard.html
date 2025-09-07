@@ -21,6 +21,33 @@
         <!-- Stats Row -->
         <div class="row">
           <div class="col-lg-3 col-6">
+            <div class="info-box mb-3 {% if spx_data.change >= 0 %}bg-success{% else %}bg-danger{% endif %}">
+              <span class="info-box-icon"><i class="fas fa-chart-line"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-number" id="spx-price">
+                  {% if spx_data.price != 'N/A' %}
+                    ${{ spx_data.price }}
+                  {% else %}
+                    {{ spx_data.price }}
+                  {% endif %}
+                </span>
+                <div class="progress-description" style="font-size: 0.9em;" id="spx-details">
+                  {% if spx_data.change != 'N/A' %}
+                    {% if spx_data.change >= 0 %}
+                      <i class="fas fa-arrow-up"></i> +${{ spx_data.change }} (+{{ spx_data.change_percent }}%)
+                    {% else %}
+                      <i class="fas fa-arrow-down"></i> ${{ spx_data.change }} ({{ spx_data.change_percent }}%)
+                    {% endif %}
+                    <br><small>{{ spx_data.market_state }} • {{ spx_data.timestamp }}</small>
+                  {% else %}
+                    <i class="fas fa-exclamation-triangle"></i> Data unavailable
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-lg-3 col-6">
             <a href="{{ url_for('bots') }}" class="text-reset" style="text-decoration:none;">
             <div class="info-box mb-3 bg-info" style="cursor:pointer;">
               <span class="info-box-icon"><i class="fas fa-robot"></i></span>
@@ -221,7 +248,44 @@
         })
         .catch(err => console.warn('Stats refresh failed', err));
     }
+    
+    function updateSpxPrice(){
+      fetch('{{ url_for("api_spx") }}')
+        .then(r => r.json())
+        .then(data => {
+          const priceEl = document.getElementById('spx-price');
+          const boxEl = priceEl?.closest('.info-box');
+          const descEl = document.getElementById('spx-details');
+          
+          if (priceEl && data.price !== 'N/A') {
+            priceEl.innerHTML = '$' + data.price;
+          } else if (priceEl) {
+            priceEl.innerHTML = data.price || 'N/A';
+          }
+          
+          if (descEl && data.change !== 'N/A') {
+            const isPositive = data.change >= 0;
+            const arrow = isPositive ? '<i class="fas fa-arrow-up"></i>' : '<i class="fas fa-arrow-down"></i>';
+            const sign = isPositive ? '+' : '';
+            descEl.innerHTML = arrow + ' ' + sign + '$' + data.change + ' (' + sign + data.change_percent + '%)<br>' +
+                              '<small>' + data.market_state + ' • ' + data.timestamp + '</small>';
+            
+            // Update box color based on change
+            if (boxEl) {
+              boxEl.className = boxEl.className.replace(/bg-(success|danger)/, isPositive ? 'bg-success' : 'bg-danger');
+            }
+          } else if (descEl) {
+            descEl.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Data unavailable';
+          }
+        })
+        .catch(err => console.warn('SPX price refresh failed', err));
+    }
+    
+    // Update stats every 15 seconds
     setInterval(updateStats, 15000);
+    
+    // Update SPX price every 30 seconds (to avoid hitting API limits)
+    setInterval(updateSpxPrice, 30000);
   })();
 </script>
 {% endblock %}

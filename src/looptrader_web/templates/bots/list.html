@@ -182,8 +182,7 @@
 <!-- Summary Statistics -->
 <div class="row">
   <div class="col-lg-3 col-6">
-  <a href="{{ url_for('bots') }}" class="text-reset" style="text-decoration:none;">
-  <div class="small-box bg-info" style="cursor:pointer;">
+  <div class="small-box bg-info">
       <div class="inner">
         <h3>{{ total_bots }}</h3>
         <p>Total Bots</p>
@@ -192,12 +191,10 @@
         <i class="fas fa-robot"></i>
       </div>
     </div>
-  </a>
   </div>
   
   <div class="col-lg-3 col-6">
-  <a href="{{ url_for('bots', filter='active') }}" class="text-reset" style="text-decoration:none;">
-  <div class="small-box bg-success" style="cursor:pointer;">
+  <div class="small-box bg-success">
       <div class="inner">
         <h3>{{ active_bots }}</h3>
         <p>Active Bots</p>
@@ -206,12 +203,10 @@
         <i class="fas fa-play"></i>
       </div>
     </div>
-  </a>
   </div>
   
   <div class="col-lg-3 col-6">
-  <a href="{{ url_for('bots', filter='inactive') }}" class="text-reset" style="text-decoration:none;">
-  <div class="small-box bg-warning" style="cursor:pointer;">
+  <div class="small-box bg-warning">
       <div class="inner">
     <h3>{{ paused_bots }}</h3>
     <p>Inactive Bots</p>
@@ -220,7 +215,6 @@
         <i class="fas fa-pause"></i>
       </div>
     </div>
-  </a>
   </div>
   
   <div class="col-lg-3 col-6">

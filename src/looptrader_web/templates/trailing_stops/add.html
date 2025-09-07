@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Trailing Stops - {{ app_name }}{% endblock %}
+
+{% block page_title %}Manage Trailing Stops{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Home</a></li>
+<li class="breadcrumb-item"><a href="{{ url_for('trailing_stops') }}">Trailing Stops</a></li>
+<li class="breadcrumb-item active">Manage Trailing Stops</li>
+{% endblock %}
+
+{% block content %}
+<!-- Filter Section -->
+<div class="row">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">
+          <i class="fas fa-filter mr-2"></i>Filter Bots
+        </h3>
+      </div>
+      <div class="card-body">
+        <form method="get" class="form-inline">
+          <div class="form-group mr-3">
+            <label for="name_filter" class="mr-2">Bot Name Contains:</label>
+            <input type="text" id="name_filter" name="name_filter" class="form-control" 
+                   value="{{ name_filter }}" placeholder="Enter bot name filter">
+          </div>
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-search"></i> Filter
+          </button>
+          <a href="{{ url_for('add_trailing_stops') }}" class="btn btn-secondary ml-2">
+            <i class="fas fa-times"></i> Clear
+          </a>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk Trailing Stop Management -->
+<div class="row mt-3">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">
+          <i class="fas fa-cogs mr-2"></i>Bulk Manage Trailing Stops
+        </h3>
+      </div>
+      <form method="post">
+        <!-- Hidden field to preserve filter -->
+        {% if name_filter %}
+        <input type="hidden" name="name_filter" value="{{ name_filter }}">
+        {% endif %}
+        
+        <div class="card-body">
+          <!-- Action Selection -->
+          <div class="row">
+            <div class="col-12">
+              <div class="form-group">
+                <label>Select Action:</label>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="action" id="action_add" value="add" checked>
+                  <label class="form-check-label" for="action_add">
+                    <strong>Add/Update Trailing Stops</strong> - Configure trailing stops for selected bots
+                  </label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="action" id="action_remove" value="remove">
+                  <label class="form-check-label" for="action_remove">
+                    <strong>Remove Trailing Stops</strong> - Remove trailing stops from selected bots
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Trailing Stop Settings (only shown for Add action) -->
+          <div id="trailing-stop-settings">
+            <div class="row">
+              <div class="col-md-4">
+                <div class="form-group">
+                  <label for="activation_threshold">Activation Threshold (%)</label>
+                  <input type="number" step="0.01" id="activation_threshold" name="activation_threshold" 
+                         class="form-control" placeholder="e.g., 2.5">
+                  <small class="form-text text-muted">Percentage gain required to activate trailing stop</small>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="form-group">
+                  <label for="trailing_percentage">Trailing Percentage (%)</label>
+                  <input type="number" step="0.01" id="trailing_percentage" name="trailing_percentage" 
+                         class="form-control" placeholder="e.g., 1.0">
+                  <small class="form-text text-muted">Percentage below high water mark to trigger stop</small>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="form-group">
+                  <div class="custom-control custom-checkbox">
+                    <input type="checkbox" class="custom-control-input" id="is_active" name="is_active" checked>
+                    <label class="custom-control-label" for="is_active">
+                      Activate Immediately
+                    </label>
+                  </div>
+                  <small class="form-text text-muted">Start monitoring trailing stop immediately</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bot Selection -->
+          <div class="row mt-4">
+            <div class="col-12">
+              <h5>Select Bots</h5>
+              {% if bots %}
+              <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                <table class="table table-striped table-hover">
+                  <thead class="thead-light sticky-top">
+                    <tr>
+                      <th width="50">
+                        <div class="custom-control custom-checkbox">
+                          <input type="checkbox" class="custom-control-input" id="select_all">
+                          <label class="custom-control-label" for="select_all">All</label>
+                        </div>
+                      </th>
+                      <th>ID</th>
+                      <th>Bot Name</th>
+                      <th>Status</th>
+                      <th>Account</th>
+                      <th>Has Trailing Stop</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for bot in bots %}
+                    <tr>
+                      <td>
+                        <div class="custom-control custom-checkbox">
+                          <input type="checkbox" class="custom-control-input bot-checkbox" 
+                                 id="bot_{{ bot.id }}" name="selected_bots" value="{{ bot.id }}">
+                          <label class="custom-control-label" for="bot_{{ bot.id }}"></label>
+                        </div>
+                      </td>
+                      <td>{{ bot.id }}</td>
+                      <td>
+                        <strong>{{ bot.name }}</strong>
+                      </td>
+                      <td>
+                        <span class="badge badge-{{ bot.status_badge_class }}">
+                          {{ bot.status_text }}
+                        </span>
+                      </td>
+                      <td>
+                        {{ bot.account_name }}
+                      </td>
+                      <td>
+                        {% if bot.trailing_stop_state %}
+                          <span class="badge badge-info">
+                            <i class="fas fa-check"></i> Yes
+                          </span>
+                        {% else %}
+                          <span class="badge badge-secondary">
+                            <i class="fas fa-times"></i> No
+                          </span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              {% else %}
+              <div class="alert alert-info">
+                <h5><i class="icon fas fa-info"></i> No Bots Found!</h5>
+                {% if name_filter %}
+                  No bots match the filter "{{ name_filter }}". Try adjusting your search criteria.
+                {% else %}
+                  No bots are currently configured in the system.
+                {% endif %}
+              </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        {% if bots %}
+        <div class="card-footer">
+          <button type="submit" class="btn btn-success btn-lg" id="add-btn">
+            <i class="fas fa-plus-circle"></i> Add Trailing Stops to Selected Bots
+          </button>
+          <button type="submit" class="btn btn-danger btn-lg" id="remove-btn" style="display: none;">
+            <i class="fas fa-trash-alt"></i> Remove Trailing Stops from Selected Bots
+          </button>
+          <div class="float-right">
+            <span id="selected-count" class="text-muted">0 bots selected</span>
+          </div>
+        </div>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    // Handle action radio button changes
+    $('input[name="action"]').change(function() {
+        const action = $(this).val();
+        
+        if (action === 'add') {
+            $('#trailing-stop-settings').show();
+            $('#add-btn').show();
+            $('#remove-btn').hide();
+            $('#activation_threshold, #trailing_percentage').prop('required', true);
+        } else if (action === 'remove') {
+            $('#trailing-stop-settings').hide();
+            $('#add-btn').hide();
+            $('#remove-btn').show();
+            $('#activation_threshold, #trailing_percentage').prop('required', false);
+        }
+    });
+
+    // Handle select all checkbox
+    $('#select_all').change(function() {
+        $('.bot-checkbox').prop('checked', $(this).is(':checked'));
+        updateSelectedCount();
+    });
+
+    // Handle individual checkbox changes
+    $('.bot-checkbox').change(function() {
+        updateSelectedCount();
+        
+        // Update select all checkbox state
+        const totalCheckboxes = $('.bot-checkbox').length;
+        const checkedCheckboxes = $('.bot-checkbox:checked').length;
+        
+        if (checkedCheckboxes === 0) {
+            $('#select_all').prop('indeterminate', false).prop('checked', false);
+        } else if (checkedCheckboxes === totalCheckboxes) {
+            $('#select_all').prop('indeterminate', false).prop('checked', true);
+        } else {
+            $('#select_all').prop('indeterminate', true).prop('checked', false);
+        }
+    });
+
+    function updateSelectedCount() {
+        const count = $('.bot-checkbox:checked').length;
+        $('#selected-count').text(count + ' bot' + (count !== 1 ? 's' : '') + ' selected');
+    }
+
+    // Initial count update
+    updateSelectedCount();
+
+    // Form validation
+    $('form').submit(function(e) {
+        const selectedBots = $('.bot-checkbox:checked').length;
+        const action = $('input[name="action"]:checked').val();
+        
+        if (selectedBots === 0) {
+            e.preventDefault();
+            alert('Please select at least one bot.');
+            return false;
+        }
+
+        let confirmMessage;
+        if (action === 'add') {
+            const threshold = $('#activation_threshold').val();
+            const percentage = $('#trailing_percentage').val();
+            
+            if (!threshold || !percentage) {
+                e.preventDefault();
+                alert('Please enter both activation threshold and trailing percentage.');
+                return false;
+            }
+            
+            confirmMessage = `Add/update trailing stops for ${selectedBots} selected bot(s) with ${threshold}% activation threshold and ${percentage}% trailing percentage?`;
+        } else {
+            confirmMessage = `Remove trailing stops from ${selectedBots} selected bot(s)? This action cannot be undone.`;
+        }
+
+        if (!confirm(confirmMessage)) {
+            e.preventDefault();
+            return false;
+        }
+    });
+
+    // Quick filter buttons for bots with/without trailing stops
+    function addQuickFilters() {
+        const filterDiv = $('<div class="mt-3 mb-3"></div>');
+        filterDiv.html(`
+            <button type="button" class="btn btn-outline-primary btn-sm" id="show-all">Show All</button>
+            <button type="button" class="btn btn-outline-success btn-sm" id="show-with-trailing">With Trailing Stops</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="show-without-trailing">Without Trailing Stops</button>
+        `);
+        
+        $('#trailing-stop-settings').after(filterDiv);
+        
+        $('#show-all').click(function() {
+            $('tbody tr').show();
+            $('.btn-outline-primary, .btn-outline-success, .btn-outline-secondary').removeClass('active');
+            $(this).addClass('active');
+        });
+        
+        $('#show-with-trailing').click(function() {
+            $('tbody tr').hide();
+            $('tbody tr').each(function() {
+                if ($(this).find('.badge-info').length > 0) {
+                    $(this).show();
+                }
+            });
+            $('.btn-outline-primary, .btn-outline-success, .btn-outline-secondary').removeClass('active');
+            $(this).addClass('active');
+        });
+        
+        $('#show-without-trailing').click(function() {
+            $('tbody tr').hide();
+            $('tbody tr').each(function() {
+                if ($(this).find('.badge-secondary').length > 0) {
+                    $(this).show();
+                }
+            });
+            $('.btn-outline-primary, .btn-outline-success, .btn-outline-secondary').removeClass('active');
+            $(this).addClass('active');
+        });
+        
+        $('#show-all').addClass('active');
+    }
+    
+    if ($('.bot-checkbox').length > 0) {
+        addQuickFilters();
+    }
+});
+</script>
+{% endblock %}

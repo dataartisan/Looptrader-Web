@@ -7,6 +7,7 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, f
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import check_password_hash, generate_password_hash
 import os
+import requests
 from datetime import datetime, timedelta
 from sqlalchemy import text
 
@@ -54,6 +55,49 @@ def inject_template_vars():
         'current_year': datetime.now().year
     }
 
+def get_spx_price():
+    """Fetch current SPX spot price from Yahoo Finance API"""
+    try:
+        # Using Yahoo Finance API - free and reliable
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/%5ESPX"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if 'chart' in data and 'result' in data['chart'] and data['chart']['result']:
+                result = data['chart']['result'][0]
+                if 'meta' in result and 'regularMarketPrice' in result['meta']:
+                    meta = result['meta']
+                    price = meta['regularMarketPrice']
+                    change = meta.get('regularMarketChange', 0)
+                    change_percent = meta.get('regularMarketChangePercent', 0)
+                    market_state = meta.get('marketState', 'UNKNOWN')
+                    previous_close = meta.get('previousClose', price)
+                    
+                    return {
+                        'price': round(price, 2),
+                        'change': round(change, 2),
+                        'change_percent': round(change_percent * 100, 2),
+                        'market_state': market_state,
+                        'previous_close': round(previous_close, 2),
+                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')
+                    }
+    except Exception as e:
+        print(f"Error fetching SPX price: {e}")
+    
+    # Return default values if API fails
+    return {
+        'price': 'N/A',
+        'change': 'N/A',
+        'change_percent': 'N/A',
+        'market_state': 'UNKNOWN',
+        'previous_close': 'N/A',
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')
+    }
+
 # Authentication routes
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -99,10 +143,11 @@ def dashboard():
         except Exception:
             db_status = 'error'
         recent_positions = get_recent_positions(5)
-        return render_template('dashboard.html', stats=stats, recent_positions=recent_positions, db_status=db_status)
+        spx_data = get_spx_price()
+        return render_template('dashboard.html', stats=stats, recent_positions=recent_positions, db_status=db_status, spx_data=spx_data)
     except Exception as e:
         flash(f'Error loading dashboard: {str(e)}', 'danger')
-        return render_template('dashboard.html', stats={}, recent_positions=[])
+        return render_template('dashboard.html', stats={}, recent_positions=[], spx_data={'price': 'N/A', 'change': 'N/A', 'change_percent': 'N/A'})
 
 # Bot management routes
 @app.route('/bots')
@@ -370,7 +415,8 @@ def trailing_stops():
     try:
         db = SessionLocal()
         try:
-            trailing_stops = db.query(TrailingStopState).all()
+            # Only get trailing stops that have associated bots (filter out orphaned records)
+            trailing_stops = db.query(TrailingStopState).join(Bot).all()
             # Also need bots collection for stats panel in template
             bots = db.query(Bot).all()
             return render_template('trailing_stops/list.html', trailing_stops=trailing_stops, bots=bots)
@@ -379,6 +425,99 @@ def trailing_stops():
     except Exception as e:
         flash(f'Error loading trailing stops: {str(e)}', 'danger')
         return render_template('trailing_stops/list.html', trailing_stops=[], bots=[])
+
+@app.route('/trailing/add', methods=['GET', 'POST'])
+@login_required
+def add_trailing_stops():
+    try:
+        db = SessionLocal()
+        try:
+            if request.method == 'POST':
+                action = request.form.get('action')
+                selected_bots = request.form.getlist('selected_bots')
+                name_filter = request.form.get('name_filter', '').strip()  # Get filter from form
+                
+                if not selected_bots:
+                    flash('Please select at least one bot', 'warning')
+                elif action == 'add':
+                    # Handle bulk trailing stop creation
+                    activation_threshold = request.form.get('activation_threshold', type=float)
+                    trailing_percentage = request.form.get('trailing_percentage', type=float)
+                    is_active = 'is_active' in request.form
+                    
+                    if activation_threshold is None or trailing_percentage is None:
+                        flash('Activation threshold and trailing percentage are required', 'danger')
+                    else:
+                        success_count = 0
+                        error_count = 0
+                        
+                        for bot_id in selected_bots:
+                            try:
+                                ok, msg = upsert_trailing_stop(int(bot_id), activation_threshold, trailing_percentage, is_active=is_active)
+                                if ok:
+                                    success_count += 1
+                                else:
+                                    error_count += 1
+                                    print(f"Failed to add trailing stop for bot {bot_id}: {msg}")
+                            except Exception as e:
+                                error_count += 1
+                                print(f"Error adding trailing stop for bot {bot_id}: {e}")
+                        
+                        if success_count > 0:
+                            flash(f'Successfully added/updated trailing stops for {success_count} bot(s)', 'success')
+                        if error_count > 0:
+                            flash(f'Failed to add trailing stops for {error_count} bot(s)', 'warning')
+                        
+                        # Redirect back with filter to prevent form resubmission
+                        if name_filter:
+                            return redirect(url_for('add_trailing_stops', name_filter=name_filter))
+                        else:
+                            return redirect(url_for('add_trailing_stops'))
+                            
+                elif action == 'remove':
+                    # Handle bulk trailing stop removal
+                    success_count = 0
+                    error_count = 0
+                    
+                    for bot_id in selected_bots:
+                        try:
+                            ok, msg = delete_trailing_stop(int(bot_id))
+                            if ok:
+                                success_count += 1
+                            else:
+                                error_count += 1
+                                print(f"Failed to remove trailing stop for bot {bot_id}: {msg}")
+                        except Exception as e:
+                            error_count += 1
+                            print(f"Error removing trailing stop for bot {bot_id}: {e}")
+                    
+                    if success_count > 0:
+                        flash(f'Successfully removed trailing stops for {success_count} bot(s)', 'success')
+                    if error_count > 0:
+                        flash(f'Failed to remove trailing stops for {error_count} bot(s)', 'warning')
+                    
+                    # Redirect back with filter to prevent form resubmission
+                    if name_filter:
+                        return redirect(url_for('add_trailing_stops', name_filter=name_filter))
+                    else:
+                        return redirect(url_for('add_trailing_stops'))
+            
+            # Get all bots for display
+            name_filter = request.args.get('name_filter', '').strip()
+                    
+            query = db.query(Bot)
+            
+            if name_filter:
+                query = query.filter(Bot.name.ilike(f'%{name_filter}%'))
+            
+            bots = query.order_by(Bot.name).all()
+            
+            return render_template('trailing_stops/add.html', bots=bots, name_filter=name_filter)
+        finally:
+            db.close()
+    except Exception as e:
+        flash(f'Error loading manage trailing stops page: {str(e)}', 'danger')
+        return render_template('trailing_stops/add.html', bots=[], name_filter='')
 
 # API endpoints for AJAX calls
 @app.route('/api/stats')
@@ -409,6 +548,78 @@ def api_bots():
             db.close()
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/spx')
+@login_required
+def api_spx():
+    try:
+        spx_data = get_spx_price()
+        return jsonify(spx_data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# AJAX routes for trailing stop management
+@app.route('/update_trailing_stop', methods=['POST'])
+@login_required
+def update_trailing_stop():
+    try:
+        bot_id = request.form.get('bot_id', type=int)
+        activation_threshold = request.form.get('activation_threshold', type=float)
+        trailing_percentage = request.form.get('trailing_percentage', type=float)
+        
+        if not bot_id or activation_threshold is None or trailing_percentage is None:
+            return jsonify({'success': False, 'message': 'Missing required parameters'})
+        
+        # Get current trailing stop to preserve is_active state
+        db = SessionLocal()
+        try:
+            trailing_stop = db.query(TrailingStopState).filter(TrailingStopState.bot_id == bot_id).first()
+            is_active = trailing_stop.is_active if trailing_stop else True
+            
+            ok, msg = upsert_trailing_stop(bot_id, activation_threshold, trailing_percentage, is_active=is_active)
+            return jsonify({'success': ok, 'message': msg})
+        finally:
+            db.close()
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/remove_trailing_stop', methods=['POST'])
+@login_required
+def remove_trailing_stop():
+    try:
+        bot_id = request.form.get('bot_id', type=int)
+        
+        if not bot_id:
+            return jsonify({'success': False, 'message': 'Missing bot ID'})
+        
+        ok, msg = delete_trailing_stop(bot_id)
+        return jsonify({'success': ok, 'message': msg})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/toggle_trailing_stop', methods=['POST'])
+@login_required
+def toggle_trailing_stop():
+    try:
+        bot_id = request.form.get('bot_id', type=int)
+        is_active = request.form.get('is_active') == 'true'
+        
+        if not bot_id:
+            return jsonify({'success': False, 'message': 'Missing bot ID'})
+        
+        # Get current trailing stop settings
+        db = SessionLocal()
+        try:
+            trailing_stop = db.query(TrailingStopState).filter(TrailingStopState.bot_id == bot_id).first()
+            if not trailing_stop:
+                return jsonify({'success': False, 'message': 'Trailing stop not found'})
+            
+            ok, msg = upsert_trailing_stop(bot_id, trailing_stop.activation_threshold, trailing_stop.trailing_percentage, is_active=is_active)
+            return jsonify({'success': ok, 'message': msg})
+        finally:
+            db.close()
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
 
 # Error handlers
 @app.errorhandler(404)
