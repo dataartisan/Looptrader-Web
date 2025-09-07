@@ -6,7 +6,7 @@ services:
     ports:
       - "3000:5000"
     environment:
-      - DATABASE_URL=postgresql://admin:Mangocar249!@looptrader-pro-postgresdb-1:5432/looptrader
+      - DATABASE_URL=postgresql://${DB_USER:-admin}:${DB_PASSWORD:-Mangocar249!}@postgresdb:5432/looptrader
       - FLASK_DEBUG=false
       - SECRET_KEY=${SECRET_KEY:-production-secret-key-change-this}
       - ADMIN_NAME=${ADMIN_NAME:-Admin}
