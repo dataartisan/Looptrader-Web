@@ -402,6 +402,9 @@ def resume_all_bots():
         count = 0
         for bot in bots:
             bot.paused = False
+            # Set state to SLEEPING when resuming from pause
+            if bot.state.upper() == 'INITIALIZING':
+                bot.state = 'SLEEPING'
             count += 1
         db.commit()
         return count
