@@ -240,6 +240,9 @@ def resume_bot(bot_id):
             bot = db.query(Bot).filter(Bot.id == bot_id).first()
             if bot:
                 bot.paused = False
+                # Set state to SLEEPING when resuming from pause
+                if bot.state.upper() == 'INITIALIZING':
+                    bot.state = 'SLEEPING'
                 db.commit()
                 return jsonify({'success': True, 'message': 'Bot resumed successfully'})
             else:
@@ -410,6 +413,9 @@ def resume_selected():
                     bot = db.query(Bot).filter(Bot.id == bot_id_int).first()
                     if bot and bot.paused:
                         bot.paused = False
+                        # Set state to SLEEPING when resuming from pause
+                        if bot.state.upper() == 'INITIALIZING':
+                            bot.state = 'SLEEPING'
                         count += 1
                 except ValueError:
                     continue  # Skip invalid bot IDs
