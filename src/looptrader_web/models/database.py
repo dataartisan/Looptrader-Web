@@ -24,7 +24,7 @@ if not DATABASE_URL:
 
 # Create engine and session
 engine = create_engine(DATABASE_URL, echo=False)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
 
 # Base class for all models
 Base = declarative_base()
