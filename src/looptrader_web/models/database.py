@@ -325,7 +325,7 @@ def get_bots_by_account():
         # Use eager loading to load all relationships immediately
         bots = (db.query(Bot)
                   .options(
-                      joinedload(Bot.positions).joinedload(Position.account),
+                      joinedload(Bot.positions),
                       joinedload(Bot.trailing_stop_state)
                   )
                   .all())
