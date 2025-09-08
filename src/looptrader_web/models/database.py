@@ -87,6 +87,7 @@ class Bot(Base):
     state = mapped_column(String, nullable=False)
     enabled = mapped_column(Boolean, nullable=False)
     paused = mapped_column(Boolean, default=False)
+    max_positions = mapped_column(Integer, default=1)  # Maximum number of positions allowed
     
     # Relationships
     trailing_stop_state = relationship("TrailingStopState", back_populates="bot", uselist=False)
@@ -162,7 +163,11 @@ class Bot(Base):
     def remaining_position_slots(self):
         """Calculate remaining position slots: max_positions - active_positions_count."""
         active_count = self.active_positions_count  # This now always gets fresh data
-        return max(0, (self.max_positions or 0) - active_count)
+        try:
+            max_pos = getattr(self, 'max_positions', None) or 1  # Default to 1 if column doesn't exist
+        except:
+            max_pos = 1  # Fallback if there's any issue accessing the column
+        return max(0, max_pos - active_count)
 
 class Position(Base):
     """Position model matching LoopTrader Pro"""
