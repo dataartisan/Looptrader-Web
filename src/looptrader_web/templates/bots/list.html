@@ -43,9 +43,6 @@
               <button type="button" class="btn btn-success" onclick="resumeAllBots()">
                 <i class="fas fa-play"></i> Resume All Bots
               </button>
-              <button type="button" class="btn btn-danger" onclick="closeAllPositions()">
-                <i class="fas fa-times-circle"></i> Close All Positions
-              </button>
             </div>
           </div>
           <div class="col-md-6">
@@ -346,21 +343,6 @@ function resumeAllBots() {
             }
         }).fail(function() {
             showToast('error', 'Failed to resume bots');
-        });
-    }
-}
-
-function closeAllPositions() {
-    if (confirm('Are you sure you want to close ALL active positions? This action cannot be undone!')) {
-        $.post('{{ url_for('close_all') }}', function(data) {
-            if (data.success) {
-                showToast('success', `${data.count} positions closed successfully`);
-                setTimeout(() => location.reload(), 1000);
-            } else {
-                showToast('error', data.message || 'Failed to close positions');
-            }
-        }).fail(function() {
-            showToast('error', 'Failed to close positions');
         });
     }
 }
