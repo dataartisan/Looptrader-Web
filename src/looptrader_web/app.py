@@ -161,7 +161,7 @@ def bots():
         # Eager load all relationships to prevent lazy loading errors
         bots_query = (db.query(Bot)
                      .options(
-                         joinedload(Bot.positions).joinedload(Position.account),
+                         joinedload(Bot.positions),
                          joinedload(Bot.trailing_stop_state)
                      ))
         
@@ -253,12 +253,19 @@ def bots():
                                all_active_bots=all_active_bots,
                                all_inactive_bots=all_inactive_bots)
     except Exception as e:
-        return render_template('errors/500.html', error=str(e)), 500
+        flash(f'Error loading bots: {str(e)}', 'danger')
+        return render_template('bots/list.html', 
+                               bots_by_account={}, 
+                               total_bots=0, 
+                               active_bots=0, 
+                               paused_bots=0, 
+                               total_accounts=0, 
+                               current_filter=None,
+                               all_total_bots=0, 
+                               all_active_bots=0, 
+                               all_inactive_bots=0)
     finally:
         db.close()
-        flash(f'Error loading bots: {str(e)}', 'danger')
-        return render_template('bots/list.html', bots_by_account={}, total_bots=0, active_bots=0, paused_bots=0, total_accounts=0, current_filter=None,
-                               all_total_bots=0, all_active_bots=0, all_inactive_bots=0)
 
 @app.route('/bots/<int:bot_id>')
 @login_required
