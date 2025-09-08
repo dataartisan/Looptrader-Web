@@ -753,20 +753,62 @@ def debug_positions():
 
 @app.route('/debug/positions-template')
 def debug_positions_template():
-    """Test the actual template rendering without auth"""
+    """Debug version of positions route without authentication"""
     try:
         db = SessionLocal()
         try:
+            # Get filter parameters
+            account_filter = request.args.get('account')
+            status_filter = request.args.get('status')
+            active_only = request.args.get('active_only')
+            
             query = db.query(Position).order_by(Position.opened_datetime.desc())
+            
+            if account_filter:
+                query = query.filter(Position.account_id == account_filter)
+            
+            if status_filter == 'active' or active_only == 'true':
+                query = query.filter(Position.active == True)
+            elif status_filter == 'closed':
+                query = query.filter(Position.active == False)
+            
             positions = query.all()
             accounts = db.query(BrokerageAccount).all()
             
-            # Try to render the template
-            return render_template('positions/list.html', positions=positions, accounts=accounts, active_only=False)
+            # Debug information
+            debug_info = {
+                'positions_count': len(positions),
+                'accounts_count': len(accounts),
+                'filters': {
+                    'account_filter': account_filter,
+                    'status_filter': status_filter,
+                    'active_only': active_only
+                },
+                'first_position': {
+                    'id': positions[0].id if positions else None,
+                    'active': positions[0].active if positions else None,
+                    'status_text': getattr(positions[0], 'status_text', 'unknown') if positions else None,
+                    'status_badge_class': getattr(positions[0], 'status_badge_class', 'secondary') if positions else None,
+                } if positions else None
+            }
+            
+            # Test template rendering with debug
+            try:
+                return render_template('positions/list.html', 
+                                     positions=positions, 
+                                     accounts=accounts, 
+                                     active_only=(active_only == 'true'),
+                                     debug_info=debug_info)
+            except Exception as template_error:
+                return jsonify({
+                    'template_error': str(template_error),
+                    'debug_info': debug_info
+                }), 500
+                
         finally:
             db.close()
     except Exception as e:
-        return f"Template error: {str(e)}", 500
+        return jsonify({'error': str(e), 'error_type': type(e).__name__}), 500
 
 @app.route('/debug/positions-data')
 def debug_positions_data():
