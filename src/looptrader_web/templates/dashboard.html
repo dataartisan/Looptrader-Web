@@ -38,7 +38,12 @@
                     {% else %}
                       <i class="fas fa-arrow-down"></i> ${{ spx_data.change }} ({{ spx_data.change_percent }}%)
                     {% endif %}
-                    <br><small>{{ spx_data.market_state }} • {{ spx_data.timestamp }}</small>
+                    <br><small>
+                      {% if spx_data.market_state != 'UNKNOWN' %}
+                        {{ spx_data.market_state }} • 
+                      {% endif %}
+                      {{ spx_data.timestamp }}
+                    </small>
                   {% else %}
                     <i class="fas fa-exclamation-triangle"></i> Data unavailable
                   {% endif %}
@@ -125,49 +130,6 @@
         </div>
         <!-- /.stats row -->
         
-        <!-- Quick Actions -->
-        <div class="row mt-4">
-          <div class="col-12">
-            <h5>Quick Actions</h5>
-          </div>
-          <div class="col-6 col-md-3">
-            <a href="{{ url_for('bots') }}" class="btn btn-app btn-primary">
-              <i class="fas fa-robot"></i> View Bots
-            </a>
-          </div>
-          <div class="col-6 col-md-3">
-            <a href="{{ url_for('accounts') }}" class="btn btn-app btn-info">
-              <i class="fas fa-user"></i> Accounts
-            </a>
-          </div>
-          <div class="col-6 col-md-3">
-            <a href="{{ url_for('positions') }}" class="btn btn-app btn-warning">
-              <i class="fas fa-chart-line"></i> Positions
-            </a>
-          </div>
-          <div class="col-6 col-md-3">
-            <form method="post" action="{{ url_for('pause_all') }}" style="display: inline;">
-              <button type="submit" class="btn btn-app btn-danger" onclick="return confirm('Pause all bots?')">
-                <i class="fas fa-pause"></i> Pause All
-              </button>
-            </form>
-          </div>
-          <div class="col-6 col-md-3">
-            <form method="post" action="{{ url_for('resume_all') }}" style="display: inline;">
-              <button type="submit" class="btn btn-app btn-success" onclick="return confirm('Resume all bots?')">
-                <i class="fas fa-play"></i> Resume All
-              </button>
-            </form>
-          </div>
-          <div class="col-6 col-md-3">
-            <form method="post" action="{{ url_for('close_all') }}" style="display: inline;">
-              <button type="submit" class="btn btn-app btn-warning" onclick="return confirm('Close ALL active positions? This cannot be undone!')">
-                <i class="fas fa-times-circle"></i> Close All Positions
-              </button>
-            </form>
-          </div>
-        </div>
-        <!-- /.quick actions -->
       </div><!-- /.card-body -->
     </div>
     <!-- /.card -->

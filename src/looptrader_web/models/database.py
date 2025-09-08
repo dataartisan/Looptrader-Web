@@ -197,17 +197,14 @@ class Position(Base):
     def duration_text(self):
         if self.active:
             delta = datetime.utcnow() - self.opened_datetime
-            days = delta.days
-            hours = delta.seconds // 3600
-            if days > 0:
-                return f"{days}d {hours}h"
-            else:
-                return f"{hours}h"
+            total_minutes = int(delta.total_seconds() // 60)
+            return f"{total_minutes} min"
         else:
             # Only calculate if closed_datetime is not None
             if self.closed_datetime:
                 delta = self.closed_datetime - self.opened_datetime
-                return f"{delta.days}d {delta.seconds // 3600}h"
+                total_minutes = int(delta.total_seconds() // 60)
+                return f"{total_minutes} min"
             else:
                 return "Unknown"
     
