@@ -751,6 +751,71 @@ def debug_positions():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/debug/bots-template')
+def debug_bots_template():
+    """Debug version of bots route without authentication"""
+    try:
+        bots_by_account = get_bots_by_account()
+        # Unfiltered counts (before any filter)
+        all_total_bots = sum(len(blist) for blist in bots_by_account.values())
+        all_active_bots = sum(1 for blist in bots_by_account.values() for b in blist if b.enabled and not b.paused)
+        all_inactive_bots = sum(1 for blist in bots_by_account.values() for b in blist if (not b.enabled) or b.paused)
+
+        flt = request.args.get('filter')  # 'active' | 'inactive' | None
+        if flt in ('active', 'inactive'):
+            filtered = {}
+            for account, blist in bots_by_account.items():
+                if flt == 'active':
+                    subset = [b for b in blist if b.enabled and not b.paused]
+                else:  # inactive
+                    subset = [b for b in blist if (not b.enabled) or b.paused]
+                if subset:
+                    filtered[account] = subset
+            bots_by_account = filtered
+
+        total_bots = sum(len(blist) for blist in bots_by_account.values())
+        active_bots = sum(1 for blist in bots_by_account.values() for b in blist if b.enabled and not b.paused)
+        paused_bots = sum(1 for blist in bots_by_account.values() for b in blist if b.paused)
+
+        # Debug information
+        debug_info = {
+            'raw_bots_by_account_count': len(bots_by_account),
+            'all_total_bots': all_total_bots,
+            'all_active_bots': all_active_bots,
+            'all_inactive_bots': all_inactive_bots,
+            'filter_applied': flt,
+            'filtered_total_bots': total_bots,
+            'filtered_active_bots': active_bots,
+            'filtered_paused_bots': paused_bots,
+            'accounts': list(bots_by_account.keys()),
+            'account_names': [acc.name if hasattr(acc, 'name') else str(acc) for acc in bots_by_account.keys()]
+        }
+
+        try:
+            return render_template('bots/list.html',
+                                   bots_by_account=bots_by_account,
+                                   total_bots=total_bots,
+                                   active_bots=active_bots,
+                                   paused_bots=paused_bots,
+                                   total_accounts=len(bots_by_account),
+                                   current_filter=flt,
+                                   all_total_bots=all_total_bots,
+                                   all_active_bots=all_active_bots,
+                                   all_inactive_bots=all_inactive_bots,
+                                   debug_info=debug_info)
+        except Exception as template_error:
+            return jsonify({
+                'template_error': str(template_error),
+                'template_error_type': type(template_error).__name__,
+                'debug_info': debug_info
+            }), 500
+
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'error_type': type(e).__name__
+        }), 500
+
 @app.route('/debug/bots-data')
 def debug_bots_data():
     """Debug route to check bots data without authentication"""
