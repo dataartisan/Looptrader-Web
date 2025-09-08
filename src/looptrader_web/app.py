@@ -751,6 +751,57 @@ def debug_positions():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/debug/test-lazy-loading')
+def test_lazy_loading():
+    """Test if lazy loading error is fixed"""
+    try:
+        bots_by_account = get_bots_by_account()
+        
+        test_results = []
+        for account, bot_list in bots_by_account.items():
+            for bot in bot_list[:1]:  # Test just first bot per account
+                try:
+                    # Test all the properties that were causing issues
+                    result = {
+                        'bot_id': bot.id,
+                        'bot_name': bot.name,
+                        'total_positions': bot.total_positions,
+                        'active_positions_count': bot.active_positions_count,
+                        'remaining_position_slots': bot.remaining_position_slots,
+                        'account_name': bot.account_name,
+                        'has_trailing_stop': bot.has_trailing_stop,
+                        'test_status': 'SUCCESS'
+                    }
+                    
+                    # Test trailing stop state if exists
+                    if bot.trailing_stop_state:
+                        result['trailing_stop_status'] = bot.trailing_stop_state.status_text
+                    
+                    test_results.append(result)
+                    
+                except Exception as e:
+                    test_results.append({
+                        'bot_id': bot.id,
+                        'error': str(e),
+                        'error_type': type(e).__name__,
+                        'test_status': 'FAILED'
+                    })
+        
+        return jsonify({
+            'test_status': 'COMPLETED',
+            'total_bots_tested': len(test_results),
+            'passed': len([r for r in test_results if r.get('test_status') == 'SUCCESS']),
+            'failed': len([r for r in test_results if r.get('test_status') == 'FAILED']),
+            'results': test_results
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'test_status': 'ERROR',
+            'error': str(e),
+            'error_type': type(e).__name__
+        }), 500
+
 @app.route('/health')
 def health_check():
     try:
