@@ -129,15 +129,25 @@ class Bot(Base):
     
     @property
     def active_positions_count(self):
+        # Use cached value if available (from get_bots_by_account)
+        if hasattr(self, '_cached_active_positions'):
+            return self._cached_active_positions
         return len([p for p in self.positions if p.active])
 
     @property
     def total_positions(self):
+        # Use cached value if available (from get_bots_by_account)
+        if hasattr(self, '_cached_total_positions'):
+            return self._cached_total_positions
         return len(self.positions)
     
     @property
     def account_name(self):
         """Get account name for this bot"""
+        # Use cached value if available (from get_bots_by_account)
+        if hasattr(self, '_cached_account_name'):
+            return self._cached_account_name
+            
         if self.positions:
             # Get account from most recent position
             recent_position = max(self.positions, key=lambda p: p.opened_datetime)
@@ -152,6 +162,10 @@ class Bot(Base):
     @property
     def account_id_value(self):
         """Get account ID for this bot"""
+        # Use cached value if available (from get_bots_by_account)
+        if hasattr(self, '_cached_account_id'):
+            return self._cached_account_id
+            
         if self.positions:
             recent_position = max(self.positions, key=lambda p: p.opened_datetime)
             return recent_position.account_id
@@ -335,10 +349,38 @@ def get_bots_by_account():
     """
     db = SessionLocal()
     try:
+        # Use eager loading to prevent lazy loading issues
         bots = (db.query(Bot)
                   .options(joinedload(Bot.positions), joinedload(Bot.trailing_stop_state))
                   .all())
         accounts_index = {a.account_id: a for a in db.query(BrokerageAccount).all()}
+
+        # Force evaluation of all relationships while session is active
+        for bot in bots:
+            # Access positions to ensure they're loaded
+            _ = list(bot.positions)
+            # Access trailing stop state if it exists
+            if bot.trailing_stop_state:
+                _ = bot.trailing_stop_state.id
+            
+            # Pre-compute account information to avoid lazy loading later
+            if hasattr(bot, '_cached_account_info'):
+                continue  # Already computed
+            
+            bot._cached_total_positions = len(bot.positions)
+            bot._cached_active_positions = len([p for p in bot.positions if p.active])
+            
+            # Cache account name to avoid new session creation in property
+            if bot.positions:
+                recent_position = max(bot.positions, key=lambda p: p.opened_datetime)
+                account = accounts_index.get(recent_position.account_id)
+                bot._cached_account_name = account.name if account else "Unknown"
+                bot._cached_account_id = recent_position.account_id
+            else:
+                bot._cached_account_name = "No Account"
+                bot._cached_account_id = None
+            
+            bot._cached_account_info = True
 
         class NoAccount:
             def __init__(self):
