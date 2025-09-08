@@ -939,8 +939,6 @@ def debug_bots_template():
 def debug_simple_bots():
     """Simple debug route that doesn't require authentication"""
     try:
-        from src.looptrader_web.models.database import get_bots_by_account
-        
         bots_by_account = get_bots_by_account()
         
         result = {
@@ -966,6 +964,95 @@ def debug_simple_bots():
         return jsonify({
             "error": str(e),
             "error_type": type(e).__name__
+        }), 500
+
+@app.route('/debug/bots-page-simulation')
+def debug_bots_page_simulation():
+    """Simulate the exact logic of the bots page to identify the error"""
+    try:
+        # Simulate the exact bots() route logic
+        bots_by_account = get_bots_by_account()
+        
+        # Unfiltered counts (before any filter)
+        all_total_bots = sum(len(blist) for blist in bots_by_account.values())
+        all_active_bots = sum(1 for blist in bots_by_account.values() for b in blist if b.enabled and not b.paused)
+        all_inactive_bots = sum(1 for blist in bots_by_account.values() for b in blist if (not b.enabled) or b.paused)
+
+        flt = request.args.get('filter')  # 'active' | 'inactive' | None
+        
+        original_accounts = len(bots_by_account)
+        
+        if flt in ('active', 'inactive'):
+            filtered = {}
+            for account, blist in bots_by_account.items():
+                if flt == 'active':
+                    subset = [b for b in blist if b.enabled and not b.paused]
+                else:  # inactive
+                    subset = [b for b in blist if (not b.enabled) or b.paused]
+                if subset:
+                    filtered[account] = subset
+            bots_by_account = filtered
+
+        total_bots = sum(len(blist) for blist in bots_by_account.values())
+        active_bots = sum(1 for blist in bots_by_account.values() for b in blist if b.enabled and not b.paused)
+        paused_bots = sum(1 for blist in bots_by_account.values() for b in blist if b.paused)
+
+        # Test template rendering logic
+        template_data = {
+            "filter_applied": flt,
+            "original_accounts": original_accounts,
+            "filtered_accounts": len(bots_by_account),
+            "all_total_bots": all_total_bots,
+            "all_active_bots": all_active_bots,
+            "all_inactive_bots": all_inactive_bots,
+            "total_bots": total_bots,
+            "active_bots": active_bots,
+            "paused_bots": paused_bots,
+            "total_accounts": len(bots_by_account),
+            "will_show_no_bots_message": len(bots_by_account) == 0,
+            "accounts": []
+        }
+        
+        # Test accessing bot properties that might cause template errors
+        for account, bot_list in bots_by_account.items():
+            account_info = {
+                "account_name": getattr(account, 'name', 'Unknown'),
+                "account_id": getattr(account, 'account_id', 'Unknown'),
+                "bot_count": len(bot_list),
+                "sample_bots": []
+            }
+            
+            # Test first few bots to see if any properties cause issues
+            for bot in bot_list[:2]:
+                try:
+                    bot_info = {
+                        "id": bot.id,
+                        "name": getattr(bot, 'name', 'Unknown'),
+                        "enabled": bot.enabled,
+                        "paused": bot.paused,
+                        "total_positions": bot.total_positions,  # This uses cached values
+                        "active_positions_count": bot.active_positions_count,  # This uses cached values
+                        "remaining_position_slots": bot.remaining_position_slots,  # This might cause issues
+                        "account_name": bot.account_name  # This uses cached values
+                    }
+                    account_info["sample_bots"].append(bot_info)
+                except Exception as bot_error:
+                    account_info["sample_bots"].append({
+                        "id": getattr(bot, 'id', 'unknown'),
+                        "error": str(bot_error),
+                        "error_type": type(bot_error).__name__
+                    })
+            
+            template_data["accounts"].append(account_info)
+
+        return jsonify(template_data)
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc()
         }), 500
 
 @app.route('/health')
