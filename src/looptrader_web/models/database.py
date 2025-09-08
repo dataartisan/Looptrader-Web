@@ -357,30 +357,34 @@ def get_bots_by_account():
                   .all())
         accounts_index = {a.account_id: a for a in db.query(BrokerageAccount).all()}
 
-        # Force evaluation of all relationships while session is active
+        # Force complete loading of all relationships and cache computed values
         for bot in bots:
-            # Access positions to ensure they're loaded
-            _ = list(bot.positions)
-            # Access trailing stop state if it exists
+            # Force load all positions and related data
+            positions_list = list(bot.positions)  # Force loading
+            
+            # Cache all computed values to avoid lazy loading later
+            bot._cached_total_positions = len(positions_list)
+            bot._cached_active_positions = len([p for p in positions_list if p.active])
+            
+            # Cache trailing stop state if it exists
             if bot.trailing_stop_state:
+                # Force load trailing stop state properties
                 _ = bot.trailing_stop_state.id
-                # Cache trailing stop state properties to avoid lazy loading
-                bot._cached_trailing_stop_status_badge_class = getattr(bot.trailing_stop_state, 'status_badge_class', 'secondary')
-                bot._cached_trailing_stop_status_text = getattr(bot.trailing_stop_state, 'status_text', 'Unknown')
+                bot._cached_has_trailing_stop = True
+                try:
+                    bot._cached_trailing_stop_status_badge_class = getattr(bot.trailing_stop_state, 'status_badge_class', 'secondary')
+                    bot._cached_trailing_stop_status_text = getattr(bot.trailing_stop_state, 'status_text', 'Unknown')
+                except:
+                    bot._cached_trailing_stop_status_badge_class = 'secondary'
+                    bot._cached_trailing_stop_status_text = 'Unknown'
             else:
+                bot._cached_has_trailing_stop = False
                 bot._cached_trailing_stop_status_badge_class = 'secondary'
                 bot._cached_trailing_stop_status_text = 'No Trailing Stop'
             
-            # Pre-compute account information to avoid lazy loading later
-            if hasattr(bot, '_cached_account_info'):
-                continue  # Already computed
-            
-            bot._cached_total_positions = len(bot.positions)
-            bot._cached_active_positions = len([p for p in bot.positions if p.active])
-            
-            # Cache account name to avoid new session creation in property
-            if bot.positions:
-                recent_position = max(bot.positions, key=lambda p: p.opened_datetime)
+            # Cache account information to avoid new session creation in property
+            if positions_list:
+                recent_position = max(positions_list, key=lambda p: p.opened_datetime)
                 account = accounts_index.get(recent_position.account_id)
                 bot._cached_account_name = account.name if account else "Unknown"
                 bot._cached_account_id = recent_position.account_id
@@ -388,7 +392,21 @@ def get_bots_by_account():
                 bot._cached_account_name = "No Account"
                 bot._cached_account_id = None
             
+            # Force loading of any other attributes that might be accessed
+            try:
+                _ = bot.enabled
+                _ = bot.paused
+                _ = bot.name
+                _ = bot.id
+            except:
+                pass
+            
+            # Mark as cached
             bot._cached_account_info = True
+
+        # Use db.expunge_all() to detach all objects from session
+        # This prevents any further lazy loading attempts
+        db.expunge_all()
 
         class NoAccount:
             def __init__(self):
@@ -409,20 +427,19 @@ def get_bots_by_account():
         bots_by_account: dict = {}
 
         for bot in bots:
-            if bot.positions:
-                # Collect distinct account_ids from ALL positions
-                account_ids = {p.account_id for p in bot.positions if p.account_id is not None}
-                if not account_ids:
-                    bots_by_account.setdefault(no_account_placeholder, []).append(bot)
+            # Use cached positions data instead of accessing the relationship
+            if hasattr(bot, '_cached_total_positions') and bot._cached_total_positions > 0:
+                # Bot has positions - get account info from cache
+                if hasattr(bot, '_cached_account_id') and bot._cached_account_id is not None:
+                    account = accounts_index.get(bot._cached_account_id)
+                    if account is None:
+                        bots_by_account.setdefault(no_account_placeholder, []).append(bot)
+                    else:
+                        bots_by_account.setdefault(account, []).append(bot)
                 else:
-                    for aid in account_ids:
-                        account = accounts_index.get(aid)
-                        if account is None:
-                            # Fallback to No Account if account vanished
-                            bots_by_account.setdefault(no_account_placeholder, []).append(bot)
-                        else:
-                            bots_by_account.setdefault(account, []).append(bot)
+                    bots_by_account.setdefault(no_account_placeholder, []).append(bot)
             else:
+                # Bot has no positions
                 bots_by_account.setdefault(no_account_placeholder, []).append(bot)
 
         # Deduplicate bots per account (if any anomaly added twice) then sort by id

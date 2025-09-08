@@ -751,6 +751,77 @@ def debug_positions():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/debug/bots-error')
+def debug_bots_error():
+    """Debug the exact error in the bots route"""
+    import traceback
+    try:
+        # Step 1: Test get_bots_by_account function
+        print("Step 1: Testing get_bots_by_account...")
+        bots_by_account = get_bots_by_account()
+        print(f"Got {len(bots_by_account)} accounts with bots")
+        
+        # Step 2: Test counting operations
+        print("Step 2: Testing count operations...")
+        all_total_bots = sum(len(blist) for blist in bots_by_account.values())
+        print(f"Total bots: {all_total_bots}")
+        
+        # Step 3: Test bot property access
+        print("Step 3: Testing bot property access...")
+        for i, (account, bot_list) in enumerate(bots_by_account.items()):
+            print(f"Account {i}: {account}")
+            for j, bot in enumerate(bot_list[:2]):  # Test first 2 bots
+                try:
+                    print(f"  Bot {j}: ID={bot.id}, name={bot.name}")
+                    print(f"    enabled={bot.enabled}, paused={bot.paused}")
+                    print(f"    Testing positions access...")
+                    total_pos = bot.total_positions  # This might fail
+                    print(f"    total_positions={total_pos}")
+                    active_pos = bot.active_positions_count  # This might fail
+                    print(f"    active_positions_count={active_pos}")
+                except Exception as bot_error:
+                    print(f"    ERROR accessing bot properties: {bot_error}")
+                    print(f"    Error type: {type(bot_error).__name__}")
+                    print(f"    Full traceback: {traceback.format_exc()}")
+                    return jsonify({
+                        'error_location': 'bot_property_access',
+                        'bot_id': bot.id,
+                        'error': str(bot_error),
+                        'error_type': type(bot_error).__name__,
+                        'traceback': traceback.format_exc()
+                    }), 500
+        
+        # Step 4: Test list comprehension operations (like in the original route)
+        print("Step 4: Testing list comprehension operations...")
+        try:
+            all_active_bots = sum(1 for blist in bots_by_account.values() for b in blist if b.enabled and not b.paused)
+            print(f"Active bots count: {all_active_bots}")
+        except Exception as comp_error:
+            print(f"ERROR in list comprehension: {comp_error}")
+            return jsonify({
+                'error_location': 'list_comprehension',
+                'error': str(comp_error),
+                'error_type': type(comp_error).__name__,
+                'traceback': traceback.format_exc()
+            }), 500
+        
+        return jsonify({
+            'status': 'SUCCESS',
+            'message': 'All bot operations completed without lazy loading errors',
+            'total_bots': all_total_bots,
+            'active_bots': all_active_bots
+        })
+        
+    except Exception as e:
+        print(f"ERROR in debug route: {e}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        return jsonify({
+            'error_location': 'general',
+            'error': str(e),
+            'error_type': type(e).__name__,
+            'traceback': traceback.format_exc()
+        }), 500
+
 @app.route('/health')
 def health_check():
     try:
