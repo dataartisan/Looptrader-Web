@@ -81,7 +81,7 @@
       </h3>
       <div class="card-tools">
         <span class="badge badge-info mr-2">{{ bots|length }} bots</span>
-        <span class="badge badge-success mr-2">{{ account.active_positions }} active positions</span>
+        <span class="badge badge-success mr-2">{{ account._computed_active_positions }} active positions</span>
         <button type="button" class="btn btn-tool" data-card-widget="collapse">
           <i class="fas {% if total_accounts > 3 %}fa-plus{% else %}fa-minus{% endif %}"></i>
         </button>

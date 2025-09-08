@@ -187,9 +187,7 @@ def bots():
                 self.id = -1
                 self.name = "No Account"
                 self.account_id = -1
-            @property
-            def active_positions(self):
-                return 0
+                self.active_positions = 0  # Pre-computed value
 
         no_account_placeholder = NoAccount()
         bots_by_account = {}
@@ -209,6 +207,13 @@ def bots():
                             bots_by_account.setdefault(account, []).append(bot)
             else:
                 bots_by_account.setdefault(no_account_placeholder, []).append(bot)
+
+        # Pre-compute account active_positions while session is still open
+        for account in bots_by_account.keys():
+            if hasattr(account, 'positions'):  # Real account, not NoAccount
+                # Compute and store as a simple attribute (not property)
+                account._computed_active_positions = len([p for p in account.positions if p.active])
+            # else: NoAccount already has active_positions = 0
 
         # Deduplicate and sort
         for acct, bot_list in list(bots_by_account.items()):
