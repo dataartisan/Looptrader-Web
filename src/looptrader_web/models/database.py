@@ -376,11 +376,7 @@ def get_bots_by_account():
         return bots_by_account
     finally:
         db.close()
-            bots_by_account[acct] = sorted(unique.values(), key=lambda b: b.id)
 
-        return bots_by_account
-    finally:
-        db.close()
 
 def pause_all_bots():
     """Pause all enabled bots"""
