@@ -53,16 +53,12 @@ class BrokerageAccount(Base):
     
     @property
     def total_positions(self):
-        # Use cached value if available to prevent lazy loading
-        if hasattr(self, '_cached_total_positions'):
-            return self._cached_total_positions
+        # Always get fresh data from the relationship 
         return len(self.positions) if self.positions else 0
     
     @property
     def active_positions(self):
-        # Use cached value if available to prevent lazy loading
-        if hasattr(self, '_cached_active_positions'):
-            return self._cached_active_positions
+        # Always get fresh data from the relationship
         return len([p for p in self.positions if p.active]) if self.positions else 0
     
     @property
@@ -135,69 +131,38 @@ class Bot(Base):
     
     @property
     def active_positions_count(self):
-        # Use cached value if available (from get_bots_by_account)
-        if hasattr(self, '_cached_active_positions'):
-            return self._cached_active_positions
+        # Always get fresh data from the relationship
         return len([p for p in self.positions if p.active])
 
     @property
     def total_positions(self):
-        # Use cached value if available (from get_bots_by_account)
-        if hasattr(self, '_cached_total_positions'):
-            return self._cached_total_positions
+        # Always get fresh data from the relationship 
         return len(self.positions)
     
     @property
     def account_name(self):
-        """Get account name for this bot"""
-        # Use cached value if available (from get_bots_by_account)
-        if hasattr(self, '_cached_account_name'):
-            return self._cached_account_name
-            
-        if self.positions:
-            # Get account from most recent position
-            recent_position = max(self.positions, key=lambda p: p.opened_datetime)
+        """Return the account name for the most recent position."""
+        if not self.positions:
+            return "No Account"
+        
+        # Get the most recent position
+        recent_position = max(self.positions, key=lambda p: p.opened_datetime)
+        
+        # Get account name with fresh session
+        if recent_position.account_id:
             db = SessionLocal()
             try:
-                account = db.query(BrokerageAccount).filter(BrokerageAccount.account_id == recent_position.account_id).first()
+                account = db.query(BrokerageAccount).filter_by(account_id=recent_position.account_id).first()
                 return account.name if account else "Unknown"
             finally:
                 db.close()
-        return "No Account"
-    
-    @property
-    def account_id_value(self):
-        """Get account ID for this bot"""
-        # Use cached value if available (from get_bots_by_account)
-        if hasattr(self, '_cached_account_id'):
-            return self._cached_account_id
-            
-        if self.positions:
-            recent_position = max(self.positions, key=lambda p: p.opened_datetime)
-            return recent_position.account_id
-        return None
-
-    # --- Derived capacity helpers (no schema change) ---
-    @property
-    def planned_position_capacity(self) -> int:
-        """Return configured max positions this bot is expected to open.
-
-        Uses environment variable BOT_DEFAULT_MAX_POSITIONS if present (int),
-        else falls back to 1. This avoids schema migration while exposing
-        planned capacity to the UI.
-        """
-        try:
-            return int(os.getenv('BOT_DEFAULT_MAX_POSITIONS', '1'))
-        except ValueError:
-            return 1
+        return "Unknown"
 
     @property
-    def remaining_position_slots(self) -> int:
-        """Remaining open position slots based on active positions."""
-        # Use cached value if available to avoid lazy loading
-        active_count = self.active_positions_count  # This now uses cached value if available
-        remain = self.planned_position_capacity - active_count
-        return remain if remain > 0 else 0
+    def remaining_position_slots(self):
+        """Calculate remaining position slots: max_positions - active_positions_count."""
+        active_count = self.active_positions_count  # This now always gets fresh data
+        return max(0, (self.max_positions or 0) - active_count)
 
 class Position(Base):
     """Position model matching LoopTrader Pro"""
@@ -357,82 +322,27 @@ def get_bots_by_account():
     """
     db = SessionLocal()
     try:
-        # Use eager loading to prevent lazy loading issues
+        # Use eager loading to load all relationships immediately
         bots = (db.query(Bot)
-                  .options(joinedload(Bot.positions), joinedload(Bot.trailing_stop_state))
+                  .options(
+                      joinedload(Bot.positions).joinedload(Position.account),
+                      joinedload(Bot.trailing_stop_state)
+                  )
                   .all())
-        accounts_index = {a.account_id: a for a in db.query(BrokerageAccount).all()}
-
-        # Also pre-load account position data to prevent lazy loading in template
-        for account in accounts_index.values():
-            # Force load positions for accounts
-            account_positions = list(account.positions)
-            # Cache the computed values to prevent lazy loading
-            account._cached_total_positions = len(account_positions)
-            account._cached_active_positions = len([p for p in account_positions if p.active])
-
-        # Force complete loading of all relationships and cache computed values
-        for bot in bots:
-            # Force load all positions and related data
-            positions_list = list(bot.positions)  # Force loading
-            
-            # Cache all computed values to avoid lazy loading later
-            bot._cached_total_positions = len(positions_list)
-            bot._cached_active_positions = len([p for p in positions_list if p.active])
-            
-            # Cache trailing stop state if it exists
-            if bot.trailing_stop_state:
-                # Force load trailing stop state properties
-                _ = bot.trailing_stop_state.id
-                bot._cached_has_trailing_stop = True
-                try:
-                    bot._cached_trailing_stop_status_badge_class = getattr(bot.trailing_stop_state, 'status_badge_class', 'secondary')
-                    bot._cached_trailing_stop_status_text = getattr(bot.trailing_stop_state, 'status_text', 'Unknown')
-                except:
-                    bot._cached_trailing_stop_status_badge_class = 'secondary'
-                    bot._cached_trailing_stop_status_text = 'Unknown'
-            else:
-                bot._cached_has_trailing_stop = False
-                bot._cached_trailing_stop_status_badge_class = 'secondary'
-                bot._cached_trailing_stop_status_text = 'No Trailing Stop'
-            
-            # Cache account information to avoid new session creation in property
-            if positions_list:
-                recent_position = max(positions_list, key=lambda p: p.opened_datetime)
-                account = accounts_index.get(recent_position.account_id)
-                bot._cached_account_name = account.name if account else "Unknown"
-                bot._cached_account_id = recent_position.account_id
-            else:
-                bot._cached_account_name = "No Account"
-                bot._cached_account_id = None
-            
-            # Force loading of any other attributes that might be accessed
-            try:
-                _ = bot.enabled
-                _ = bot.paused
-                _ = bot.name
-                _ = bot.id
-            except:
-                pass
-            
-            # Mark as cached
-            bot._cached_account_info = True
-
-        # Use db.expunge_all() to detach all objects from session
-        # This prevents any further lazy loading attempts
-        db.expunge_all()
+        
+        # Also eager load accounts with their positions
+        accounts = (db.query(BrokerageAccount)
+                   .options(joinedload(BrokerageAccount.positions))
+                   .all())
+        accounts_index = {a.account_id: a for a in accounts}
 
         class NoAccount:
             def __init__(self):
                 self.id = -1
                 self.name = "No Account"
                 self.account_id = -1
-                self.positions = []
             def __repr__(self):
                 return "<NoAccount>"
-            @property
-            def total_positions(self):
-                return 0
             @property
             def active_positions(self):
                 return 0
@@ -441,24 +351,31 @@ def get_bots_by_account():
         bots_by_account: dict = {}
 
         for bot in bots:
-            # Use cached positions data instead of accessing the relationship
-            if hasattr(bot, '_cached_total_positions') and bot._cached_total_positions > 0:
-                # Bot has positions - get account info from cache
-                if hasattr(bot, '_cached_account_id') and bot._cached_account_id is not None:
-                    account = accounts_index.get(bot._cached_account_id)
-                    if account is None:
-                        bots_by_account.setdefault(no_account_placeholder, []).append(bot)
-                    else:
-                        bots_by_account.setdefault(account, []).append(bot)
-                else:
+            if bot.positions:
+                # Collect distinct account_ids from ALL positions
+                account_ids = {p.account_id for p in bot.positions if p.account_id is not None}
+                if not account_ids:
                     bots_by_account.setdefault(no_account_placeholder, []).append(bot)
+                else:
+                    for aid in account_ids:
+                        account = accounts_index.get(aid)
+                        if account is None:
+                            # Fallback to No Account if account vanished
+                            bots_by_account.setdefault(no_account_placeholder, []).append(bot)
+                        else:
+                            bots_by_account.setdefault(account, []).append(bot)
             else:
-                # Bot has no positions
                 bots_by_account.setdefault(no_account_placeholder, []).append(bot)
 
         # Deduplicate bots per account (if any anomaly added twice) then sort by id
         for acct, bot_list in list(bots_by_account.items()):
             unique = {b.id: b for b in bot_list}
+            sorted_bots = sorted(unique.values(), key=lambda b: b.id)
+            bots_by_account[acct] = sorted_bots
+
+        return bots_by_account
+    finally:
+        db.close()
             bots_by_account[acct] = sorted(unique.values(), key=lambda b: b.id)
 
         return bots_by_account

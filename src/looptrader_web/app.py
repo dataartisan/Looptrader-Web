@@ -19,6 +19,8 @@ from models.database import (
     pause_all_bots, resume_all_bots, close_all_positions, close_position_by_bot,
     SessionLocal, test_connection, update_bot, upsert_trailing_stop, delete_trailing_stop
 )
+from sqlalchemy.orm import joinedload
+from sqlalchemy import text
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -154,9 +156,67 @@ def dashboard():
 @app.route('/bots')
 @login_required
 def bots():
+    db = SessionLocal()
     try:
-        bots_by_account = get_bots_by_account()
-        # Unfiltered counts (before any filter)
+        # Eager load all relationships to prevent lazy loading errors
+        bots_query = (db.query(Bot)
+                     .options(
+                         joinedload(Bot.positions).joinedload(Position.account),
+                         joinedload(Bot.trailing_stop_state)
+                     ))
+        
+        accounts_query = (db.query(BrokerageAccount)
+                         .options(joinedload(BrokerageAccount.positions)))
+        
+        bots = bots_query.all()
+        accounts = accounts_query.all()
+        accounts_index = {a.account_id: a for a in accounts}
+        
+        # Force evaluate all relationships while session is active
+        for bot in bots:
+            _ = list(bot.positions)  # Force loading
+            if bot.trailing_stop_state:
+                _ = bot.trailing_stop_state.id
+        
+        for account in accounts:
+            _ = list(account.positions)  # Force loading
+        
+        # Build bots_by_account structure
+        class NoAccount:
+            def __init__(self):
+                self.id = -1
+                self.name = "No Account"
+                self.account_id = -1
+            @property
+            def active_positions(self):
+                return 0
+
+        no_account_placeholder = NoAccount()
+        bots_by_account = {}
+
+        for bot in bots:
+            if bot.positions:
+                # Collect distinct account_ids from ALL positions
+                account_ids = {p.account_id for p in bot.positions if p.account_id is not None}
+                if not account_ids:
+                    bots_by_account.setdefault(no_account_placeholder, []).append(bot)
+                else:
+                    for aid in account_ids:
+                        account = accounts_index.get(aid)
+                        if account is None:
+                            bots_by_account.setdefault(no_account_placeholder, []).append(bot)
+                        else:
+                            bots_by_account.setdefault(account, []).append(bot)
+            else:
+                bots_by_account.setdefault(no_account_placeholder, []).append(bot)
+
+        # Deduplicate and sort
+        for acct, bot_list in list(bots_by_account.items()):
+            unique = {b.id: b for b in bot_list}
+            sorted_bots = sorted(unique.values(), key=lambda b: b.id)
+            bots_by_account[acct] = sorted_bots
+
+        # Unfiltered counts (before any filter) - compute while session is active
         all_total_bots = sum(len(blist) for blist in bots_by_account.values())
         all_active_bots = sum(1 for blist in bots_by_account.values() for b in blist if b.enabled and not b.paused)
         all_inactive_bots = sum(1 for blist in bots_by_account.values() for b in blist if (not b.enabled) or b.paused)
@@ -188,6 +248,9 @@ def bots():
                                all_active_bots=all_active_bots,
                                all_inactive_bots=all_inactive_bots)
     except Exception as e:
+        return render_template('errors/500.html', error=str(e)), 500
+    finally:
+        db.close()
         flash(f'Error loading bots: {str(e)}', 'danger')
         return render_template('bots/list.html', bots_by_account={}, total_bots=0, active_bots=0, paused_bots=0, total_accounts=0, current_filter=None,
                                all_total_bots=0, all_active_bots=0, all_inactive_bots=0)
