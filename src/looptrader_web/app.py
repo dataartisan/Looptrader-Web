@@ -869,6 +869,72 @@ def debug_bot_states():
             "error_type": type(e).__name__
         }), 500
 
+@app.route('/debug/bots-template')
+def debug_bots_template():
+    """Debug what gets passed to the bots template"""
+    try:
+        bots_by_account = get_bots_by_account()
+        # Unfiltered counts (before any filter)
+        all_total_bots = sum(len(blist) for blist in bots_by_account.values())
+        all_active_bots = sum(1 for blist in bots_by_account.values() for b in blist if b.enabled and not b.paused)
+        all_inactive_bots = sum(1 for blist in bots_by_account.values() for b in blist if (not b.enabled) or b.paused)
+
+        flt = request.args.get('filter')  # 'active' | 'inactive' | None
+        if flt in ('active', 'inactive'):
+            filtered = {}
+            for account, blist in bots_by_account.items():
+                if flt == 'active':
+                    subset = [b for b in blist if b.enabled and not b.paused]
+                else:  # inactive
+                    subset = [b for b in blist if (not b.enabled) or b.paused]
+                if subset:
+                    filtered[account] = subset
+            bots_by_account = filtered
+
+        total_bots = sum(len(blist) for blist in bots_by_account.values())
+        active_bots = sum(1 for blist in bots_by_account.values() for b in blist if b.enabled and not b.paused)
+        paused_bots = sum(1 for blist in bots_by_account.values() for b in blist if b.paused)
+
+        # Convert to serializable format for debugging
+        debug_data = {
+            "filter_applied": flt,
+            "all_total_bots": all_total_bots,
+            "all_active_bots": all_active_bots,
+            "all_inactive_bots": all_inactive_bots,
+            "filtered_total_bots": total_bots,
+            "filtered_active_bots": active_bots,
+            "filtered_paused_bots": paused_bots,
+            "total_accounts": len(bots_by_account),
+            "accounts_with_bots": []
+        }
+        
+        for account, bot_list in bots_by_account.items():
+            account_info = {
+                "account_name": getattr(account, 'name', str(account)),
+                "account_id": getattr(account, 'account_id', 'unknown'),
+                "bot_count": len(bot_list),
+                "bots": []
+            }
+            
+            for bot in bot_list[:3]:  # Show first 3 bots per account
+                account_info["bots"].append({
+                    "id": bot.id,
+                    "name": getattr(bot, 'name', 'Unknown'),
+                    "enabled": bot.enabled,
+                    "paused": bot.paused,
+                    "is_active": bot.enabled and not bot.paused
+                })
+            
+            debug_data["accounts_with_bots"].append(account_info)
+
+        return jsonify(debug_data)
+        
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "error_type": type(e).__name__
+        }), 500
+
 @app.route('/health')
 def health_check():
     try:
