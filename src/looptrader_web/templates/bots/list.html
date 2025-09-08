@@ -2,18 +2,7 @@
 
 {% block title %}Bots - {{ app_name }}{% endblock %}
 
-{% block page_title %}Bot Management{                </span>
-              </td>
-              <td>
-                <span class="badge badge-{{ bot.state_badge_class }}">
-                  {{ bot.state }}
-                </span>
-              </td>
-              <td>
-                <span class="badge badge-{{ 'success' if bot.active_positions_count > 0 else 'secondary' }}">
-                  {{ bot.active_positions_count }}
-                </span>
-              </td>
+{% block page_title %}Bot Management{% endblock %}
 
 {% block breadcrumb %}
 <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Home</a></li>
@@ -125,13 +114,13 @@
                 <br><small class="text-muted">ID: {{ bot.id }}</small>
               </td>
               <td>
-                <span class="badge badge-{{ bot.state_badge_class }}">
-                  {{ bot.state }}
+                <span class="badge badge-{{ bot.status_badge_class }}">
+                  {{ bot.status_text }}
                 </span>
               </td>
               <td>
-                <span class="badge badge-{{ bot.status_badge_class }}">
-                  {{ bot.status_text }}
+                <span class="badge badge-{{ bot.state_badge_class }}">
+                  {{ bot.state }}
                 </span>
               </td>
               <td>
