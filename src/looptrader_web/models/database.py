@@ -215,8 +215,12 @@ class Position(Base):
             else:
                 return f"{hours}h"
         else:
-            delta = self.closed_datetime - self.opened_datetime
-            return f"{delta.days}d {delta.seconds // 3600}h"
+            # Only calculate if closed_datetime is not None
+            if self.closed_datetime:
+                delta = self.closed_datetime - self.opened_datetime
+                return f"{delta.days}d {delta.seconds // 3600}h"
+            else:
+                return "Unknown"
     
     @property
     def account_name(self):

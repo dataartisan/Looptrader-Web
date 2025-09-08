@@ -453,13 +453,14 @@ def positions():
             # Get filter parameters
             account_filter = request.args.get('account')
             status_filter = request.args.get('status')
+            active_only = request.args.get('active_only')  # Add support for active_only param
             
             query = db.query(Position).order_by(Position.opened_datetime.desc())
             
             if account_filter:
                 query = query.filter(Position.account_id == account_filter)
             
-            if status_filter == 'active':
+            if status_filter == 'active' or active_only == 'true':
                 query = query.filter(Position.active == True)
             elif status_filter == 'closed':
                 query = query.filter(Position.active == False)
@@ -467,12 +468,26 @@ def positions():
             positions = query.all()
             accounts = db.query(BrokerageAccount).all()
             
-            return render_template('positions/list.html', positions=positions, accounts=accounts)
+            # Debug: Print to logs to see what we're getting
+            print(f"DEBUG: Found {len(positions)} positions")
+            if positions:
+                print(f"DEBUG: First position: ID={positions[0].id}, Active={positions[0].active}")
+                # Test template properties that might be causing issues
+                try:
+                    print(f"DEBUG: First position status_text: {positions[0].status_text}")
+                    print(f"DEBUG: First position status_badge_class: {positions[0].status_badge_class}")
+                    print(f"DEBUG: First position duration_text: {positions[0].duration_text}")
+                except Exception as e:
+                    print(f"DEBUG: Error accessing position properties: {e}")
+            print(f"DEBUG: Active only filter: {active_only}")
+            
+            # Pass the active_only flag to template for button styling
+            return render_template('positions/list.html', positions=positions, accounts=accounts, active_only=(active_only == 'true'))
         finally:
             db.close()
     except Exception as e:
         flash(f'Error loading positions: {str(e)}', 'danger')
-        return render_template('positions/list.html', positions=[], accounts=[])
+        return render_template('positions/list.html', positions=[], accounts=[], active_only=False)
 
 @app.route('/trailing')
 @login_required
@@ -696,6 +711,108 @@ def internal_error(error):
     return render_template('errors/500.html'), 500
 
 # Health check endpoint
+@app.route('/debug/positions')
+def debug_positions():
+    try:
+        db = SessionLocal()
+        try:
+            # Get all positions with the same query as positions page
+            query = db.query(Position).order_by(Position.opened_datetime.desc())
+            positions = query.all()
+            
+            result = {
+                'total_positions': len(positions),
+                'position_details': []
+            }
+            
+            for pos in positions[:5]:  # First 5 positions
+                try:
+                    pos_data = {
+                        'id': pos.id,
+                        'active': pos.active,
+                        'opened_datetime': str(pos.opened_datetime),
+                        'closed_datetime': str(pos.closed_datetime),
+                        'status_text': pos.status_text,
+                        'status_badge_class': pos.status_badge_class,
+                        'duration_text': pos.duration_text,
+                        'bot_name': pos.bot.name if pos.bot else 'No Bot',
+                        'orders_count': len(pos.orders) if pos.orders else 0
+                    }
+                    result['position_details'].append(pos_data)
+                except Exception as e:
+                    result['position_details'].append({
+                        'id': pos.id,
+                        'error': str(e)
+                    })
+            
+            return jsonify(result)
+        finally:
+            db.close()
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/debug/positions-template')
+def debug_positions_template():
+    """Test the actual template rendering without auth"""
+    try:
+        db = SessionLocal()
+        try:
+            query = db.query(Position).order_by(Position.opened_datetime.desc())
+            positions = query.all()
+            accounts = db.query(BrokerageAccount).all()
+            
+            # Try to render the template
+            return render_template('positions/list.html', positions=positions, accounts=accounts, active_only=False)
+        finally:
+            db.close()
+    except Exception as e:
+        return f"Template error: {str(e)}", 500
+
+@app.route('/debug/positions-data')
+def debug_positions_data():
+    """Debug route to check positions data without authentication"""
+    try:
+        db = SessionLocal()
+        try:
+            # Test basic database connection
+            db.execute(text('SELECT 1'))
+            
+            # Get all positions
+            all_positions = db.query(Position).all()
+            
+            # Get recent positions (dashboard method)
+            recent_positions = get_recent_positions(5)
+            
+            # Test the positions route query
+            query = db.query(Position).order_by(Position.opened_datetime.desc())
+            positions_page = query.all()
+            
+            return jsonify({
+                'database_connected': True,
+                'all_positions_count': len(all_positions),
+                'recent_positions_count': len(recent_positions),
+                'positions_page_count': len(positions_page),
+                'sample_positions': [
+                    {
+                        'id': p.id,
+                        'active': p.active,
+                        'opened_datetime': str(p.opened_datetime) if p.opened_datetime else None,
+                        'bot_id': p.bot_id if hasattr(p, 'bot_id') else None
+                    }
+                    for p in all_positions[:3]
+                ],
+                'database_url_set': 'DATABASE_URL' in os.environ,
+                'environment': os.environ.get('FLASK_ENV', 'not_set')
+            })
+        finally:
+            db.close()
+    except Exception as e:
+        return jsonify({
+            'database_connected': False,
+            'error': str(e),
+            'error_type': type(e).__name__
+        }), 500
+
 @app.route('/health')
 def health_check():
     try:
