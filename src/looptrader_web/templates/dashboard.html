@@ -21,7 +21,7 @@
         <!-- Stats Row -->
         <div class="row">
           <div class="col-lg-3 col-6">
-            <div class="info-box mb-3 {% if spx_data.change >= 0 %}bg-success{% else %}bg-danger{% endif %}">
+            <div class="info-box mb-3 {% if spx_data.change != 'N/A' and spx_data.change|float >= 0 %}bg-success{% else %}bg-danger{% endif %}">
               <span class="info-box-icon"><i class="fas fa-chart-line"></i></span>
               <div class="info-box-content">
                 <span class="info-box-number" id="spx-price">
@@ -33,7 +33,7 @@
                 </span>
                 <div class="progress-description" style="font-size: 0.9em;" id="spx-details">
                   {% if spx_data.change != 'N/A' %}
-                    {% if spx_data.change >= 0 %}
+                    {% if spx_data.change|float >= 0 %}
                       <i class="fas fa-arrow-up"></i> +${{ spx_data.change }} (+{{ spx_data.change_percent }}%)
                     {% else %}
                       <i class="fas fa-arrow-down"></i> ${{ spx_data.change }} ({{ spx_data.change_percent }}%)

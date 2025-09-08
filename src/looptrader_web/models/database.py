@@ -314,7 +314,7 @@ def get_recent_positions(limit=10):
     """Get recent positions for dashboard"""
     db = SessionLocal()
     try:
-        positions = db.query(Position).order_by(Position.opened_datetime.desc()).limit(limit).all()
+        positions = db.query(Position).options(joinedload(Position.bot)).order_by(Position.opened_datetime.desc()).limit(limit).all()
         return positions
     finally:
         db.close()

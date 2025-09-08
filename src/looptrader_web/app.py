@@ -8,6 +8,7 @@ from flask_login import LoginManager, UserMixin, login_user, logout_user, login_
 from werkzeug.security import check_password_hash, generate_password_hash
 import os
 import requests
+from datetime import datetime
 from datetime import datetime, timedelta
 from sqlalchemy import text
 
@@ -147,7 +148,7 @@ def dashboard():
         return render_template('dashboard.html', stats=stats, recent_positions=recent_positions, db_status=db_status, spx_data=spx_data)
     except Exception as e:
         flash(f'Error loading dashboard: {str(e)}', 'danger')
-        return render_template('dashboard.html', stats={}, recent_positions=[], spx_data={'price': 'N/A', 'change': 'N/A', 'change_percent': 'N/A'})
+        return render_template('dashboard.html', stats={}, recent_positions=[], db_status='error', spx_data={'price': 'N/A', 'change': 'N/A', 'change_percent': 'N/A', 'market_state': 'UNKNOWN', 'previous_close': 'N/A', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')})
 
 # Bot management routes
 @app.route('/bots')
