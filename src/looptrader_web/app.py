@@ -935,6 +935,39 @@ def debug_bots_template():
             "error_type": type(e).__name__
         }), 500
 
+@app.route('/debug/simple-bots')
+def debug_simple_bots():
+    """Simple debug route that doesn't require authentication"""
+    try:
+        from src.looptrader_web.models.database import get_bots_by_account
+        
+        bots_by_account = get_bots_by_account()
+        
+        result = {
+            "total_accounts": len(bots_by_account),
+            "total_bots": sum(len(blist) for blist in bots_by_account.values()),
+            "active_bots": sum(1 for blist in bots_by_account.values() for b in blist if b.enabled and not b.paused),
+            "inactive_bots": sum(1 for blist in bots_by_account.values() for b in blist if (not b.enabled) or b.paused),
+            "accounts": []
+        }
+        
+        for account, bot_list in bots_by_account.items():
+            account_info = {
+                "name": getattr(account, 'name', str(account)),
+                "bot_count": len(bot_list),
+                "active_bots": sum(1 for b in bot_list if b.enabled and not b.paused),
+                "inactive_bots": sum(1 for b in bot_list if (not b.enabled) or b.paused)
+            }
+            result["accounts"].append(account_info)
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "error_type": type(e).__name__
+        }), 500
+
 @app.route('/health')
 def health_check():
     try:
