@@ -188,7 +188,9 @@ class Bot(Base):
     @property
     def remaining_position_slots(self) -> int:
         """Remaining open position slots based on active positions."""
-        remain = self.planned_position_capacity - self.active_positions_count
+        # Use cached value if available to avoid lazy loading
+        active_count = self.active_positions_count  # This now uses cached value if available
+        remain = self.planned_position_capacity - active_count
         return remain if remain > 0 else 0
 
 class Position(Base):
@@ -362,6 +364,12 @@ def get_bots_by_account():
             # Access trailing stop state if it exists
             if bot.trailing_stop_state:
                 _ = bot.trailing_stop_state.id
+                # Cache trailing stop state properties to avoid lazy loading
+                bot._cached_trailing_stop_status_badge_class = getattr(bot.trailing_stop_state, 'status_badge_class', 'secondary')
+                bot._cached_trailing_stop_status_text = getattr(bot.trailing_stop_state, 'status_text', 'Unknown')
+            else:
+                bot._cached_trailing_stop_status_badge_class = 'secondary'
+                bot._cached_trailing_stop_status_text = 'No Trailing Stop'
             
             # Pre-compute account information to avoid lazy loading later
             if hasattr(bot, '_cached_account_info'):

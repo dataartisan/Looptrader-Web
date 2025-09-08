@@ -781,7 +781,16 @@ def debug_bots_data():
                         'total_positions': bot.total_positions,  # This might trigger the error
                         'active_positions_count': bot.active_positions_count,  # This might trigger the error
                         'account_name': bot.account_name,  # This might trigger the error
+                        'remaining_position_slots': bot.remaining_position_slots,  # This is likely the culprit
+                        'has_trailing_stop': bot.has_trailing_stop,  # This might trigger error
+                        'trailing_stop_state_exists': bot.trailing_stop_state is not None,
                     }
+                    
+                    # Test trailing stop state properties if they exist
+                    if bot.trailing_stop_state:
+                        bot_info['trailing_stop_status_badge_class'] = bot.trailing_stop_state.status_badge_class
+                        bot_info['trailing_stop_status_text'] = bot.trailing_stop_state.status_text
+                    
                     account_info['bots'].append(bot_info)
                 except Exception as bot_error:
                     account_info['bots'].append({
