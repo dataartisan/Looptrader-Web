@@ -822,6 +822,53 @@ def debug_bots_error():
             'traceback': traceback.format_exc()
         }), 500
 
+@app.route('/debug/bot-states')
+def debug_bot_states():
+    """Show detailed bot states to understand why bots appear inactive"""
+    try:
+        bots_by_account = get_bots_by_account()
+        
+        bot_details = []
+        enabled_count = 0
+        paused_count = 0
+        total_count = 0
+        
+        for account, bot_list in bots_by_account.items():
+            for bot in bot_list:
+                total_count += 1
+                enabled = bot.enabled
+                paused = bot.paused
+                
+                if enabled:
+                    enabled_count += 1
+                if paused:
+                    paused_count += 1
+                
+                bot_details.append({
+                    "id": bot.id,
+                    "name": getattr(bot, 'name', 'Unknown'),
+                    "enabled": enabled,
+                    "paused": paused,
+                    "active": enabled and not paused,
+                    "account": account.name if hasattr(account, 'name') else str(account)
+                })
+        
+        active_count = enabled_count - paused_count
+        
+        return jsonify({
+            "total_bots": total_count,
+            "enabled_bots": enabled_count,
+            "paused_bots": paused_count,
+            "active_bots": active_count,
+            "bot_details": bot_details
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "error_type": type(e).__name__
+        }), 500
+
 @app.route('/health')
 def health_check():
     try:
