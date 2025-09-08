@@ -53,10 +53,16 @@ class BrokerageAccount(Base):
     
     @property
     def total_positions(self):
+        # Use cached value if available to prevent lazy loading
+        if hasattr(self, '_cached_total_positions'):
+            return self._cached_total_positions
         return len(self.positions) if self.positions else 0
     
     @property
     def active_positions(self):
+        # Use cached value if available to prevent lazy loading
+        if hasattr(self, '_cached_active_positions'):
+            return self._cached_active_positions
         return len([p for p in self.positions if p.active]) if self.positions else 0
     
     @property
@@ -357,6 +363,14 @@ def get_bots_by_account():
                   .all())
         accounts_index = {a.account_id: a for a in db.query(BrokerageAccount).all()}
 
+        # Also pre-load account position data to prevent lazy loading in template
+        for account in accounts_index.values():
+            # Force load positions for accounts
+            account_positions = list(account.positions)
+            # Cache the computed values to prevent lazy loading
+            account._cached_total_positions = len(account_positions)
+            account._cached_active_positions = len([p for p in account_positions if p.active])
+
         # Force complete loading of all relationships and cache computed values
         for bot in bots:
             # Force load all positions and related data
@@ -420,7 +434,7 @@ def get_bots_by_account():
             def total_positions(self):
                 return 0
             @property
-            def active_positions_count(self):
+            def active_positions(self):
                 return 0
 
         no_account_placeholder = NoAccount()
