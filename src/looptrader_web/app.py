@@ -384,15 +384,12 @@ def upsert_trailing_stop_route(bot_id):
     try:
         activation_threshold = request.form.get('activation_threshold', type=float)
         trailing_percentage = request.form.get('trailing_percentage', type=float)
-        # Support various truthy values; if field absent treat as False
-        values = request.form.getlist('is_active')  # may contain one or more values
-        truthy = {'on', 'true', '1', 'yes', 'y'}
-        is_active = any(v.lower() in truthy for v in values)
         if activation_threshold is None or trailing_percentage is None:
             raise ValueError("Activation threshold and trailing percentage are required")
         # Debug print to container logs for verification
-        print(f"[TrailingStopUpdate] bot_id={bot_id} activation={activation_threshold} trailing={trailing_percentage} values={values} parsed_active={is_active}")
-        ok, msg = upsert_trailing_stop(bot_id, activation_threshold, trailing_percentage, is_active=is_active)
+        print(f"[TrailingStopUpdate] bot_id={bot_id} activation={activation_threshold} trailing={trailing_percentage}")
+        # Don't pass is_active parameter - let the database function handle activation state
+        ok, msg = upsert_trailing_stop(bot_id, activation_threshold, trailing_percentage)
         if ok:
             flash('Trailing stop saved', 'success')
         else:
@@ -590,7 +587,6 @@ def add_trailing_stops():
             if request.method == 'POST':
                 action = request.form.get('action')
                 selected_bots = request.form.getlist('selected_bots')
-                name_filter = request.form.get('name_filter', '').strip()  # Get filter from form
                 
                 if not selected_bots:
                     flash('Please select at least one bot', 'warning')
@@ -598,7 +594,6 @@ def add_trailing_stops():
                     # Handle bulk trailing stop creation
                     activation_threshold = request.form.get('activation_threshold', type=float)
                     trailing_percentage = request.form.get('trailing_percentage', type=float)
-                    is_active = 'is_active' in request.form
                     
                     if activation_threshold is None or trailing_percentage is None:
                         flash('Activation threshold and trailing percentage are required', 'danger')
@@ -608,7 +603,8 @@ def add_trailing_stops():
                         
                         for bot_id in selected_bots:
                             try:
-                                ok, msg = upsert_trailing_stop(int(bot_id), activation_threshold, trailing_percentage, is_active=is_active)
+                                # Don't pass is_active parameter - let the database function handle activation state
+                                ok, msg = upsert_trailing_stop(int(bot_id), activation_threshold, trailing_percentage)
                                 if ok:
                                     success_count += 1
                                 else:
@@ -623,11 +619,8 @@ def add_trailing_stops():
                         if error_count > 0:
                             flash(f'Failed to add trailing stops for {error_count} bot(s)', 'warning')
                         
-                        # Redirect back with filter to prevent form resubmission
-                        if name_filter:
-                            return redirect(url_for('add_trailing_stops', name_filter=name_filter))
-                        else:
-                            return redirect(url_for('add_trailing_stops'))
+                        # Redirect back to prevent form resubmission
+                        return redirect(url_for('add_trailing_stops'))
                             
                 elif action == 'remove':
                     # Handle bulk trailing stop removal
@@ -651,28 +644,18 @@ def add_trailing_stops():
                     if error_count > 0:
                         flash(f'Failed to remove trailing stops for {error_count} bot(s)', 'warning')
                     
-                    # Redirect back with filter to prevent form resubmission
-                    if name_filter:
-                        return redirect(url_for('add_trailing_stops', name_filter=name_filter))
-                    else:
-                        return redirect(url_for('add_trailing_stops'))
+                    # Redirect back to prevent form resubmission
+                    return redirect(url_for('add_trailing_stops'))
             
             # Get all bots for display
-            name_filter = request.args.get('name_filter', '').strip()
-                    
-            query = db.query(Bot)
+            bots = db.query(Bot).order_by(Bot.name).all()
             
-            if name_filter:
-                query = query.filter(Bot.name.ilike(f'%{name_filter}%'))
-            
-            bots = query.order_by(Bot.name).all()
-            
-            return render_template('trailing_stops/add.html', bots=bots, name_filter=name_filter)
+            return render_template('trailing_stops/add.html', bots=bots)
         finally:
             db.close()
     except Exception as e:
         flash(f'Error loading manage trailing stops page: {str(e)}', 'danger')
-        return render_template('trailing_stops/add.html', bots=[], name_filter='')
+        return render_template('trailing_stops/add.html', bots=[])
 
 # API endpoints for AJAX calls
 @app.route('/api/stats')
@@ -725,16 +708,9 @@ def update_trailing_stop():
         if not bot_id or activation_threshold is None or trailing_percentage is None:
             return jsonify({'success': False, 'message': 'Missing required parameters'})
         
-        # Get current trailing stop to preserve is_active state
-        db = SessionLocal()
-        try:
-            trailing_stop = db.query(TrailingStopState).filter(TrailingStopState.bot_id == bot_id).first()
-            is_active = trailing_stop.is_active if trailing_stop else True
-            
-            ok, msg = upsert_trailing_stop(bot_id, activation_threshold, trailing_percentage, is_active=is_active)
-            return jsonify({'success': ok, 'message': msg})
-        finally:
-            db.close()
+        # Don't pass is_active parameter - let the database function handle activation state
+        ok, msg = upsert_trailing_stop(bot_id, activation_threshold, trailing_percentage)
+        return jsonify({'success': ok, 'message': msg})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
@@ -749,30 +725,6 @@ def remove_trailing_stop():
         
         ok, msg = delete_trailing_stop(bot_id)
         return jsonify({'success': ok, 'message': msg})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
-
-@app.route('/toggle_trailing_stop', methods=['POST'])
-@login_required
-def toggle_trailing_stop():
-    try:
-        bot_id = request.form.get('bot_id', type=int)
-        is_active = request.form.get('is_active') == 'true'
-        
-        if not bot_id:
-            return jsonify({'success': False, 'message': 'Missing bot ID'})
-        
-        # Get current trailing stop settings
-        db = SessionLocal()
-        try:
-            trailing_stop = db.query(TrailingStopState).filter(TrailingStopState.bot_id == bot_id).first()
-            if not trailing_stop:
-                return jsonify({'success': False, 'message': 'Trailing stop not found'})
-            
-            ok, msg = upsert_trailing_stop(bot_id, trailing_stop.activation_threshold, trailing_stop.trailing_percentage, is_active=is_active)
-            return jsonify({'success': ok, 'message': msg})
-        finally:
-            db.close()
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 

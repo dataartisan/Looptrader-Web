@@ -487,7 +487,7 @@ def upsert_trailing_stop(bot_id: int, activation_threshold: float, trailing_perc
         else:
             ts.activation_threshold = activation_threshold
             ts.trailing_percentage = trailing_percentage
-            # Always set is_active explicitly so unchecking the box persists
+            # Only set is_active if explicitly provided (preserve existing state when just updating config)
             if is_active is not None:
                 ts.is_active = bool(is_active)
         db.commit()
