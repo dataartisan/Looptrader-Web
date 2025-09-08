@@ -159,16 +159,6 @@
                             title="Remove Trailing Stop">
                       <i class="fas fa-trash"></i>
                     </button>
-                    <button type="button" class="btn btn-info btn-sm toggle-btn" 
-                            data-bot-id="{{ trailing_stop.bot.id if trailing_stop.bot else '' }}"
-                            data-active="{{ trailing_stop.is_active|lower }}"
-                            title="Toggle Active/Inactive">
-                      {% if trailing_stop.is_active %}
-                        <i class="fas fa-pause"></i>
-                      {% else %}
-                        <i class="fas fa-play"></i>
-                      {% endif %}
-                    </button>
                   </div>
                 </td>
               </tr>
@@ -284,13 +274,6 @@ $(document).ready(function() {
         }
     });
 
-    // Toggle active/inactive button
-    $('.toggle-btn').click(function() {
-        const botId = $(this).data('bot-id');
-        const isActive = $(this).data('active') === 'true';
-        toggleTrailingStop(botId, !isActive);
-    });
-
     // Highlight changed fields
     $('.editable-field').on('input', function() {
         $(this).addClass('border-warning');
@@ -349,38 +332,6 @@ $(document).ready(function() {
             },
             error: function() {
                 showMessage('Error removing trailing stop', 'danger');
-            }
-        });
-    }
-
-    function toggleTrailingStop(botId, activate) {
-        $.ajax({
-            url: '{{ url_for("toggle_trailing_stop") }}',
-            method: 'POST',
-            data: {
-                bot_id: botId,
-                is_active: activate
-            },
-            success: function(response) {
-                if (response.success) {
-                    const button = $(`.toggle-btn[data-bot-id="${botId}"]`);
-                    const icon = button.find('i');
-                    
-                    if (activate) {
-                        icon.removeClass('fas fa-play').addClass('fas fa-pause');
-                        button.data('active', 'true');
-                    } else {
-                        icon.removeClass('fas fa-pause').addClass('fas fa-play');
-                        button.data('active', 'false');
-                    }
-                    
-                    showMessage(`Trailing stop ${activate ? 'activated' : 'deactivated'} successfully`, 'success');
-                } else {
-                    showMessage('Failed to toggle trailing stop: ' + response.message, 'danger');
-                }
-            },
-            error: function() {
-                showMessage('Error toggling trailing stop', 'danger');
             }
         });
     }
