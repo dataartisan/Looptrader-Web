@@ -751,6 +751,55 @@ def debug_positions():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/debug/bots-data')
+def debug_bots_data():
+    """Debug route to check bots data without authentication"""
+    try:
+        # Test the get_bots_by_account function directly
+        bots_by_account = get_bots_by_account()
+        
+        debug_info = {
+            'accounts_count': len(bots_by_account),
+            'total_bots': sum(len(blist) for blist in bots_by_account.values()),
+            'accounts': []
+        }
+        
+        for account, bot_list in bots_by_account.items():
+            account_info = {
+                'account_name': account.name if hasattr(account, 'name') else str(account),
+                'bots_count': len(bot_list),
+                'bots': []
+            }
+            
+            for bot in bot_list[:2]:  # Only show first 2 bots per account
+                try:
+                    bot_info = {
+                        'id': bot.id,
+                        'name': bot.name,
+                        'enabled': bot.enabled,
+                        'paused': bot.paused,
+                        'total_positions': bot.total_positions,  # This might trigger the error
+                        'active_positions_count': bot.active_positions_count,  # This might trigger the error
+                        'account_name': bot.account_name,  # This might trigger the error
+                    }
+                    account_info['bots'].append(bot_info)
+                except Exception as bot_error:
+                    account_info['bots'].append({
+                        'id': bot.id,
+                        'error': str(bot_error),
+                        'error_type': type(bot_error).__name__
+                    })
+            
+            debug_info['accounts'].append(account_info)
+        
+        return jsonify(debug_info)
+        
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'error_type': type(e).__name__
+        }), 500
+
 @app.route('/debug/positions-template')
 def debug_positions_template():
     """Debug version of positions route without authentication"""
