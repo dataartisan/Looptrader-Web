@@ -364,18 +364,6 @@ def enable_bot(bot_id):
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
 
-@app.route('/bots/<int:bot_id>/close-position', methods=['POST'])
-@login_required
-def close_bot_position(bot_id):
-    try:
-        success = close_position_by_bot(bot_id)
-        if success:
-            return jsonify({'success': True, 'message': 'Position closed successfully'})
-        else:
-            return jsonify({'success': False, 'message': 'No active position found for this bot'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
-
 @app.route('/bots/<int:bot_id>/update', methods=['POST'])
 @login_required
 def update_bot_route(bot_id):
@@ -1290,6 +1278,25 @@ def get_schwab_accounts_detail():
                     cash_balance = current_balances.get('cashBalance', 0)
                     buying_power = current_balances.get('buyingPower', 0)
                     
+                    # Get PNL information for today
+                    day_trading_buying_power = current_balances.get('dayTradingBuyingPower', 0)
+                    equity = current_balances.get('equity', 0)
+                    long_market_value = current_balances.get('longMarketValue', 0)
+                    short_market_value = current_balances.get('shortMarketValue', 0)
+                    
+                    # Try to calculate today's PNL
+                    # Note: Schwab API doesn't provide direct daily PNL, so we'll use available fields
+                    # This is an approximation - for accurate PNL, would need previous day's closing values
+                    total_market_value = float(long_market_value or 0) + float(short_market_value or 0)
+                    todays_pnl = 0  # Default to 0 since we don't have previous day data
+                    todays_pnl_percent = 0  # Default to 0
+                    
+                    # If we have equity and it's different from liquidation value, use that as approximation
+                    if equity and liquidation_value and equity != liquidation_value:
+                        todays_pnl = float(equity) - float(liquidation_value)
+                        if liquidation_value > 0:
+                            todays_pnl_percent = (todays_pnl / float(liquidation_value)) * 100
+                    
                     detailed_accounts.append({
                         'account_hash': account_hash,
                         'account_number': account_number,
@@ -1297,19 +1304,27 @@ def get_schwab_accounts_detail():
                         'liquidation_value': float(liquidation_value) if liquidation_value else 0,
                         'cash_balance': float(cash_balance) if cash_balance else 0,
                         'buying_power': float(buying_power) if buying_power else 0,
+                        'todays_pnl': todays_pnl,
+                        'todays_pnl_percent': todays_pnl_percent,
                         'formatted_liquidation_value': f"${float(liquidation_value):,.2f}" if liquidation_value else "$0.00",
                         'formatted_cash_balance': f"${float(cash_balance):,.2f}" if cash_balance else "$0.00",
-                        'formatted_buying_power': f"${float(buying_power):,.2f}" if buying_power else "$0.00"
+                        'formatted_buying_power': f"${float(buying_power):,.2f}" if buying_power else "$0.00",
+                        'formatted_todays_pnl': f"${todays_pnl:,.2f}" if todays_pnl != 0 else "$0.00",
+                        'formatted_todays_pnl_percent': f"{todays_pnl_percent:+.2f}%" if todays_pnl_percent != 0 else "0.00%"
                     })
                 else:
                     print(f"Failed to get account details for {account_hash}: {account_response.status_code}")
         
-        # Calculate total
+        # Calculate totals
         total_value = sum(acc['liquidation_value'] for acc in detailed_accounts)
+        total_pnl = sum(acc['todays_pnl'] for acc in detailed_accounts)
+        total_pnl_percent = (total_pnl / total_value * 100) if total_value > 0 else 0
         
         return {
             'accounts': detailed_accounts,
             'total_value': f"${total_value:,.2f}",
+            'total_pnl': f"${total_pnl:,.2f}",
+            'total_pnl_percent': f"{total_pnl_percent:+.2f}%",
             'account_count': len(detailed_accounts),
             'error': None
         }
