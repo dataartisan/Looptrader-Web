@@ -68,14 +68,14 @@
                 </td>
                 <td>
                   {% if position.opened_datetime %}
-                    {{ position.opened_datetime.strftime('%Y-%m-%d %H:%M') }}
+                    {{ position.opened_datetime | to_est }}
                   {% else %}
                     <span class="text-muted">N/A</span>
                   {% endif %}
                 </td>
                 <td>
                   {% if position.closed_datetime %}
-                    {{ position.closed_datetime.strftime('%Y-%m-%d %H:%M') }}
+                    {{ position.closed_datetime | to_est }}
                   {% else %}
                     <span class="text-muted">-</span>
                   {% endif %}
