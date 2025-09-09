@@ -32,12 +32,30 @@
         {% elif schwab_accounts.accounts %}
         <!-- Summary Row -->
         <div class="row mb-3">
-          <div class="col-md-4">
+          <div class="col-md-3">
             <div class="info-box bg-success">
               <span class="info-box-icon"><i class="fas fa-coins"></i></span>
               <div class="info-box-content">
                 <span class="info-box-text">Total Portfolio Value</span>
                 <span class="info-box-number">{{ schwab_accounts.total_value }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="info-box {% if schwab_accounts.total_pnl and schwab_accounts.total_pnl.startswith('$-') %}bg-danger{% else %}bg-info{% endif %}">
+              <span class="info-box-icon"><i class="fas fa-chart-line"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Today's P&L</span>
+                <span class="info-box-number">{{ schwab_accounts.total_pnl or '$0.00' }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="info-box {% if schwab_accounts.total_pnl_percent and schwab_accounts.total_pnl_percent.startswith('-') %}bg-danger{% else %}bg-info{% endif %}">
+              <span class="info-box-icon"><i class="fas fa-percentage"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Today's P&L %</span>
+                <span class="info-box-number">{{ schwab_accounts.total_pnl_percent or '0.00%' }}</span>
               </div>
             </div>
           </div>
@@ -53,6 +71,8 @@
                 <th>Total Value</th>
                 <th>Cash Balance</th>
                 <th>Buying Power</th>
+                <th>Today's P&L</th>
+                <th>P&L %</th>
               </tr>
             </thead>
             <tbody>
@@ -67,6 +87,16 @@
                 </td>
                 <td>{{ account.formatted_cash_balance }}</td>
                 <td>{{ account.formatted_buying_power }}</td>
+                <td>
+                  <span class="{% if account.todays_pnl < 0 %}text-danger{% elif account.todays_pnl > 0 %}text-success{% else %}text-muted{% endif %} font-weight-bold">
+                    {{ account.formatted_todays_pnl }}
+                  </span>
+                </td>
+                <td>
+                  <span class="{% if account.todays_pnl_percent < 0 %}text-danger{% elif account.todays_pnl_percent > 0 %}text-success{% else %}text-muted{% endif %} font-weight-bold">
+                    {{ account.formatted_todays_pnl_percent }}
+                  </span>
+                </td>
               </tr>
               {% endfor %}
             </tbody>
