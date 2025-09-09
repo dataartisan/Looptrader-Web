@@ -12,6 +12,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
 from dotenv import load_dotenv
+import pytz
 
 # Load environment variables from .env file
 load_dotenv()
@@ -29,6 +30,24 @@ from sqlalchemy import text
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+
+# Add timezone filter for templates
+@app.template_filter('to_est')
+def to_est(utc_dt):
+    """Convert UTC datetime to EST/EDT"""
+    if utc_dt is None:
+        return "N/A"
+    
+    utc_tz = pytz.UTC
+    est_tz = pytz.timezone('America/New_York')
+    
+    # If the datetime is naive, assume it's UTC
+    if utc_dt.tzinfo is None:
+        utc_dt = utc_tz.localize(utc_dt)
+    
+    # Convert to EST/EDT
+    est_dt = utc_dt.astimezone(est_tz)
+    return est_dt.strftime('%Y-%m-%d %H:%M EST')
 
 # Configure Flask-Login
 login_manager = LoginManager()
