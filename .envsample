@@ -18,6 +18,10 @@ LOOPTRADER_API_PORT=8000
 # AdminLTE Configuration
 ADMIN_NAME=LoopTrader Administrator
 ADMIN_EMAIL=admin@looptrader.com
+
+# Schwab API Configuration
+SCHWAB_API_KEY=your_schwab_api_key_here
+SCHWAB_APP_SECRET=your_schwab_app_secret_here
 ADMIN_USERNAME=admin
 # Use only one of the following (prefer hash in production):
 # Plain password (development only)

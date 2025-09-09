@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block title %}Get Prices - {{ app_name }}{% endblock %}
+
+{% block page_title %}SPX Options Pricing{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Home</a></li>
+<li class="breadcrumb-item active">SPX Options Pricing</li>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">
+          <i class="fas fa-dollar-sign mr-2"></i>SPX Options Pricing - 0 DTE
+        </h3>
+      </div>
+      <div class="card-body">
+        <form id="pricing-form">
+          <div class="row">
+            <!-- Calls DELTA Box -->
+            <div class="col-md-6">
+              <div class="card card-success">
+                <div class="card-header">
+                  <h3 class="card-title">CALLS</h3>
+                </div>
+                <div class="card-body">
+                  <div class="form-group">
+                    <label for="calls_delta">Target DELTA</label>
+                    <input type="number" 
+                           id="calls_delta" 
+                           name="calls_delta" 
+                           class="form-control" 
+                           placeholder="e.g., 0.30" 
+                           step="0.01" 
+                           min="0" 
+                           max="1" 
+                           value="0.30">
+                    <small class="form-text text-muted">Enter delta value between 0 and 1</small>
+                  </div>
+                  <div id="calls-results" class="mt-3">
+                    <div class="info-box bg-success">
+                      <span class="info-box-icon"><i class="fas fa-arrow-up"></i></span>
+                      <div class="info-box-content">
+                        <span class="info-box-text">Strike Price</span>
+                        <span class="info-box-number" id="calls-strike">--</span>
+                        <div class="progress-description">
+                          <span id="calls-price">Price: --</span><br>
+                          <span id="calls-delta-actual">Delta: --</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Puts DELTA Box -->
+            <div class="col-md-6">
+              <div class="card card-danger">
+                <div class="card-header">
+                  <h3 class="card-title">PUTS</h3>
+                </div>
+                <div class="card-body">
+                  <div class="form-group">
+                    <label for="puts_delta">Target DELTA</label>
+                    <input type="number" 
+                           id="puts_delta" 
+                           name="puts_delta" 
+                           class="form-control" 
+                           placeholder="e.g., -0.30" 
+                           step="0.01" 
+                           min="-1" 
+                           max="0" 
+                           value="-0.30">
+                    <small class="form-text text-muted">Enter delta value between -1 and 0</small>
+                  </div>
+                  <div id="puts-results" class="mt-3">
+                    <div class="info-box bg-danger">
+                      <span class="info-box-icon"><i class="fas fa-arrow-down"></i></span>
+                      <div class="info-box-content">
+                        <span class="info-box-text">Strike Price</span>
+                        <span class="info-box-number" id="puts-strike">--</span>
+                        <div class="progress-description">
+                          <span id="puts-price">Price: --</span><br>
+                          <span id="puts-delta-actual">Delta: --</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Fetch Button -->
+          <div class="row">
+            <div class="col-12 text-center">
+              <button type="button" id="fetch-btn" class="btn btn-primary btn-lg">
+                <i class="fas fa-download mr-2"></i>Get Strike and Price
+              </button>
+            </div>
+          </div>
+
+          <!-- Loading and Error States -->
+          <div class="row mt-3">
+            <div class="col-12">
+              <div id="loading" class="alert alert-info" style="display: none;">
+                <i class="fas fa-spinner fa-spin mr-2"></i>Fetching options data...
+              </div>
+              <div id="error" class="alert alert-danger" style="display: none;">
+                <i class="fas fa-exclamation-triangle mr-2"></i>
+                <span id="error-message"></span>
+              </div>
+              <div id="success" class="alert alert-success" style="display: none;">
+                <i class="fas fa-check mr-2"></i>Options data updated successfully!
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    $('#fetch-btn').click(function() {
+        fetchOptionsData();
+    });
+});
+
+function fetchOptionsData() {
+    const callsDelta = parseFloat($('#calls_delta').val());
+    const putsDelta = parseFloat($('#puts_delta').val());
+    
+    // Validation
+    if (isNaN(callsDelta) || callsDelta <= 0 || callsDelta > 1) {
+        showError('Calls delta must be between 0 and 1');
+        return;
+    }
+    
+    if (isNaN(putsDelta) || putsDelta >= 0 || putsDelta < -1) {
+        showError('Puts delta must be between -1 and 0');
+        return;
+    }
+    
+    // Show loading state
+    $('#loading').show();
+    $('#error').hide();
+    $('#success').hide();
+    $('#fetch-btn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-2"></i>Fetching...');
+    
+    // Make AJAX request
+    $.ajax({
+        url: '{{ url_for("fetch_options_data") }}',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            calls_delta: callsDelta,
+            puts_delta: putsDelta
+        }),
+        success: function(response) {
+            if (response.success) {
+                updateResults(response.data);
+                showSuccess();
+            } else {
+                showError(response.message || 'Failed to fetch options data');
+            }
+        },
+        error: function(xhr, status, error) {
+            let errorMsg = 'Network error occurred';
+            if (xhr.responseJSON && xhr.responseJSON.message) {
+                errorMsg = xhr.responseJSON.message;
+            }
+            showError(errorMsg);
+        },
+        complete: function() {
+            $('#loading').hide();
+            $('#fetch-btn').prop('disabled', false).html('<i class="fas fa-download mr-2"></i>Get Strike and Price');
+        }
+    });
+}
+
+function updateResults(data) {
+    // Update calls data
+    if (data.calls) {
+        $('#calls-strike').text('$' + data.calls.strike);
+        $('#calls-price').text('Price: $' + data.calls.price);
+        $('#calls-delta-actual').text('Delta: ' + data.calls.delta);
+    }
+    
+    // Update puts data
+    if (data.puts) {
+        $('#puts-strike').text('$' + data.puts.strike);
+        $('#puts-price').text('Price: $' + data.puts.price);
+        $('#puts-delta-actual').text('Delta: ' + data.puts.delta);
+    }
+}
+
+function showError(message) {
+    $('#error-message').text(message);
+    $('#error').show();
+    $('#success').hide();
+}
+
+function showSuccess() {
+    $('#success').show();
+    $('#error').hide();
+}
+</script>
+{% endblock %}

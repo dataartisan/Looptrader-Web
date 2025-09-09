@@ -19,6 +19,7 @@ sqlalchemy = "^2.0.0"
 flask-login = "^0.6.3"
 wtforms = "^3.1.0"
 flask-wtf = "^1.2.0"
+schwab-py = "^1.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"
