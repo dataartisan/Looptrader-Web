@@ -8,6 +8,7 @@ from flask_login import LoginManager, UserMixin, login_user, logout_user, login_
 from werkzeug.security import check_password_hash, generate_password_hash
 import os
 import requests
+import json
 from datetime import datetime, timedelta
 from sqlalchemy import text
 
@@ -1092,6 +1093,217 @@ def debug_bots_page_simulation():
             "error_type": type(e).__name__,
             "traceback": traceback.format_exc()
         }), 500
+
+# Pricing routes
+@app.route('/pricing')
+@login_required
+def pricing():
+    """Display the options pricing page"""
+    return render_template('pricing/index.html')
+
+@app.route('/fetch-options-data', methods=['POST'])
+@login_required
+def fetch_options_data():
+    """Fetch 0 DTE options data using Schwab API"""
+    try:
+        data = request.get_json()
+        calls_delta = data.get('calls_delta')
+        puts_delta = data.get('puts_delta')
+        
+        # Validate input
+        if not calls_delta or not puts_delta:
+            return jsonify({
+                'success': False,
+                'message': 'Both calls and puts delta values are required'
+            }), 400
+            
+        if not (0 < calls_delta <= 1):
+            return jsonify({
+                'success': False,
+                'message': 'Calls delta must be between 0 and 1'
+            }), 400
+            
+        if not (-1 <= puts_delta < 0):
+            return jsonify({
+                'success': False,
+                'message': 'Puts delta must be between -1 and 0'
+            }), 400
+        
+        # Load Schwab token
+        token_data = load_schwab_token()
+        if not token_data:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to load Schwab token. Please check token.json file.'
+            }), 500
+        
+        # Fetch options data
+        options_data = get_0dte_options(token_data, calls_delta, puts_delta)
+        
+        return jsonify({
+            'success': True,
+            'data': options_data
+        })
+        
+    except Exception as e:
+        print(f"Error fetching options data: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': f'Error fetching options data: {str(e)}'
+        }), 500
+
+def load_schwab_token():
+    """Load Schwab token from token.json in the app root directory"""
+    try:
+        # Look for token.json in the app root directory (accessible in Docker)
+        token_path = os.path.join('/app', 'token.json')
+        
+        # Fallback to local development path if not in Docker
+        if not os.path.exists(token_path):
+            # For local development, look in the project root
+            app_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            token_path = os.path.join(app_root, 'token.json')
+        
+        if not os.path.exists(token_path):
+            print(f"Token file not found at: {token_path}")
+            print(f"Please place token.json in the project root directory")
+            return None
+            
+        print(f"Loading token from: {token_path}")
+        with open(token_path, 'r') as f:
+            token_data = json.load(f)
+            
+        # Handle nested token structure (schwab-py format)
+        if 'token' in token_data:
+            token_info = token_data['token']
+        else:
+            token_info = token_data
+            
+        # Validate required fields
+        if not all(key in token_info for key in ['access_token', 'refresh_token']):
+            print(f"Token file missing required fields. Found keys: {list(token_info.keys())}")
+            return None
+            
+        print(f"Successfully loaded token from: {token_path}")
+        return token_data  # Return the full token data structure
+        
+    except Exception as e:
+        print(f"Error loading token: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def get_0dte_options(token_data, calls_delta_target, puts_delta_target):
+    """
+    Fetch 0 DTE options data for SPX and find strikes closest to target deltas
+    """
+    try:
+        import schwab
+        from datetime import date
+        
+        # Create Schwab client with token file path (schwab-py will handle the token format)
+        token_path = '/app/token.json'
+        if not os.path.exists(token_path):
+            # Fallback for local development
+            app_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            token_path = os.path.join(app_root, 'token.json')
+        
+        client = schwab.auth.client_from_token_file(
+            token_path,
+            api_key=os.environ.get('SCHWAB_API_KEY'),
+            app_secret=os.environ.get('SCHWAB_APP_SECRET')
+        )
+        
+        # Get today's date for 0 DTE
+        today = date.today()
+        
+        print(f"Fetching SPX options for date: {today}")
+        
+        # Fetch SPX options chain for today
+        # Try different symbol formats for SPX
+        symbols_to_try = ['$SPX.X', 'SPX', '$SPX']
+        
+        for symbol in symbols_to_try:
+            print(f"Trying symbol: {symbol}")
+            response = client.get_option_chain(
+                symbol=symbol,
+                from_date=today,
+                to_date=today
+            )
+            
+            if response.status_code == 200:
+                print(f"Success with symbol: {symbol}")
+                break
+            else:
+                print(f"Failed with symbol {symbol}: {response.status_code} - {response.text}")
+        
+        if response.status_code != 200:
+            print(f"All symbols failed. Last response: {response.status_code}")
+            print(f"API Response Text: {response.text}")
+            raise Exception(f"Failed to fetch options data with all symbols: {response.status_code} - {response.text}")
+            
+        options_data = response.json()
+        
+        # Find closest delta matches
+        calls_result = find_closest_delta_option(
+            options_data, 'call', calls_delta_target
+        )
+        
+        puts_result = find_closest_delta_option(
+            options_data, 'put', puts_delta_target
+        )
+        
+        return {
+            'calls': calls_result,
+            'puts': puts_result
+        }
+        
+    except Exception as e:
+        print(f"Error in get_0dte_options: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+def find_closest_delta_option(options_data, option_type, target_delta):
+    """Find the option with delta closest to the target"""
+    try:
+        # Navigate the options data structure
+        option_map = options_data.get('callExpDateMap' if option_type == 'call' else 'putExpDateMap', {})
+        
+        best_match = None
+        best_delta_diff = float('inf')
+        
+        for exp_date, strikes in option_map.items():
+            for strike, option_list in strikes.items():
+                for option in option_list:
+                    delta = option.get('delta', 0)
+                    if delta is None:
+                        continue
+                        
+                    delta_diff = abs(delta - target_delta)
+                    
+                    if delta_diff < best_delta_diff:
+                        best_delta_diff = delta_diff
+                        best_match = {
+                            'strike': strike,
+                            'price': option.get('last', option.get('mark', 0)),
+                            'delta': delta,
+                            'bid': option.get('bid', 0),
+                            'ask': option.get('ask', 0),
+                            'volume': option.get('totalVolume', 0)
+                        }
+        
+        return best_match
+        
+    except Exception as e:
+        print(f"Error finding closest delta option: {e}")
+        return {
+            'strike': 'Error',
+            'price': 'Error',
+            'delta': 'Error'
+        }
 
 @app.route('/health')
 def health_check():

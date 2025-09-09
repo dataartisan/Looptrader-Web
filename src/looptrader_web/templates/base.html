@@ -193,6 +193,14 @@
             </ul>
           </li>
 
+          <!-- Get Prices -->
+          <li class="nav-item">
+            <a href="{{ url_for('pricing') }}" class="nav-link {% if request.endpoint == 'pricing' %}active{% endif %}">
+              <i class="nav-icon fas fa-dollar-sign"></i>
+              <p>Get Prices</p>
+            </a>
+          </li>
+
           <!-- Divider -->
           <li class="nav-header">SYSTEM</li>
 

@@ -11,6 +11,8 @@ services:
       - SECRET_KEY=${SECRET_KEY:-production-secret-key-change-this}
       - ADMIN_NAME=${ADMIN_NAME:-Admin}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@looptrader.com}
+      - SCHWAB_API_KEY=
+      - SCHWAB_APP_SECRET=
     restart: unless-stopped
     networks:
       - looptrader-pro_default
