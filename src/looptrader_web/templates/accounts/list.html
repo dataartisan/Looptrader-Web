@@ -10,12 +10,84 @@
 {% endblock %}
 
 {% block content %}
+<!-- Schwab Account Balances Section -->
 <div class="row">
   <div class="col-12">
     <div class="card">
       <div class="card-header">
         <h3 class="card-title">
-          <i class="fas fa-university mr-2"></i>All Accounts
+          <i class="fas fa-dollar-sign mr-2"></i>Account Balances
+        </h3>
+        {% if schwab_accounts.account_count %}
+        <div class="card-tools">
+          <span class="badge badge-success">{{ schwab_accounts.account_count }} account{{ 's' if schwab_accounts.account_count != 1 else '' }}</span>
+        </div>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if schwab_accounts.error %}
+        <div class="alert alert-warning">
+          <i class="fas fa-exclamation-triangle"></i> {{ schwab_accounts.error }}
+        </div>
+        {% elif schwab_accounts.accounts %}
+        <!-- Summary Row -->
+        <div class="row mb-3">
+          <div class="col-md-4">
+            <div class="info-box bg-success">
+              <span class="info-box-icon"><i class="fas fa-coins"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Total Portfolio Value</span>
+                <span class="info-box-number">{{ schwab_accounts.total_value }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Individual Account Details -->
+        <div class="table-responsive">
+          <table class="table table-striped table-hover">
+            <thead>
+              <tr>
+                <th>Account Number</th>
+                <th>Account Type</th>
+                <th>Total Value</th>
+                <th>Cash Balance</th>
+                <th>Buying Power</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for account in schwab_accounts.accounts %}
+              <tr>
+                <td><strong>{{ account.account_number }}</strong></td>
+                <td>
+                  <span class="badge badge-info">{{ account.account_type }}</span>
+                </td>
+                <td>
+                  <span class="text-success font-weight-bold">{{ account.formatted_liquidation_value }}</span>
+                </td>
+                <td>{{ account.formatted_cash_balance }}</td>
+                <td>{{ account.formatted_buying_power }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+          <i class="fas fa-info-circle"></i> No Schwab account data available.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">
+          <i class="fas fa-university mr-2"></i>Trading Accounts
         </h3>
         <div class="card-tools">
           <button type="button" class="btn btn-sm btn-primary" onclick="location.reload()">

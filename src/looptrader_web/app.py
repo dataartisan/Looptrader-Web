@@ -9,8 +9,12 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import os
 import requests
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Import our database models
 from models.database import (
@@ -81,7 +85,7 @@ def get_spx_price():
                     previous_close = meta.get('previousClose', price)
                     
                     # Convert to CST (UTC-6)
-                    now_utc = datetime.utcnow()
+                    now_utc = datetime.now(timezone.utc)
                     cst_time = now_utc - timedelta(hours=6)
                     timestamp = cst_time.strftime('%Y-%m-%d %I:%M %p CST')
                     
@@ -97,7 +101,7 @@ def get_spx_price():
         print(f"Error fetching SPX price: {e}")
     
     # Return default values if API fails
-    now_utc = datetime.utcnow()
+    now_utc = datetime.now(timezone.utc)
     cst_time = now_utc - timedelta(hours=6)
     timestamp = cst_time.strftime('%Y-%m-%d %I:%M %p CST')
     
@@ -156,13 +160,14 @@ def dashboard():
             db_status = 'error'
         recent_positions = get_recent_positions(5)
         spx_data = get_spx_price()
-        return render_template('dashboard.html', stats=stats, recent_positions=recent_positions, db_status=db_status, spx_data=spx_data)
+        balance_data = get_schwab_account_balance()
+        return render_template('dashboard.html', stats=stats, recent_positions=recent_positions, db_status=db_status, spx_data=spx_data, balance_data=balance_data)
     except Exception as e:
         flash(f'Error loading dashboard: {str(e)}', 'danger')
-        now_utc = datetime.utcnow()
+        now_utc = datetime.now(timezone.utc)
         cst_time = now_utc - timedelta(hours=6)
         timestamp = cst_time.strftime('%Y-%m-%d %I:%M %p CST')
-        return render_template('dashboard.html', stats={}, recent_positions=[], db_status='error', spx_data={'price': 'N/A', 'change': 'N/A', 'change_percent': 'N/A', 'market_state': 'UNKNOWN', 'previous_close': 'N/A', 'timestamp': timestamp})
+        return render_template('dashboard.html', stats={}, recent_positions=[], db_status='error', spx_data={'price': 'N/A', 'change': 'N/A', 'change_percent': 'N/A', 'market_state': 'UNKNOWN', 'previous_close': 'N/A', 'timestamp': timestamp}, balance_data={'total_balance': 'N/A', 'error': 'Dashboard load error'})
 
 # Bot management routes
 @app.route('/bots')
@@ -520,12 +525,16 @@ def accounts():
         db = SessionLocal()
         try:
             accounts = db.query(BrokerageAccount).all()
-            return render_template('accounts/list.html', accounts=accounts)
+            # Get Schwab account details
+            schwab_accounts = get_schwab_accounts_detail()
+            return render_template('accounts/list.html', accounts=accounts, schwab_accounts=schwab_accounts)
         finally:
             db.close()
     except Exception as e:
         flash(f'Error loading accounts: {str(e)}', 'danger')
-        return render_template('accounts/list.html', accounts=[])
+        # Provide empty schwab_accounts in case of error
+        schwab_accounts = {'accounts': [], 'error': 'Failed to load Schwab data'}
+        return render_template('accounts/list.html', accounts=[], schwab_accounts=schwab_accounts)
 
 # Position management routes
 @app.route('/positions')
@@ -1154,6 +1163,163 @@ def fetch_options_data():
             'message': f'Error fetching options data: {str(e)}'
         }), 500
 
+def get_schwab_account_balance():
+    """Get total account balance from Schwab API"""
+    try:
+        # Load Schwab token
+        token_data = load_schwab_token()
+        if not token_data:
+            return {'total_balance': 'N/A', 'error': 'Token not available'}
+        
+        import schwab
+        
+        # Create Schwab client with token file path
+        token_path = '/app/token.json'
+        if not os.path.exists(token_path):
+            # Fallback for local development
+            app_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            token_path = os.path.join(app_root, 'token.json')
+        
+        client = schwab.auth.client_from_token_file(
+            token_path,
+            api_key=os.environ.get('SCHWAB_API_KEY'),
+            app_secret=os.environ.get('SCHWAB_APP_SECRET'),
+            enforce_enums=False
+        )
+        
+        # Get account numbers
+        accounts_response = client.get_account_numbers()
+        
+        if accounts_response.status_code != 200:
+            print(f"Failed to get account numbers: {accounts_response.status_code}")
+            return {'total_balance': 'N/A', 'error': 'Failed to get accounts'}
+        
+        accounts_data = accounts_response.json()
+        
+        total_balance = 0
+        account_count = 0
+        
+        # Iterate through accounts and sum balances
+        for account in accounts_data:
+            account_hash = account.get('hashValue')
+            if account_hash:
+                # Get account details without requesting specific fields
+                account_response = client.get_account(account_hash)
+                
+                if account_response.status_code == 200:
+                    account_details = account_response.json()
+                    
+                    # Extract balance information
+                    securities_account = account_details.get('securitiesAccount', {})
+                    current_balances = securities_account.get('currentBalances', {})
+                    
+                    # Get total value (liquidation value is most comprehensive)
+                    account_value = current_balances.get('liquidationValue', 0)
+                    if account_value:
+                        total_balance += float(account_value)
+                        account_count += 1
+                else:
+                    print(f"Failed to get account details for {account_hash}: {account_response.status_code}")
+        
+        return {
+            'total_balance': f"${total_balance:,.2f}",
+            'account_count': account_count,
+            'error': None
+        }
+        
+    except Exception as e:
+        print(f"Error fetching account balance: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'total_balance': 'N/A', 'error': str(e)}
+
+def get_schwab_accounts_detail():
+    """Get detailed account information from Schwab API including individual account balances"""
+    try:
+        # Load Schwab token
+        token_data = load_schwab_token()
+        if not token_data:
+            return {'accounts': [], 'error': 'Token not available'}
+        
+        import schwab
+        
+        # Create Schwab client with token file path
+        token_path = '/app/token.json'
+        if not os.path.exists(token_path):
+            # Fallback for local development
+            app_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            token_path = os.path.join(app_root, 'token.json')
+        
+        client = schwab.auth.client_from_token_file(
+            token_path,
+            api_key=os.environ.get('SCHWAB_API_KEY'),
+            app_secret=os.environ.get('SCHWAB_APP_SECRET'),
+            enforce_enums=False
+        )
+        
+        # Get account numbers
+        accounts_response = client.get_account_numbers()
+        
+        if accounts_response.status_code != 200:
+            print(f"Failed to get account numbers: {accounts_response.status_code}")
+            return {'accounts': [], 'error': 'Failed to get accounts'}
+        
+        accounts_data = accounts_response.json()
+        detailed_accounts = []
+        
+        # Iterate through accounts and get detailed information
+        for account in accounts_data:
+            account_hash = account.get('hashValue')
+            account_number = account.get('accountNumber')
+            if account_hash:
+                # Get account details
+                account_response = client.get_account(account_hash)
+                
+                if account_response.status_code == 200:
+                    account_details = account_response.json()
+                    
+                    # Extract account information
+                    securities_account = account_details.get('securitiesAccount', {})
+                    current_balances = securities_account.get('currentBalances', {})
+                    
+                    # Get account type and other details
+                    account_type = securities_account.get('type', 'Unknown')
+                    
+                    # Get balance information
+                    liquidation_value = current_balances.get('liquidationValue', 0)
+                    cash_balance = current_balances.get('cashBalance', 0)
+                    buying_power = current_balances.get('buyingPower', 0)
+                    
+                    detailed_accounts.append({
+                        'account_hash': account_hash,
+                        'account_number': account_number,
+                        'account_type': account_type,
+                        'liquidation_value': float(liquidation_value) if liquidation_value else 0,
+                        'cash_balance': float(cash_balance) if cash_balance else 0,
+                        'buying_power': float(buying_power) if buying_power else 0,
+                        'formatted_liquidation_value': f"${float(liquidation_value):,.2f}" if liquidation_value else "$0.00",
+                        'formatted_cash_balance': f"${float(cash_balance):,.2f}" if cash_balance else "$0.00",
+                        'formatted_buying_power': f"${float(buying_power):,.2f}" if buying_power else "$0.00"
+                    })
+                else:
+                    print(f"Failed to get account details for {account_hash}: {account_response.status_code}")
+        
+        # Calculate total
+        total_value = sum(acc['liquidation_value'] for acc in detailed_accounts)
+        
+        return {
+            'accounts': detailed_accounts,
+            'total_value': f"${total_value:,.2f}",
+            'account_count': len(detailed_accounts),
+            'error': None
+        }
+        
+    except Exception as e:
+        print(f"Error fetching account details: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'accounts': [], 'error': str(e)}
+
 def load_schwab_token():
     """Load Schwab token from token.json in the app root directory"""
     try:
@@ -1213,7 +1379,8 @@ def get_0dte_options(token_data, calls_delta_target, puts_delta_target):
         client = schwab.auth.client_from_token_file(
             token_path,
             api_key=os.environ.get('SCHWAB_API_KEY'),
-            app_secret=os.environ.get('SCHWAB_APP_SECRET')
+            app_secret=os.environ.get('SCHWAB_APP_SECRET'),
+            enforce_enums=False
         )
         
         # Get today's date for 0 DTE
