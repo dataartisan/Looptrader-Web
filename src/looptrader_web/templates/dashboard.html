@@ -194,7 +194,7 @@
                     {{ position.status_text }}
                   </span>
                 </td>
-                <td>{{ position.opened_datetime.strftime('%Y-%m-%d %H:%M') if position.opened_datetime else 'N/A' }}</td>
+                <td>{{ position.opened_datetime | to_est if position.opened_datetime else 'N/A' }}</td>
                 <td>{{ position.duration_text }}</td>
               </tr>
               {% endfor %}
