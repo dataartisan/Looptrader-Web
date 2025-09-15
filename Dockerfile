@@ -24,9 +24,6 @@ RUN poetry install --no-root --only=main
 COPY src/ ./src/
 COPY .env* ./
 
-# Copy token.json if it exists (for Schwab API)
-COPY token.json* ./
-
 # Expose port
 EXPOSE 5000
 
