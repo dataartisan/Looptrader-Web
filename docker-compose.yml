@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  looptrader-web:
+    build: .
+    ports:
+      - "3000:5000"
+    volumes:
+      - ./token.json:/app/token.json
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-admin}:${DB_PASSWORD:-password!}@postgresdb:5432/looptrader
+      - FLASK_DEBUG=false
+      - SECRET_KEY=${SECRET_KEY:-production-secret-key-change-this}
+      - ADMIN_NAME=${ADMIN_NAME:-Admin}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@looptrader.com}
+      - SCHWAB_API_KEY=${SCHWAB_API_KEY}
+      - SCHWAB_APP_SECRET=${SCHWAB_APP_SECRET}
+    restart: unless-stopped
+    networks:
+      - looptrader-pro_default
+
+networks:
+  looptrader-pro_default:
+    external: true

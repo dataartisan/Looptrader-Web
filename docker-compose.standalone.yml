@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  looptrader-web:
+    build: .
+    ports:
+      - "3000:5000"
+    volumes:
+      - ./token.json:/app/token.json
+    environment:
+      - DATABASE_URL=postgresql://admin:password!@localhost:5432/looptrader
+      - FLASK_DEBUG=false
+      - SECRET_KEY=${SECRET_KEY:-production-secret-key-change-this}
+      - ADMIN_NAME=${ADMIN_NAME:-Admin}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@looptrader.com}
+    restart: unless-stopped
+    network_mode: "host"
