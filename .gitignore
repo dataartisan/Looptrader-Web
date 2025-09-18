@@ -1,2 +1,4 @@
 .env
 token.json
+docker-compose.yml
+docker-compose.standalone.yml

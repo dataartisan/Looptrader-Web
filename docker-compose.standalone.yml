@@ -8,7 +8,7 @@ services:
     volumes:
       - ./token.json:/app/token.json
     environment:
-      - DATABASE_URL=postgresql://admin:password!@localhost:5432/looptrader
+      - DATABASE_URL=postgresql://admin:Mangocar249!@localhost:5432/looptrader
       - FLASK_DEBUG=false
       - SECRET_KEY=${SECRET_KEY:-production-secret-key-change-this}
       - ADMIN_NAME=${ADMIN_NAME:-Admin}
