@@ -338,7 +338,20 @@ $(document).ready(function() {
 
     function showMessage(message, type) {
         // Create a temporary alert
-        const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
+        let alertClass;
+        switch(type) {
+            case 'success':
+                alertClass = 'alert-success';
+                break;
+            case 'warning':
+                alertClass = 'alert-warning';
+                break;
+            case 'danger':
+            default:
+                alertClass = 'alert-danger';
+                break;
+        }
+        
         const alert = $(`<div class="alert ${alertClass} alert-dismissible fade show" role="alert">
             ${message}
             <button type="button" class="close" data-dismiss="alert" aria-label="Close">
@@ -348,10 +361,11 @@ $(document).ready(function() {
         
         $('.card-body').prepend(alert);
         
-        // Auto-dismiss after 3 seconds
+        // Auto-dismiss after 5 seconds for warning/error messages
+        const dismissTime = type === 'success' ? 3000 : 5000;
         setTimeout(() => {
             alert.alert('close');
-        }, 3000);
+        }, dismissTime);
     }
 
     // Initial count update
@@ -383,10 +397,55 @@ function removeSelected() {
     }
     
     if (confirm(`Remove ${selectedBots.length} trailing stop(s)? This cannot be undone.`)) {
+        let completedRequests = 0;
+        let successCount = 0;
+        let failedBots = [];
+        
         selectedBots.each(function() {
             const botId = $(this).val();
-            const removeBtn = $(this).closest('tr').find('.remove-btn');
-            removeBtn.click();
+            const row = $(this).closest('tr');
+            
+            $.ajax({
+                url: '{{ url_for("remove_trailing_stop") }}',
+                method: 'POST',
+                data: {
+                    bot_id: botId
+                },
+                success: function(response) {
+                    completedRequests++;
+                    if (response.success) {
+                        successCount++;
+                        row.fadeOut(function() {
+                            $(this).remove();
+                            updateSelectedCount();
+                        });
+                    } else {
+                        failedBots.push(`Bot ${botId}: ${response.message}`);
+                    }
+                    
+                    // Check if all requests are complete
+                    if (completedRequests === selectedBots.length) {
+                        let message = `${successCount} trailing stop(s) removed successfully.`;
+                        if (failedBots.length > 0) {
+                            message += ` Failed: ${failedBots.join(', ')}`;
+                        }
+                        showMessage(message, failedBots.length > 0 ? 'warning' : 'success');
+                    }
+                },
+                error: function() {
+                    completedRequests++;
+                    failedBots.push(`Bot ${botId}: Network error`);
+                    
+                    // Check if all requests are complete
+                    if (completedRequests === selectedBots.length) {
+                        let message = `${successCount} trailing stop(s) removed successfully.`;
+                        if (failedBots.length > 0) {
+                            message += ` Failed: ${failedBots.join(', ')}`;
+                        }
+                        showMessage(message, 'warning');
+                    }
+                }
+            });
         });
     }
 }
