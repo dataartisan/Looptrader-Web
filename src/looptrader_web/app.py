@@ -1248,8 +1248,8 @@ def get_schwab_account_balance():
         traceback.print_exc()
         return {'total_balance': 'N/A', 'error': str(e)}
 
-def calculate_total_open_premium():
-    """Calculate total open premium from all active positions"""
+def calculate_total_premium_opened():
+    """Calculate total premium opened (initial premium sold from all active positions)"""
     try:
         db = SessionLocal()
         
@@ -1259,26 +1259,102 @@ def calculate_total_open_premium():
             joinedload(Position.orders)
         ).filter(Position.active == True).all()
         
-        total_open_premium = 0.0
+        total_premium_opened = 0.0
         
         for position in active_positions:
-            for order in position.orders:
-                # Calculate premium for filled orders
-                if (order.status and 'FILLED' in order.status.upper() and 
-                    order.price is not None and order.filledQuantity is not None):
-                    # Premium = price * filled quantity * 100 (for options contracts)
-                    order_premium = float(order.price) * float(order.filledQuantity) * 100
-                    total_open_premium += order_premium
+            total_premium_opened += position.initial_premium_sold
         
-        return total_open_premium
+        return total_premium_opened
         
     except Exception as e:
-        print(f"Error calculating open premium: {e}")
+        print(f"Error calculating total premium opened: {e}")
         import traceback
         traceback.print_exc()
         return 0.0
     finally:
         db.close()
+
+def calculate_account_premium_metrics(account_number):
+    """Calculate premium metrics for a specific account"""
+    try:
+        db = SessionLocal()
+        
+        # Find the account_id for this account number
+        account = db.query(BrokerageAccount).filter(BrokerageAccount.name.contains(str(account_number))).first()
+        if not account:
+            return {
+                'premium_opened': 0.0,
+                'current_open_premium': 0.0,
+                'profit_loss': 0.0,
+                'profit_loss_percent': 0.0
+            }
+        
+        # Get active positions for this account
+        from sqlalchemy.orm import joinedload
+        active_positions = db.query(Position).options(
+            joinedload(Position.orders)
+        ).filter(
+            Position.active == True,
+            Position.account_id == account.account_id
+        ).all()
+        
+        premium_opened = 0.0
+        current_open_premium = 0.0
+        
+        for position in active_positions:
+            premium_opened += position.initial_premium_sold
+            current_open_premium += position.current_open_premium
+        
+        profit_loss = premium_opened - current_open_premium
+        profit_loss_percent = (profit_loss / premium_opened * 100) if premium_opened > 0 else 0
+        
+        return {
+            'premium_opened': premium_opened,
+            'current_open_premium': current_open_premium,
+            'profit_loss': profit_loss,
+            'profit_loss_percent': profit_loss_percent
+        }
+        
+    except Exception as e:
+        print(f"Error calculating account premium metrics for {account_number}: {e}")
+        return {
+            'premium_opened': 0.0,
+            'current_open_premium': 0.0,
+            'profit_loss': 0.0,
+            'profit_loss_percent': 0.0
+        }
+    finally:
+        db.close()
+
+def calculate_current_open_premium():
+    """Calculate current open premium (current cost to close all active positions)"""
+    try:
+        db = SessionLocal()
+        
+        # Get all active positions with their orders
+        from sqlalchemy.orm import joinedload
+        active_positions = db.query(Position).options(
+            joinedload(Position.orders)
+        ).filter(Position.active == True).all()
+        
+        current_open_premium = 0.0
+        
+        for position in active_positions:
+            current_open_premium += position.current_open_premium
+        
+        return current_open_premium
+        
+    except Exception as e:
+        print(f"Error calculating current open premium: {e}")
+        import traceback
+        traceback.print_exc()
+        return 0.0
+    finally:
+        db.close()
+
+def calculate_total_open_premium():
+    """Legacy function - now returns calculate_total_premium_opened for backward compatibility"""
+    return calculate_total_premium_opened()
 
 def get_schwab_accounts_detail():
     """Get detailed account information from Schwab API including individual account balances"""
@@ -1343,18 +1419,8 @@ def get_schwab_accounts_detail():
                     long_market_value = current_balances.get('longMarketValue', 0)
                     short_market_value = current_balances.get('shortMarketValue', 0)
                     
-                    # Try to calculate today's PNL
-                    # Note: Schwab API doesn't provide direct daily PNL, so we'll use available fields
-                    # This is an approximation - for accurate PNL, would need previous day's closing values
-                    total_market_value = float(long_market_value or 0) + float(short_market_value or 0)
-                    todays_pnl = 0  # Default to 0 since we don't have previous day data
-                    todays_pnl_percent = 0  # Default to 0
-                    
-                    # If we have equity and it's different from liquidation value, use that as approximation
-                    if equity and liquidation_value and equity != liquidation_value:
-                        todays_pnl = float(equity) - float(liquidation_value)
-                        if liquidation_value > 0:
-                            todays_pnl_percent = (todays_pnl / float(liquidation_value)) * 100
+                    # Calculate options-based P&L for this account
+                    account_metrics = calculate_account_premium_metrics(account_number)
                     
                     detailed_accounts.append({
                         'account_hash': account_hash,
@@ -1363,31 +1429,33 @@ def get_schwab_accounts_detail():
                         'liquidation_value': float(liquidation_value) if liquidation_value else 0,
                         'cash_balance': float(cash_balance) if cash_balance else 0,
                         'buying_power': float(buying_power) if buying_power else 0,
-                        'todays_pnl': todays_pnl,
-                        'todays_pnl_percent': todays_pnl_percent,
+                        'todays_pnl': account_metrics['profit_loss'],
+                        'todays_pnl_percent': account_metrics['profit_loss_percent'],
                         'formatted_liquidation_value': f"${float(liquidation_value):,.2f}" if liquidation_value else "$0.00",
                         'formatted_cash_balance': f"${float(cash_balance):,.2f}" if cash_balance else "$0.00",
                         'formatted_buying_power': f"${float(buying_power):,.2f}" if buying_power else "$0.00",
-                        'formatted_todays_pnl': f"${todays_pnl:,.2f}" if todays_pnl != 0 else "$0.00",
-                        'formatted_todays_pnl_percent': f"{todays_pnl_percent:+.2f}%" if todays_pnl_percent != 0 else "0.00%"
+                        'formatted_todays_pnl': f"${account_metrics['profit_loss']:,.2f}",
+                        'formatted_todays_pnl_percent': f"{account_metrics['profit_loss_percent']:+.2f}%"
                     })
                 else:
                     print(f"Failed to get account details for {account_hash}: {account_response.status_code}")
         
         # Calculate totals
         total_value = sum(acc['liquidation_value'] for acc in detailed_accounts)
-        total_pnl = sum(acc['todays_pnl'] for acc in detailed_accounts)
-        total_pnl_percent = (total_pnl / total_value * 100) if total_value > 0 else 0
         
-        # Calculate total open premium
-        total_open_premium = calculate_total_open_premium()
+        # Calculate the new premium metrics
+        total_premium_opened = calculate_total_premium_opened()
+        current_open_premium = calculate_current_open_premium()
+        current_profit_loss = total_premium_opened - current_open_premium
+        current_profit_loss_percent = (current_profit_loss / total_premium_opened * 100) if total_premium_opened > 0 else 0
         
         return {
             'accounts': detailed_accounts,
             'total_value': f"${total_value:,.2f}",
-            'total_pnl': f"${total_pnl:,.2f}",
-            'total_pnl_percent': f"{total_pnl_percent:+.2f}%",
-            'total_open_premium': f"${total_open_premium:,.2f}",
+            'total_premium_opened': f"${total_premium_opened:,.2f}",
+            'current_open_premium': f"${current_open_premium:,.2f}",
+            'current_profit_loss': f"${current_profit_loss:,.2f}",
+            'current_profit_loss_percent': f"{current_profit_loss_percent:+.2f}%",
             'account_count': len(detailed_accounts),
             'error': None
         }

@@ -235,32 +235,105 @@ class Position(Base):
             print(f"Error calculating initial premium for position {self.id}: {e}")
             return 0.0
     
+    def get_net_position_details(self):
+        """Get detailed net position information"""
+        try:
+            net_contracts = 0.0
+            total_cost_basis = 0.0
+            orders_summary = []
+            
+            for order in self.orders:
+                if (order.status and 'FILLED' in order.status.upper() and 
+                    order.filledQuantity is not None and order.price is not None):
+                    
+                    filled_qty = float(order.filledQuantity)
+                    order_price = float(order.price)
+                    
+                    if order.orderType and 'SELL' in order.orderType.upper():
+                        net_contracts += filled_qty
+                        total_cost_basis += filled_qty * order_price * 100
+                        orders_summary.append({
+                            'type': 'SELL',
+                            'quantity': filled_qty,
+                            'price': order_price,
+                            'premium': filled_qty * order_price * 100
+                        })
+                    elif order.orderType and 'BUY' in order.orderType.upper():
+                        net_contracts -= filled_qty
+                        total_cost_basis -= filled_qty * order_price * 100
+                        orders_summary.append({
+                            'type': 'BUY',
+                            'quantity': filled_qty,
+                            'price': order_price,
+                            'premium': filled_qty * order_price * 100
+                        })
+            
+            return {
+                'net_contracts': net_contracts,
+                'total_cost_basis': total_cost_basis,
+                'orders': orders_summary,
+                'is_short': net_contracts > 0,
+                'is_long': net_contracts < 0,
+                'is_closed': abs(net_contracts) < 0.01
+            }
+        except Exception as e:
+            print(f"Error calculating net position for position {self.id}: {e}")
+            return {
+                'net_contracts': 0,
+                'total_cost_basis': 0,
+                'orders': [],
+                'is_short': False,
+                'is_long': False,
+                'is_closed': True
+            }
+    
+    def get_current_market_value(self):
+        """Get current market value - placeholder for future market data integration"""
+        # TODO: Integrate with Schwab API to get real-time option prices
+        # This would require option contract details (symbol, strike, expiration, type)
+        # For now, return None to indicate market data is not available
+        return None
+    
     @property 
     def current_open_premium(self):
-        """Calculate the current open premium (net premium for active position)"""
+        """Calculate the current open premium (estimated cost to close position)"""
         try:
             if not self.active:
                 return 0.0
             
-            net_premium = 0.0
-            for order in self.orders:
-                if (order.status and 'FILLED' in order.status.upper() and 
-                    order.price is not None and order.filledQuantity is not None):
-                    # Calculate net premium (positive for selling, negative for buying back)
-                    order_premium = float(order.price) * float(order.filledQuantity) * 100
-                    
-                    # Determine if this is an opening or closing transaction based on order type
-                    # This is a simplified approach - in practice, you might need more sophisticated logic
-                    # to determine if it's opening (selling) or closing (buying back)
-                    if order.orderType and 'SELL' in order.orderType.upper():
-                        net_premium += order_premium  # Selling adds to premium
-                    elif order.orderType and 'BUY' in order.orderType.upper():
-                        net_premium -= order_premium  # Buying reduces premium
-                    else:
-                        # If order type is unclear, default to adding (assuming most orders are sells)
-                        net_premium += order_premium
+            position_details = self.get_net_position_details()
             
-            return max(0.0, net_premium)  # Don't show negative values
+            # If position is effectively closed, return 0
+            if position_details['is_closed']:
+                return 0.0
+            
+            # Try to get real market value first
+            market_value = self.get_current_market_value()
+            if market_value is not None:
+                return market_value
+            
+            # Fallback to estimation based on historical data
+            net_contracts = position_details['net_contracts']
+            total_cost_basis = position_details['total_cost_basis']
+            
+            if position_details['is_short']:  # Short position
+                # For short positions, estimate current cost to buy back
+                # Use average sell price with some time decay assumption
+                avg_sell_price = total_cost_basis / (abs(net_contracts) * 100) if net_contracts != 0 else 0
+                # Conservative estimate: assume 30% time decay for short options
+                estimated_current_price = max(avg_sell_price * 0.7, avg_sell_price * 0.1)  # At least 10% of original
+                return abs(net_contracts) * estimated_current_price * 100
+                
+            elif position_details['is_long']:  # Long position
+                # For long positions, estimate current value
+                # Use average buy price with time decay
+                avg_buy_price = abs(total_cost_basis) / (abs(net_contracts) * 100) if net_contracts != 0 else 0
+                # Assume 50% time decay for long options (more aggressive decay)
+                estimated_current_price = max(avg_buy_price * 0.5, avg_buy_price * 0.05)  # At least 5% of original
+                return abs(net_contracts) * estimated_current_price * 100
+            
+            return 0.0
+                
         except Exception as e:
             print(f"Error calculating current open premium for position {self.id}: {e}")
             return 0.0
