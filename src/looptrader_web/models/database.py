@@ -365,6 +365,28 @@ class Position(Base):
             return 0.0
     
     @property
+    def current_pnl(self):
+        """Calculate current profit/loss (Premium Opened - Current Open Premium)"""
+        return self.initial_premium_sold - self.current_open_premium
+    
+    @property
+    def current_pnl_percent(self):
+        """Calculate current P&L percentage"""
+        if self.initial_premium_sold > 0:
+            return (self.current_pnl / self.initial_premium_sold) * 100
+        return 0.0
+    
+    @property
+    def formatted_current_pnl(self):
+        """Get formatted current P&L"""
+        return f"${self.current_pnl:,.2f}"
+    
+    @property
+    def formatted_current_pnl_percent(self):
+        """Get formatted current P&L percentage"""
+        return f"{self.current_pnl_percent:+.2f}%"
+    
+    @property
     def formatted_initial_premium_sold(self):
         """Get formatted initial premium sold"""
         return f"${self.initial_premium_sold:,.2f}"

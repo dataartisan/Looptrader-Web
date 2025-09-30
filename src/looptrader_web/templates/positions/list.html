@@ -47,6 +47,8 @@
                 <th>Orders</th>
                 <th>Initial Premium Sold</th>
                 <th>Current Open Premium</th>
+                <th>Current P&L</th>
+                <th>P&L %</th>
               </tr>
             </thead>
             <tbody>
@@ -95,6 +97,16 @@
                 <td>
                   <span class="{% if position.current_open_premium > 0 %}text-warning{% else %}text-muted{% endif %} font-weight-bold">
                     {{ position.formatted_current_open_premium }}
+                  </span>
+                </td>
+                <td>
+                  <span class="{% if position.current_pnl > 0 %}text-success{% elif position.current_pnl < 0 %}text-danger{% else %}text-muted{% endif %} font-weight-bold">
+                    {{ position.formatted_current_pnl }}
+                  </span>
+                </td>
+                <td>
+                  <span class="{% if position.current_pnl_percent > 0 %}text-success{% elif position.current_pnl_percent < 0 %}text-danger{% else %}text-muted{% endif %} font-weight-bold">
+                    {{ position.formatted_current_pnl_percent }}
                   </span>
                 </td>
               </tr>
