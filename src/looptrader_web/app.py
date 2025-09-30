@@ -555,6 +555,10 @@ def positions():
             status_filter = request.args.get('status')
             active_only = request.args.get('active_only')  # Add support for active_only param
             
+            # Default to active only if no specific filter is provided
+            if active_only is None and status_filter is None:
+                active_only = 'true'
+            
             query = db.query(Position).order_by(Position.opened_datetime.desc())
             
             if account_filter:
@@ -562,8 +566,10 @@ def positions():
             
             if status_filter == 'active' or active_only == 'true':
                 query = query.filter(Position.active == True)
-            elif status_filter == 'closed':
-                query = query.filter(Position.active == False)
+            elif status_filter == 'closed' or active_only == 'false':
+                # Show all positions when explicitly set to false or when status is closed
+                if status_filter == 'closed':
+                    query = query.filter(Position.active == False)
             
             positions = query.all()
             accounts = db.query(BrokerageAccount).all()
@@ -582,7 +588,9 @@ def positions():
             print(f"DEBUG: Active only filter: {active_only}")
             
             # Pass the active_only flag to template for button styling
-            return render_template('positions/list.html', positions=positions, accounts=accounts, active_only=(active_only == 'true'))
+            # Convert string to boolean for template logic
+            active_only_bool = active_only == 'true' if active_only else True
+            return render_template('positions/list.html', positions=positions, accounts=accounts, active_only=active_only_bool)
         finally:
             db.close()
     except Exception as e:
@@ -1240,6 +1248,38 @@ def get_schwab_account_balance():
         traceback.print_exc()
         return {'total_balance': 'N/A', 'error': str(e)}
 
+def calculate_total_open_premium():
+    """Calculate total open premium from all active positions"""
+    try:
+        db = SessionLocal()
+        
+        # Get all active positions with their orders
+        from sqlalchemy.orm import joinedload
+        active_positions = db.query(Position).options(
+            joinedload(Position.orders)
+        ).filter(Position.active == True).all()
+        
+        total_open_premium = 0.0
+        
+        for position in active_positions:
+            for order in position.orders:
+                # Calculate premium for filled orders
+                if (order.status and 'FILLED' in order.status.upper() and 
+                    order.price is not None and order.filledQuantity is not None):
+                    # Premium = price * filled quantity * 100 (for options contracts)
+                    order_premium = float(order.price) * float(order.filledQuantity) * 100
+                    total_open_premium += order_premium
+        
+        return total_open_premium
+        
+    except Exception as e:
+        print(f"Error calculating open premium: {e}")
+        import traceback
+        traceback.print_exc()
+        return 0.0
+    finally:
+        db.close()
+
 def get_schwab_accounts_detail():
     """Get detailed account information from Schwab API including individual account balances"""
     try:
@@ -1339,11 +1379,15 @@ def get_schwab_accounts_detail():
         total_pnl = sum(acc['todays_pnl'] for acc in detailed_accounts)
         total_pnl_percent = (total_pnl / total_value * 100) if total_value > 0 else 0
         
+        # Calculate total open premium
+        total_open_premium = calculate_total_open_premium()
+        
         return {
             'accounts': detailed_accounts,
             'total_value': f"${total_value:,.2f}",
             'total_pnl': f"${total_pnl:,.2f}",
             'total_pnl_percent': f"{total_pnl_percent:+.2f}%",
+            'total_open_premium': f"${total_open_premium:,.2f}",
             'account_count': len(detailed_accounts),
             'error': None
         }

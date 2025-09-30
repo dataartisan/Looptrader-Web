@@ -41,12 +41,21 @@
               </div>
             </div>
           </div>
-          <div class="col-md-3">
+          <div class="col-md-2">
             <div class="info-box {% if schwab_accounts.total_pnl and schwab_accounts.total_pnl.startswith('$-') %}bg-danger{% else %}bg-info{% endif %}">
               <span class="info-box-icon"><i class="fas fa-chart-line"></i></span>
               <div class="info-box-content">
                 <span class="info-box-text">Today's P&L</span>
                 <span class="info-box-number">{{ schwab_accounts.total_pnl or '$0.00' }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-2">
+            <div class="info-box bg-warning">
+              <span class="info-box-icon"><i class="fas fa-dollar-sign"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Total Open Premium</span>
+                <span class="info-box-number">{{ schwab_accounts.total_open_premium or '$0.00' }}</span>
               </div>
             </div>
           </div>

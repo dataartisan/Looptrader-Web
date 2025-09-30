@@ -217,6 +217,63 @@ class Position(Base):
             return account.name if account else "Unknown"
         finally:
             db.close()
+    
+    @property
+    def initial_premium_sold(self):
+        """Calculate the initial premium sold (opening transactions)"""
+        try:
+            total_premium = 0.0
+            for order in self.orders:
+                if (order.status and 'FILLED' in order.status.upper() and 
+                    order.price is not None and order.filledQuantity is not None):
+                    # For opening transactions (selling premium), we count positive values
+                    # Assuming selling options generates positive premium
+                    order_premium = float(order.price) * float(order.filledQuantity) * 100
+                    total_premium += order_premium
+            return total_premium
+        except Exception as e:
+            print(f"Error calculating initial premium for position {self.id}: {e}")
+            return 0.0
+    
+    @property 
+    def current_open_premium(self):
+        """Calculate the current open premium (net premium for active position)"""
+        try:
+            if not self.active:
+                return 0.0
+            
+            net_premium = 0.0
+            for order in self.orders:
+                if (order.status and 'FILLED' in order.status.upper() and 
+                    order.price is not None and order.filledQuantity is not None):
+                    # Calculate net premium (positive for selling, negative for buying back)
+                    order_premium = float(order.price) * float(order.filledQuantity) * 100
+                    
+                    # Determine if this is an opening or closing transaction based on order type
+                    # This is a simplified approach - in practice, you might need more sophisticated logic
+                    # to determine if it's opening (selling) or closing (buying back)
+                    if order.orderType and 'SELL' in order.orderType.upper():
+                        net_premium += order_premium  # Selling adds to premium
+                    elif order.orderType and 'BUY' in order.orderType.upper():
+                        net_premium -= order_premium  # Buying reduces premium
+                    else:
+                        # If order type is unclear, default to adding (assuming most orders are sells)
+                        net_premium += order_premium
+            
+            return max(0.0, net_premium)  # Don't show negative values
+        except Exception as e:
+            print(f"Error calculating current open premium for position {self.id}: {e}")
+            return 0.0
+    
+    @property
+    def formatted_initial_premium_sold(self):
+        """Get formatted initial premium sold"""
+        return f"${self.initial_premium_sold:,.2f}"
+    
+    @property
+    def formatted_current_open_premium(self):
+        """Get formatted current open premium"""
+        return f"${self.current_open_premium:,.2f}"
 
 class TrailingStopState(Base):
     """Trailing stop state model"""
