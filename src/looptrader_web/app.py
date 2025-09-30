@@ -1326,9 +1326,135 @@ def calculate_account_premium_metrics(account_number):
     finally:
         db.close()
 
-def calculate_current_open_premium():
-    """Calculate current open premium (current cost to close all active positions)"""
+def get_schwab_account_positions(account_hash):
+    """Get detailed positions for a specific account including current market values"""
     try:
+        # Load Schwab token
+        token_data = load_schwab_token()
+        if not token_data:
+            return None
+        
+        import schwab
+        
+        # Create Schwab client
+        token_path = '/app/token.json'
+        if not os.path.exists(token_path):
+            app_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            token_path = os.path.join(app_root, 'token.json')
+        
+        client = schwab.auth.client_from_token_file(
+            token_path,
+            api_key=os.environ.get('SCHWAB_API_KEY'),
+            app_secret=os.environ.get('SCHWAB_APP_SECRET'),
+            enforce_enums=False
+        )
+        
+        # Get account with positions
+        account_response = client.get_account(account_hash, fields=['positions'])
+        
+        if account_response.status_code == 200:
+            account_data = account_response.json()
+            securities_account = account_data.get('securitiesAccount', {})
+            positions = securities_account.get('positions', [])
+            
+            option_positions = []
+            for position in positions:
+                instrument = position.get('instrument', {})
+                
+                # Check if this is an option position
+                if instrument.get('assetType') == 'OPTION':
+                    option_positions.append({
+                        'symbol': instrument.get('symbol', ''),
+                        'description': instrument.get('description', ''),
+                        'quantity': position.get('longQuantity', 0) - position.get('shortQuantity', 0),
+                        'market_value': position.get('marketValue', 0),
+                        'average_price': position.get('averagePrice', 0),
+                        'current_day_pnl': position.get('currentDayProfitLoss', 0),
+                        'underlying_symbol': instrument.get('underlyingSymbol', '')
+                    })
+            
+            return option_positions
+        else:
+            print(f"Failed to get positions for account {account_hash}: {account_response.status_code}")
+            return None
+            
+    except Exception as e:
+        print(f"Error getting Schwab account positions: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def calculate_current_open_premium_from_schwab():
+    """Calculate current open premium using real Schwab API market values"""
+    try:
+        # Load Schwab token
+        token_data = load_schwab_token()
+        if not token_data:
+            return 0.0
+        
+        import schwab
+        
+        # Create Schwab client
+        token_path = '/app/token.json'
+        if not os.path.exists(token_path):
+            app_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            token_path = os.path.join(app_root, 'token.json')
+        
+        client = schwab.auth.client_from_token_file(
+            token_path,
+            api_key=os.environ.get('SCHWAB_API_KEY'),
+            app_secret=os.environ.get('SCHWAB_APP_SECRET'),
+            enforce_enums=False
+        )
+        
+        # Get account numbers
+        accounts_response = client.get_account_numbers()
+        if accounts_response.status_code != 200:
+            return 0.0
+        
+        accounts_data = accounts_response.json()
+        total_option_market_value = 0.0
+        
+        # Get positions for each account
+        for account in accounts_data:
+            account_hash = account.get('hashValue')
+            if account_hash:
+                # Get account with positions
+                account_response = client.get_account(account_hash, fields=['positions'])
+                
+                if account_response.status_code == 200:
+                    account_data = account_response.json()
+                    securities_account = account_data.get('securitiesAccount', {})
+                    positions = securities_account.get('positions', [])
+                    
+                    for position in positions:
+                        instrument = position.get('instrument', {})
+                        
+                        # Check if this is an option position
+                        if instrument.get('assetType') == 'OPTION':
+                            market_value = float(position.get('marketValue', 0))
+                            # For short positions, market value is negative (cost to close)
+                            # For long positions, market value is positive (current value)
+                            # We want the absolute value as the cost to close
+                            total_option_market_value += abs(market_value)
+        
+        return total_option_market_value
+        
+    except Exception as e:
+        print(f"Error calculating current open premium from Schwab: {e}")
+        import traceback
+        traceback.print_exc()
+        return 0.0
+
+def calculate_current_open_premium():
+    """Calculate current open premium using real Schwab API data first, fallback to estimation"""
+    try:
+        # Try to get real market data from Schwab first
+        schwab_market_value = calculate_current_open_premium_from_schwab()
+        if schwab_market_value > 0:
+            return schwab_market_value
+        
+        # Fallback to database calculation if Schwab data unavailable
         db = SessionLocal()
         
         # Get all active positions with their orders
@@ -1350,7 +1476,8 @@ def calculate_current_open_premium():
         traceback.print_exc()
         return 0.0
     finally:
-        db.close()
+        if 'db' in locals():
+            db.close()
 
 def calculate_total_open_premium():
     """Legacy function - now returns calculate_total_premium_opened for backward compatibility"""
