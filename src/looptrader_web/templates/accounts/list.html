@@ -64,8 +64,7 @@
               <span class="info-box-icon"><i class="fas fa-percentage"></i></span>
               <div class="info-box-content">
                 <span class="info-box-text">Current Profit / Loss</span>
-                <span class="info-box-number">{{ schwab_accounts.current_profit_loss or '$0.00' }}</span>
-                <small class="info-box-text">{{ schwab_accounts.current_profit_loss_percent or '0.00%' }}</small>
+                <span class="info-box-number">{{ schwab_accounts.current_profit_loss or '$0.00' }} - {{ schwab_accounts.current_profit_loss_percent or '0.00%' }}</span>
               </div>
             </div>
           </div>
