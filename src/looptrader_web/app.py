@@ -132,10 +132,13 @@ def get_spx_price():
                 else:
                     market_state = 'CLOSED'
                 
-                # Convert to CST (UTC-6)
+                # Convert to US/Central timezone (handles DST automatically)
                 now_utc = datetime.now(timezone.utc)
-                cst_time = now_utc - timedelta(hours=6)
-                timestamp = cst_time.strftime('%Y-%m-%d %I:%M %p CST')
+                central_tz = pytz.timezone('US/Central')
+                central_time = now_utc.astimezone(central_tz)
+                # Get the current timezone abbreviation (CST or CDT)
+                tz_abbr = central_time.strftime('%Z')
+                timestamp = central_time.strftime(f'%Y-%m-%d %I:%M %p {tz_abbr}')
                 
                 return {
                     'price': round(price, 2),
@@ -155,8 +158,10 @@ def get_spx_price():
     
     # Return default values if API fails
     now_utc = datetime.now(timezone.utc)
-    cst_time = now_utc - timedelta(hours=6)
-    timestamp = cst_time.strftime('%Y-%m-%d %I:%M %p CST')
+    central_tz = pytz.timezone('US/Central')
+    central_time = now_utc.astimezone(central_tz)
+    tz_abbr = central_time.strftime('%Z')
+    timestamp = central_time.strftime(f'%Y-%m-%d %I:%M %p {tz_abbr}')
     
     return {
         'price': 'N/A',
