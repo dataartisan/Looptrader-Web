@@ -82,42 +82,76 @@ def inject_template_vars():
     }
 
 def get_spx_price():
-    """Fetch current SPX spot price from Yahoo Finance API"""
+    """Fetch current SPX spot price using Schwab API"""
     try:
-        # Using Yahoo Finance API - free and reliable
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/%5ESPX"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        response = requests.get(url, headers=headers, timeout=10)
+        import schwab
+        from schwab.auth import client_from_token_file
+        
+        # Determine the correct path for token.json
+        if os.path.exists('/app/token.json'):
+            token_path = '/app/token.json'
+        else:
+            app_root = os.path.dirname(os.path.abspath(__file__))
+            token_path = os.path.join(app_root, 'token.json')
+        
+        # Initialize Schwab client
+        client = schwab.auth.client_from_token_file(
+            token_path,
+            api_key=os.environ.get('SCHWAB_API_KEY'),
+            app_secret=os.environ.get('SCHWAB_APP_SECRET'),
+            enforce_enums=False
+        )
+        
+        # Get SPX quote from Schwab
+        response = client.get_quote('$SPX')
         
         if response.status_code == 200:
             data = response.json()
-            if 'chart' in data and 'result' in data['chart'] and data['chart']['result']:
-                result = data['chart']['result'][0]
-                if 'meta' in result and 'regularMarketPrice' in result['meta']:
-                    meta = result['meta']
-                    price = meta['regularMarketPrice']
-                    change = meta.get('regularMarketChange', 0)
-                    change_percent = meta.get('regularMarketChangePercent', 0)
-                    market_state = meta.get('marketState', 'UNKNOWN')
-                    previous_close = meta.get('previousClose', price)
-                    
-                    # Convert to CST (UTC-6)
-                    now_utc = datetime.now(timezone.utc)
-                    cst_time = now_utc - timedelta(hours=6)
-                    timestamp = cst_time.strftime('%Y-%m-%d %I:%M %p CST')
-                    
-                    return {
-                        'price': round(price, 2),
-                        'change': round(change, 2),
-                        'change_percent': round(change_percent * 100, 2),
-                        'market_state': market_state,
-                        'previous_close': round(previous_close, 2),
-                        'timestamp': timestamp
-                    }
+            
+            # Extract quote data
+            if '$SPX' in data and 'quote' in data['$SPX']:
+                quote = data['$SPX']['quote']
+                
+                price = quote.get('lastPrice', 0)
+                close_price = quote.get('closePrice', price)
+                open_price = quote.get('openPrice', close_price)
+                
+                # Calculate change and change percent
+                change = price - close_price
+                change_percent = (change / close_price * 100) if close_price > 0 else 0
+                
+                # Determine market state based on market hours
+                # Schwab provides 52WeekHigh/Low but not market state directly
+                # We'll determine based on time
+                now = datetime.now()
+                market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+                market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
+                
+                if market_open <= now <= market_close and now.weekday() < 5:
+                    market_state = 'REGULAR'
+                else:
+                    market_state = 'CLOSED'
+                
+                # Convert to CST (UTC-6)
+                now_utc = datetime.now(timezone.utc)
+                cst_time = now_utc - timedelta(hours=6)
+                timestamp = cst_time.strftime('%Y-%m-%d %I:%M %p CST')
+                
+                return {
+                    'price': round(price, 2),
+                    'change': round(change, 2),
+                    'change_percent': round(change_percent, 2),
+                    'market_state': market_state,
+                    'previous_close': round(close_price, 2),
+                    'timestamp': timestamp
+                }
+        
+        print(f"Failed to get SPX quote: {response.status_code}")
+        
     except Exception as e:
-        print(f"Error fetching SPX price: {e}")
+        print(f"Error fetching SPX price from Schwab: {e}")
+        import traceback
+        traceback.print_exc()
     
     # Return default values if API fails
     now_utc = datetime.now(timezone.utc)
