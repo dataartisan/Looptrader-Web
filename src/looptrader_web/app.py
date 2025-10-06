@@ -617,13 +617,19 @@ def positions():
             print(f"DEBUG: Found {len(positions)} positions")
             if positions:
                 print(f"DEBUG: First position: ID={positions[0].id}, Active={positions[0].active}")
+                print(f"DEBUG: First position has {len(positions[0].orders)} orders")
                 # Test template properties that might be causing issues
                 try:
                     print(f"DEBUG: First position status_text: {positions[0].status_text}")
                     print(f"DEBUG: First position status_badge_class: {positions[0].status_badge_class}")
                     print(f"DEBUG: First position duration_text: {positions[0].duration_text}")
+                    print(f"DEBUG: First position initial_premium_sold: ${positions[0].initial_premium_sold:,.2f}")
+                    print(f"DEBUG: First position current_open_premium: ${positions[0].current_open_premium:,.2f}")
+                    print(f"DEBUG: First position current_pnl: ${positions[0].current_pnl:,.2f}")
                 except Exception as e:
                     print(f"DEBUG: Error accessing position properties: {e}")
+                    import traceback
+                    traceback.print_exc()
             print(f"DEBUG: Active only filter: {active_only}")
             
             # Pass the active_only flag to template for button styling

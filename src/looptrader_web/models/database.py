@@ -223,26 +223,35 @@ class Position(Base):
         """Calculate the net initial premium (total credit received - total debit paid)"""
         try:
             total_premium = 0.0
+            order_count = 0
+            
+            print(f"Position {self.id}: Calculating initial_premium_sold, found {len(self.orders)} orders")
+            
             for order in self.orders:
+                print(f"Position {self.id}: Order {order.orderId} - Status: {order.status}, Type: {order.orderType}, Price: {order.price}, Qty: {order.filledQuantity}")
+                
                 if (order.status and 'FILLED' in order.status.upper() and 
                     order.price is not None and order.filledQuantity is not None):
                     
                     order_premium = float(order.price) * float(order.filledQuantity) * 100
+                    order_count += 1
                     
                     # Check order type to determine if this is a credit (SELL) or debit (BUY)
                     if order.orderType and 'SELL' in order.orderType.upper():
                         # Selling options = receiving premium (positive)
                         total_premium += order_premium
-                        print(f"Position {self.id}: SELL order - adding ${order_premium:,.2f}")
+                        print(f"Position {self.id}: Order #{order_count} SELL - adding ${order_premium:,.2f}")
                     elif order.orderType and 'BUY' in order.orderType.upper():
                         # Buying options = paying premium (negative)
                         total_premium -= order_premium
-                        print(f"Position {self.id}: BUY order - subtracting ${order_premium:,.2f}")
+                        print(f"Position {self.id}: Order #{order_count} BUY - subtracting ${order_premium:,.2f}")
                     else:
-                        # If order type is unknown, log it
-                        print(f"Position {self.id}: Unknown order type '{order.orderType}' for order {order.orderId}")
+                        # If order type is unknown, assume it's a SELL (credit) for backward compatibility
+                        # This maintains the original behavior where all premiums were added
+                        total_premium += order_premium
+                        print(f"Position {self.id}: Order #{order_count} UNKNOWN type '{order.orderType}' - assuming SELL, adding ${order_premium:,.2f}")
             
-            print(f"Position {self.id}: Total initial premium (net): ${total_premium:,.2f}")
+            print(f"Position {self.id}: Total initial premium (net) from {order_count} filled orders: ${total_premium:,.2f}")
             return total_premium
         except Exception as e:
             print(f"Error calculating initial premium for position {self.id}: {e}")
