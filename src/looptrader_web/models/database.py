@@ -314,14 +314,12 @@ class Position(Base):
     def get_current_market_value(self, schwab_cache=None):
         """Get the current market value from Schwab account data
         
-        Returns the cost to close this position based on real-time market data.
-        If there's only one active position in the account, returns the total option market value.
-        If there are multiple positions, returns a proportional amount based on this position's
-        initial premium relative to all active positions in the account.
+        Returns the cost to close this position based on real-time market data matched
+        by bot name and underlying symbol.
         
         Args:
-            schwab_cache: Optional dictionary with cached Schwab data to avoid multiple API calls
-                         Format: {account_id: {'total_option_value': float, 'active_position_count': int, 'total_initial_premium': float}}
+            schwab_cache: Optional dictionary with position-specific market values
+                         Format: {position_id: market_value}
         """
         try:
             # Import here to avoid circular imports
@@ -331,31 +329,11 @@ class Position(Base):
             
             print(f"Position {self.id}: Starting get_current_market_value()")
             
-            # If cache is provided and has data for this account, use it
-            if schwab_cache and self.account_id in schwab_cache:
-                cache_data = schwab_cache[self.account_id]
-                total_option_market_value = cache_data.get('total_option_value', 0)
-                active_positions_count = cache_data.get('active_position_count', 0)
-                total_initial_premium = cache_data.get('total_initial_premium', 0)
-                
-                print(f"Position {self.id}: Using cached data - total_value=${total_option_market_value:,.2f}, active_count={active_positions_count}, total_premium=${total_initial_premium:,.2f}")
-                
-                if total_option_market_value == 0:
-                    return None
-                
-                # If there's only one active position, all option market value belongs to it
-                if active_positions_count == 1:
-                    print(f"Position {self.id}: Only 1 active position, using full market value ${total_option_market_value:,.2f}")
-                    return total_option_market_value
-                
-                # If there are multiple positions, allocate proportionally based on initial premium
-                if total_initial_premium > 0 and self.initial_premium_sold > 0:
-                    proportion = self.initial_premium_sold / total_initial_premium
-                    allocated_value = total_option_market_value * proportion
-                    print(f"Position {self.id}: Multiple positions, allocating {proportion*100:.1f}% = ${allocated_value:,.2f}")
-                    return allocated_value
-                
-                return None
+            # If cache is provided and has data for this specific position, use it
+            if schwab_cache and self.id in schwab_cache:
+                market_value = schwab_cache[self.id]
+                print(f"Position {self.id}: Using cached market value ${market_value:,.2f}")
+                return market_value if market_value > 0 else None
             
             # No cache provided, fetch data directly (slower path)
             print(f"Position {self.id}: No cache provided, fetching from Schwab API")
@@ -719,14 +697,14 @@ class Order(Base):
 
 # Analytics helper functions
 def build_schwab_cache_for_positions(positions):
-    """Build a cache of Schwab account data to avoid multiple API calls
+    """Build a cache of Schwab account data with position-level matching
     
     Args:
         positions: List of Position objects
         
     Returns:
-        Dictionary mapping account_id to Schwab data:
-        {account_id: {'total_option_value': float, 'active_position_count': int, 'total_initial_premium': float}}
+        Dictionary mapping position.id to its current market value:
+        {position_id: market_value}
     """
     import os
     import schwab
@@ -765,7 +743,7 @@ def build_schwab_cache_for_positions(positions):
         # Get all unique account_ids from positions
         account_ids = set(pos.account_id for pos in positions if pos.account_id and pos.active)
         
-        print(f"build_schwab_cache: Processing {len(account_ids)} unique accounts")
+        print(f"build_schwab_cache: Processing {len(account_ids)} unique accounts for {len(positions)} positions")
         
         # Get account numbers from Schwab
         accounts_response = client.get_account_numbers()
@@ -777,8 +755,9 @@ def build_schwab_cache_for_positions(positions):
         
         db = SessionLocal()
         try:
+            # Build account hash mapping
+            account_hash_map = {}
             for account_id in account_ids:
-                # Get brokerage account
                 brokerage_account = db.query(BrokerageAccount).filter(
                     BrokerageAccount.account_id == account_id
                 ).first()
@@ -787,46 +766,91 @@ def build_schwab_cache_for_positions(positions):
                     continue
                 
                 # Match account by number
-                account_hash = None
                 for account in accounts_data:
                     account_number = account.get('accountNumber', '')
                     if (str(brokerage_account.account_id) in str(account_number) or 
                         str(account_number).endswith(str(brokerage_account.account_id))):
-                        account_hash = account.get('hashValue')
+                        account_hash_map[account_id] = account.get('hashValue')
                         break
-                
-                if not account_hash:
-                    continue
-                
+            
+            # For each account, get Schwab positions and match to our positions
+            for account_id, account_hash in account_hash_map.items():
                 # Get account positions from Schwab
                 account_response = client.get_account(account_hash, fields=['positions'])
                 if account_response.status_code != 200:
+                    print(f"build_schwab_cache: Failed to get positions for account {account_id}")
                     continue
                 
                 account_data_resp = account_response.json()
                 securities_account = account_data_resp.get('securitiesAccount', {})
                 schwab_positions = securities_account.get('positions', [])
                 
-                # Sum up option market values
-                total_option_value = 0.0
-                for position in schwab_positions:
-                    instrument = position.get('instrument', {})
+                # Build a list of option positions with details
+                option_positions = []
+                for schwab_pos in schwab_positions:
+                    instrument = schwab_pos.get('instrument', {})
                     if instrument.get('assetType') == 'OPTION':
-                        market_value = position.get('marketValue', 0)
-                        total_option_value += abs(float(market_value))
+                        option_positions.append({
+                            'symbol': instrument.get('symbol', ''),
+                            'underlying': instrument.get('underlyingSymbol', ''),
+                            'description': instrument.get('description', ''),
+                            'market_value': abs(float(schwab_pos.get('marketValue', 0))),
+                            'quantity': schwab_pos.get('longQuantity', 0) - schwab_pos.get('shortQuantity', 0),
+                            'short_quantity': schwab_pos.get('shortQuantity', 0),
+                            'long_quantity': schwab_pos.get('longQuantity', 0)
+                        })
                 
-                # Count active positions and sum their initial premiums
-                active_positions = [p for p in positions if p.account_id == account_id and p.active]
-                active_count = len(active_positions)
-                total_initial_premium = sum(p.initial_premium_sold for p in active_positions)
+                print(f"build_schwab_cache: Account {account_id} has {len(option_positions)} option positions")
                 
-                cache[account_id] = {
-                    'total_option_value': total_option_value,
-                    'active_position_count': active_count,
-                    'total_initial_premium': total_initial_premium
-                }
+                # Match our positions to Schwab option positions
+                db_positions = [p for p in positions if p.account_id == account_id and p.active]
                 
-                print(f"build_schwab_cache: Account {account_id} - ${total_option_value:,.2f} across {active_count} positions")
+                for db_pos in db_positions:
+                    # Get bot name to extract underlying symbol
+                    bot_name = db_pos.bot.name if db_pos.bot else ""
+                    print(f"build_schwab_cache: Matching position {db_pos.id} with bot '{bot_name}'")
+                    
+                    # Extract underlying symbol from bot name (e.g., "short SPX Put" -> "SPX")
+                    underlying_symbol = None
+                    for word in bot_name.upper().split():
+                        if word in ['SPX', 'SPY', 'QQQ', 'IWM', 'DIA']:  # Common underlyings
+                            underlying_symbol = word
+                            break
+                    
+                    if not underlying_symbol:
+                        # Try to extract from description or default to SPX
+                        underlying_symbol = 'SPX'
+                        print(f"build_schwab_cache: Could not extract underlying from '{bot_name}', defaulting to SPX")
+                    
+                    # Get net position details to understand if we're long or short
+                    position_details = db_pos.get_net_position_details()
+                    net_contracts = position_details.get('net_contracts', 0)
+                    
+                    # Match Schwab positions by underlying symbol
+                    matched_value = 0.0
+                    for opt_pos in option_positions:
+                        if opt_pos['underlying'] == underlying_symbol:
+                            matched_value += opt_pos['market_value']
+                            print(f"build_schwab_cache: Matched {opt_pos['symbol']} - ${opt_pos['market_value']:,.2f}")
+                    
+                    # If only one DB position for this underlying, assign all matched value to it
+                    # Otherwise, split proportionally
+                    same_underlying_positions = [p for p in db_positions 
+                                                 if p.bot and underlying_symbol in p.bot.name.upper()]
+                    
+                    if len(same_underlying_positions) == 1:
+                        cache[db_pos.id] = matched_value
+                        print(f"build_schwab_cache: Position {db_pos.id} gets full value ${matched_value:,.2f}")
+                    else:
+                        # Split proportionally based on initial premium
+                        total_premium = sum(p.initial_premium_sold for p in same_underlying_positions if p.initial_premium_sold > 0)
+                        if total_premium > 0 and db_pos.initial_premium_sold > 0:
+                            proportion = db_pos.initial_premium_sold / total_premium
+                            allocated_value = matched_value * proportion
+                            cache[db_pos.id] = allocated_value
+                            print(f"build_schwab_cache: Position {db_pos.id} gets {proportion*100:.1f}% = ${allocated_value:,.2f}")
+                        else:
+                            cache[db_pos.id] = 0.0
         
         finally:
             db.close()
