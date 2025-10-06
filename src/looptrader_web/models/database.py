@@ -220,19 +220,34 @@ class Position(Base):
     
     @property
     def initial_premium_sold(self):
-        """Calculate the initial premium sold (opening transactions)"""
+        """Calculate the net initial premium (total credit received - total debit paid)"""
         try:
             total_premium = 0.0
             for order in self.orders:
                 if (order.status and 'FILLED' in order.status.upper() and 
                     order.price is not None and order.filledQuantity is not None):
-                    # For opening transactions (selling premium), we count positive values
-                    # Assuming selling options generates positive premium
+                    
                     order_premium = float(order.price) * float(order.filledQuantity) * 100
-                    total_premium += order_premium
+                    
+                    # Check order type to determine if this is a credit (SELL) or debit (BUY)
+                    if order.orderType and 'SELL' in order.orderType.upper():
+                        # Selling options = receiving premium (positive)
+                        total_premium += order_premium
+                        print(f"Position {self.id}: SELL order - adding ${order_premium:,.2f}")
+                    elif order.orderType and 'BUY' in order.orderType.upper():
+                        # Buying options = paying premium (negative)
+                        total_premium -= order_premium
+                        print(f"Position {self.id}: BUY order - subtracting ${order_premium:,.2f}")
+                    else:
+                        # If order type is unknown, log it
+                        print(f"Position {self.id}: Unknown order type '{order.orderType}' for order {order.orderId}")
+            
+            print(f"Position {self.id}: Total initial premium (net): ${total_premium:,.2f}")
             return total_premium
         except Exception as e:
             print(f"Error calculating initial premium for position {self.id}: {e}")
+            import traceback
+            traceback.print_exc()
             return 0.0
     
     def get_net_position_details(self):
@@ -299,17 +314,32 @@ class Position(Base):
             # Import here to avoid circular imports
             import os
             import schwab
+            import json
             
             print(f"Position {self.id}: Starting get_current_market_value()")
             
-            # Load Schwab token
-            token_path = '/app/token.json'
+            # Check if Schwab token is available using the same logic as app.py
+            token_path = os.path.join('/app', 'token.json')
             if not os.path.exists(token_path):
                 app_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
                 token_path = os.path.join(app_root, 'token.json')
             
             if not os.path.exists(token_path):
                 print(f"Position {self.id}: Token file not found at {token_path}")
+                return None
+            
+            # Try to load and validate token
+            try:
+                with open(token_path, 'r') as f:
+                    token_data = json.load(f)
+                    
+                # Handle nested token structure
+                token_info = token_data.get('token', token_data)
+                if not all(key in token_info for key in ['access_token', 'refresh_token']):
+                    print(f"Position {self.id}: Token file missing required fields")
+                    return None
+            except Exception as e:
+                print(f"Position {self.id}: Error loading token: {e}")
                 return None
             
             # Create Schwab client
@@ -536,14 +566,27 @@ class Position(Base):
     
     @property
     def current_pnl(self):
-        """Calculate current profit/loss (Premium Opened - Current Open Premium)"""
+        """Calculate current profit/loss
+        
+        Formula: Initial Premium (net credit/debit) - Current Cost to Close
+        
+        Example for a credit spread:
+        - Sold options for $1000, bought options for $300 = $700 net credit (initial_premium_sold)
+        - Current cost to close is $200 (current_open_premium)
+        - P&L = $700 - $200 = $500 profit
+        
+        Example for a debit spread:
+        - Sold options for $300, bought options for $1000 = -$700 net debit (initial_premium_sold is negative)
+        - Current value to sell is $500 (current_open_premium)
+        - P&L = -$700 - $500 = -$1200 loss (or $500 - $700 = -$200 if position reversed)
+        """
         return self.initial_premium_sold - self.current_open_premium
     
     @property
     def current_pnl_percent(self):
         """Calculate current P&L percentage"""
-        if self.initial_premium_sold > 0:
-            return (self.current_pnl / self.initial_premium_sold) * 100
+        if abs(self.initial_premium_sold) > 0.01:  # Avoid division by zero
+            return (self.current_pnl / abs(self.initial_premium_sold)) * 100
         return 0.0
     
     @property
