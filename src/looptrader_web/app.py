@@ -1217,6 +1217,36 @@ def fetch_options_data():
             'message': f'Error fetching options data: {str(e)}'
         }), 500
 
+@app.route('/fetch-gex-data', methods=['POST'])
+@login_required
+def fetch_gex_data():
+    """Fetch GEX (Gamma Exposure) data for SPX options"""
+    try:
+        # Load Schwab token
+        token_data = load_schwab_token()
+        if not token_data:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to load Schwab token. Please check token.json file.'
+            }), 500
+        
+        # Calculate GEX data
+        gex_data = calculate_gex_levels(token_data)
+        
+        return jsonify({
+            'success': True,
+            'data': gex_data
+        })
+        
+    except Exception as e:
+        print(f"Error fetching GEX data: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': f'Error fetching GEX data: {str(e)}'
+        }), 500
+
 def get_schwab_account_balance():
     """Get total account balance from Schwab API"""
     try:
@@ -1672,6 +1702,316 @@ def load_schwab_token():
         import traceback
         traceback.print_exc()
         return None
+
+def calculate_gex_levels(token_data):
+    """
+    Calculate Gamma Exposure (GEX) levels for SPX options
+    GEX = Gamma * Open Interest * Contract Multiplier * Spot Price^2
+    """
+    try:
+        import schwab
+        from datetime import date
+        
+        # Create Schwab client
+        token_path = '/app/token.json'
+        if not os.path.exists(token_path):
+            app_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            token_path = os.path.join(app_root, 'token.json')
+        
+        client = schwab.auth.client_from_token_file(
+            token_path,
+            api_key=os.environ.get('SCHWAB_API_KEY'),
+            app_secret=os.environ.get('SCHWAB_APP_SECRET'),
+            enforce_enums=False
+        )
+        
+        # Get current SPX price
+        spx_response = client.get_quote('$SPX')
+        spx_price = 5800  # Default fallback
+        
+        if spx_response.status_code == 200:
+            spx_data = spx_response.json()
+            if '$SPX' in spx_data and 'quote' in spx_data['$SPX']:
+                spx_price = spx_data['$SPX']['quote'].get('lastPrice', 5800)
+        
+        # Get today's date for 0 DTE (exactly like get_0dte_options)
+        today = date.today()
+        
+        print(f"Fetching SPX options for GEX calculation, date: {today}")
+        print(f"Current SPX Price: {spx_price}")
+        
+        # Define strike range around current price (we'll filter after fetching)
+        # +/- 50 points of current SPX price
+        strike_range_min = spx_price - 50
+        strike_range_max = spx_price + 50
+        
+        print(f"Will filter strikes from {strike_range_min} to {strike_range_max}")
+        
+        # Fetch SPX options chain for today
+        # Try different symbol formats for SPX
+        symbols_to_try = ['$SPX.X', 'SPX', '$SPX']
+        
+        for symbol in symbols_to_try:
+            print(f"Trying symbol: {symbol}")
+            response = client.get_option_chain(
+                symbol=symbol,
+                from_date=today,
+                to_date=today
+            )
+            
+            if response.status_code == 200:
+                print(f"Success with symbol: {symbol}")
+                break
+            else:
+                print(f"Failed with symbol {symbol}: {response.status_code}")
+        
+        if response.status_code != 200:
+            print(f"All symbols failed. Last response: {response.status_code}")
+            print(f"API Response Text: {response.text[:500] if hasattr(response, 'text') else 'No response'}")
+            raise Exception(f"Failed to fetch options data with all symbols: {response.status_code}")
+        
+        options_data = response.json()
+        print(f"========== GEX DEBUG START ==========")
+        print(f"Options data keys: {options_data.keys()}")
+        
+        # Find the nearest expiration date
+        call_exp_dates = list(options_data.get('callExpDateMap', {}).keys())
+        put_exp_dates = list(options_data.get('putExpDateMap', {}).keys())
+        
+        print(f"Call expiration dates found: {len(call_exp_dates)}")
+        print(f"Put expiration dates found: {len(put_exp_dates)}")
+        
+        if call_exp_dates:
+            print(f"First 3 call exp dates: {call_exp_dates[:3]}")
+        if put_exp_dates:
+            print(f"First 3 put exp dates: {put_exp_dates[:3]}")
+        
+        all_exp_dates = sorted(set(call_exp_dates + put_exp_dates))
+        
+        if not all_exp_dates:
+            import sys
+            print(f"ERROR: No expiration dates found in response!", flush=True)
+            print(f"This likely means market is closed and no options returned for today", flush=True)
+            print(f"Trying to fetch next available expiration...", flush=True)
+            sys.stdout.flush()
+            
+            # Try fetching without date restriction to get nearest available
+            for symbol in symbols_to_try:
+                print(f"Trying {symbol} without date filter for next expiration", flush=True)
+                sys.stdout.flush()
+                response = client.get_option_chain(symbol=symbol)
+                
+                if response.status_code == 200:
+                    options_data = response.json()
+                    call_exp_dates = list(options_data.get('callExpDateMap', {}).keys())
+                    put_exp_dates = list(options_data.get('putExpDateMap', {}).keys())
+                    all_exp_dates = sorted(set(call_exp_dates + put_exp_dates))
+                    
+                    if all_exp_dates:
+                        print(f"SUCCESS! Found expirations without date filter: {all_exp_dates[:3]}", flush=True)
+                        print(f"Total expirations available: {len(all_exp_dates)}", flush=True)
+                        sys.stdout.flush()
+                        break
+                else:
+                    print(f"Failed fetching without date filter: {response.status_code}", flush=True)
+                    sys.stdout.flush()
+            
+            if not all_exp_dates:
+                raise Exception("No expiration dates found in options chain even without date filter")
+        
+        # Get the nearest expiration (first one in sorted list)
+        nearest_expiration = all_exp_dates[0]
+        print(f"All available expirations: {all_exp_dates[:5]}")  # Show first 5
+        print(f"Using nearest expiration: {nearest_expiration}")
+        
+        # Parse the expiration date to show it nicely
+        # Format is typically "2025-10-04:1" where :1 means it's a daily expiration
+        exp_date_str = nearest_expiration.split(':')[0]
+        
+        # Calculate GEX by strike - only for nearest expiration
+        gex_by_strike = {}
+        contract_multiplier = 100
+        
+        # Process calls for nearest expiration only - filter by strike range
+        call_map = options_data.get('callExpDateMap', {})
+        print(f"Looking for calls in expiration: {nearest_expiration}", flush=True)
+        print(f"Available call expirations in map: {list(call_map.keys())[:3]}", flush=True)
+        
+        if nearest_expiration in call_map:
+            strikes = call_map[nearest_expiration]
+            print(f"Processing {len(strikes)} call strikes for {nearest_expiration}", flush=True)
+            
+            strikes_in_range = 0
+            strikes_with_data = 0
+            first_strike_sampled = False
+            
+            for strike_str, option_list in strikes.items():
+                strike = float(strike_str)
+                
+                # Filter: only process strikes within +/- 50 of current SPX
+                if not (strike_range_min <= strike <= strike_range_max):
+                    continue
+                
+                strikes_in_range += 1
+                
+                # Debug: sample first strike in range
+                if not first_strike_sampled and option_list:
+                    sample = option_list[0]
+                    print(f"Sample call option at strike {strike}:", flush=True)
+                    print(f"  gamma={sample.get('gamma')}, OI={sample.get('openInterest')}, volume={sample.get('totalVolume')}", flush=True)
+                    first_strike_sampled = True
+                
+                for option in option_list:
+                    gamma = option.get('gamma', 0)
+                    open_interest = option.get('openInterest', 0)
+                    volume = option.get('totalVolume', 0)
+                    
+                    # For 0 DTE, open interest may be 0, so use volume as fallback
+                    effective_oi = open_interest if open_interest > 0 else volume
+                    
+                    if gamma and effective_oi:
+                        strikes_with_data += 1
+                        # Calls: negative GEX (dealers are short calls = long gamma)
+                        # But we show from dealer perspective who is SHORT gamma
+                        gex = gamma * effective_oi * contract_multiplier * spx_price * spx_price / 1_000_000_000
+                        
+                        if strike not in gex_by_strike:
+                            gex_by_strike[strike] = {'call_gex': 0, 'put_gex': 0, 'total_gex': 0}
+                        
+                        gex_by_strike[strike]['call_gex'] -= gex  # Negative for calls
+            
+            print(f"Found {strikes_in_range} call strikes in ±50 range", flush=True)
+            print(f"Found {strikes_with_data} calls with gamma AND open interest", flush=True)
+        else:
+            print(f"WARNING: {nearest_expiration} not found in call_map!", flush=True)
+            print(f"Available expirations: {list(call_map.keys())}", flush=True)
+        
+        # Process puts for nearest expiration only - filter by strike range
+        put_map = options_data.get('putExpDateMap', {})
+        print(f"Looking for puts in expiration: {nearest_expiration}", flush=True)
+        print(f"Available put expirations in map: {list(put_map.keys())[:3]}", flush=True)
+        
+        if nearest_expiration in put_map:
+            strikes = put_map[nearest_expiration]
+            print(f"Processing {len(strikes)} put strikes for {nearest_expiration}", flush=True)
+            
+            strikes_in_range = 0
+            strikes_with_data = 0
+            first_strike_sampled = False
+            
+            for strike_str, option_list in strikes.items():
+                strike = float(strike_str)
+                
+                # Filter: only process strikes within +/- 50 of current SPX
+                if not (strike_range_min <= strike <= strike_range_max):
+                    continue
+                
+                strikes_in_range += 1
+                
+                # Debug: sample first strike in range
+                if not first_strike_sampled and option_list:
+                    sample = option_list[0]
+                    print(f"Sample put option at strike {strike}:", flush=True)
+                    print(f"  gamma={sample.get('gamma')}, OI={sample.get('openInterest')}, volume={sample.get('totalVolume')}", flush=True)
+                    first_strike_sampled = True
+                
+                for option in option_list:
+                    gamma = option.get('gamma', 0)
+                    open_interest = option.get('openInterest', 0)
+                    volume = option.get('totalVolume', 0)
+                    
+                    # For 0 DTE, open interest may be 0, so use volume as fallback
+                    effective_oi = open_interest if open_interest > 0 else volume
+                    
+                    if gamma and effective_oi:
+                        strikes_with_data += 1
+                        # Puts: positive GEX (dealers are short puts = short gamma)
+                        gex = gamma * effective_oi * contract_multiplier * spx_price * spx_price / 1_000_000_000
+                        
+                        if strike not in gex_by_strike:
+                            gex_by_strike[strike] = {'call_gex': 0, 'put_gex': 0, 'total_gex': 0}
+                        
+                        gex_by_strike[strike]['put_gex'] += gex  # Positive for puts
+            
+            print(f"Found {strikes_in_range} put strikes in ±50 range", flush=True)
+            print(f"Found {strikes_with_data} puts with gamma AND open interest", flush=True)
+        else:
+            print(f"WARNING: {nearest_expiration} not found in put_map!", flush=True)
+            print(f"Available expirations: {list(put_map.keys())}", flush=True)
+        
+        # Calculate total GEX and prepare chart data
+        strikes = []
+        call_gex_values = []
+        put_gex_values = []
+        total_gex_values = []
+        
+        # Sort strikes and filter to reasonable range around current price
+        all_strikes = sorted(gex_by_strike.keys())
+        
+        print(f"Total strikes found in gex_by_strike: {len(all_strikes)}", flush=True)
+        print(f"SPX Price: {spx_price}", flush=True)
+        print(f"Strike range: {strike_range_min} to {strike_range_max}", flush=True)
+        
+        if not all_strikes:
+            import sys
+            print(f"ERROR: No strikes found!", flush=True)
+            print(f"gex_by_strike is empty: {len(gex_by_strike)}", flush=True)
+            print(f"Checking if data was actually in the expiration maps...", flush=True)
+            print(f"Calls available: {len(call_map.get(nearest_expiration, {}))}", flush=True)
+            print(f"Puts available: {len(put_map.get(nearest_expiration, {}))}", flush=True)
+            sys.stdout.flush()
+            raise Exception("No option strikes found in the ±50 point range. Market may be closed or no options available.")
+        
+        # Strikes are already filtered to ±50 range during processing
+        for strike in all_strikes:
+            gex_data = gex_by_strike[strike]
+            total_gex = gex_data['call_gex'] + gex_data['put_gex']
+            gex_data['total_gex'] = total_gex
+            
+            strikes.append(strike)
+            call_gex_values.append(round(gex_data['call_gex'], 2))
+            put_gex_values.append(round(gex_data['put_gex'], 2))
+            total_gex_values.append(round(total_gex, 2))
+        
+        print(f"Strikes in ±50 range: {len(strikes)}")
+        
+        if not strikes:
+            raise Exception(f"No strikes found in range {strike_range_min} to {strike_range_max}. Current SPX: {spx_price}")
+        
+        # Find key levels
+        max_positive_gex = max(total_gex_values) if total_gex_values else 0
+        max_negative_gex = min(total_gex_values) if total_gex_values else 0
+        
+        max_positive_strike = strikes[total_gex_values.index(max_positive_gex)] if max_positive_gex > 0 else None
+        max_negative_strike = strikes[total_gex_values.index(max_negative_gex)] if max_negative_gex < 0 else None
+        
+        # Find zero gamma (flip point)
+        zero_gamma_strike = None
+        for i in range(len(total_gex_values) - 1):
+            if total_gex_values[i] * total_gex_values[i + 1] < 0:  # Sign change
+                zero_gamma_strike = strikes[i]
+                break
+        
+        return {
+            'strikes': strikes,
+            'call_gex': call_gex_values,
+            'put_gex': put_gex_values,
+            'total_gex': total_gex_values,
+            'current_price': round(spx_price, 2),
+            'max_positive_gex': round(max_positive_gex, 2),
+            'max_negative_gex': round(max_negative_gex, 2),
+            'max_positive_strike': max_positive_strike,
+            'max_negative_strike': max_negative_strike,
+            'zero_gamma_strike': zero_gamma_strike,
+            'expiration_date': exp_date_str,
+            'expiration_full': nearest_expiration
+        }
+        
+    except Exception as e:
+        print(f"Error calculating GEX levels: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 def get_0dte_options(token_data, calls_delta_target, puts_delta_target):
     """

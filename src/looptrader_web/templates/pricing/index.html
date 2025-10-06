@@ -34,11 +34,11 @@
                            id="calls_delta" 
                            name="calls_delta" 
                            class="form-control" 
-                           placeholder="e.g., 0.30" 
+                           placeholder="e.g., 0.20" 
                            step="0.01" 
                            min="0" 
                            max="1" 
-                           value="0.30">
+                           value="0.20">
                     <small class="form-text text-muted">Enter delta value between 0 and 1</small>
                   </div>
                   <div id="calls-results" class="mt-3">
@@ -71,11 +71,11 @@
                            id="puts_delta" 
                            name="puts_delta" 
                            class="form-control" 
-                           placeholder="e.g., -0.30" 
+                           placeholder="e.g., -0.20" 
                            step="0.01" 
                            min="-1" 
                            max="0" 
-                           value="-0.30">
+                           value="-0.20">
                     <small class="form-text text-muted">Enter delta value between -1 and 0</small>
                   </div>
                   <div id="puts-results" class="mt-3">
@@ -125,13 +125,131 @@
     </div>
   </div>
 </div>
+
+<!-- GEX Chart Section -->
+<div class="row mt-4">
+  <div class="col-12">
+    <div class="card card-primary">
+      <div class="card-header">
+        <h3 class="card-title">
+          <i class="fas fa-chart-area mr-2"></i>Gamma Exposure (GEX) Profile
+          <span id="gex-expiration-badge" class="badge badge-info ml-2" style="display: none;"></span>
+        </h3>
+        <div class="card-tools">
+          <button type="button" id="refresh-gex-btn" class="btn btn-tool" title="Refresh GEX Data" style="display: none;">
+            <i class="fas fa-sync-alt"></i>
+          </button>
+        </div>
+      </div>
+      <div class="card-body">
+        <!-- Generate GEX Button -->
+        <div class="row mb-3">
+          <div class="col-12 text-center">
+            <button type="button" id="generate-gex-btn" class="btn btn-success btn-lg">
+              <i class="fas fa-chart-area mr-2"></i>Generate GEX Chart
+            </button>
+          </div>
+        </div>
+
+        <!-- GEX Stats Row -->
+        <div class="row mb-3" id="gex-stats" style="display: none;">
+          <div class="col-md-3">
+            <div class="info-box bg-info">
+              <span class="info-box-icon"><i class="fas fa-crosshairs"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Current SPX</span>
+                <span class="info-box-number" id="gex-current-price">--</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="info-box bg-success">
+              <span class="info-box-icon"><i class="fas fa-arrow-up"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Resistance (Max Put GEX)</span>
+                <span class="info-box-number" id="gex-resistance">--</span>
+                <div class="progress-description" id="gex-resistance-value">--</div>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="info-box bg-warning">
+              <span class="info-box-icon"><i class="fas fa-balance-scale"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Flip Point (Zero GEX)</span>
+                <span class="info-box-number" id="gex-flip">--</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="info-box bg-danger">
+              <span class="info-box-icon"><i class="fas fa-arrow-down"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Support (Max Call GEX)</span>
+                <span class="info-box-number" id="gex-support">--</span>
+                <div class="progress-description" id="gex-support-value">--</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty State -->
+        <div id="gex-empty" class="text-center" style="padding: 50px;">
+          <i class="fas fa-chart-area fa-4x text-muted mb-3"></i>
+          <h4 class="text-muted">Click "Generate GEX Chart" to view gamma exposure levels</h4>
+        </div>
+
+        <!-- Loading State -->
+        <div id="gex-loading" class="text-center" style="display: none; padding: 50px;">
+          <i class="fas fa-spinner fa-spin fa-3x text-primary"></i>
+          <p class="mt-3">Loading GEX data...</p>
+        </div>
+
+        <!-- Chart Container -->
+        <div id="gex-chart-container" style="display: none;">
+          <canvas id="gexChart" style="height: 400px;"></canvas>
+        </div>
+
+        <!-- Error State -->
+        <div id="gex-error" class="alert alert-danger" style="display: none;">
+          <i class="fas fa-exclamation-triangle mr-2"></i>
+          <span id="gex-error-message"></span>
+        </div>
+
+        <!-- Info Text -->
+        <div class="alert alert-info mt-3">
+          <h5><i class="fas fa-info-circle mr-2"></i>Understanding GEX</h5>
+          <ul class="mb-0">
+            <li><strong>Positive GEX (Green)</strong>: Put wall - dealers short puts, creates support/resistance</li>
+            <li><strong>Negative GEX (Red)</strong>: Call wall - dealers short calls, creates downward pressure</li>
+            <li><strong>Zero GEX (Flip Point)</strong>: Pivot level where market behavior changes</li>
+            <li><strong>High Absolute GEX</strong>: Strong support/resistance levels with reduced volatility</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
 <script>
+let gexChart = null;
+
 $(document).ready(function() {
     $('#fetch-btn').click(function() {
         fetchOptionsData();
+    });
+    
+    $('#refresh-gex-btn').click(function() {
+        fetchGEXData();
+    });
+    
+    $('#generate-gex-btn').click(function() {
+        fetchGEXData();
     });
 });
 
@@ -212,6 +330,257 @@ function showError(message) {
 function showSuccess() {
     $('#success').show();
     $('#error').hide();
+}
+
+// GEX Chart Functions
+function fetchGEXData() {
+    console.log('Starting fetchGEXData...');
+    $('#gex-empty').hide();
+    $('#gex-loading').show();
+    $('#gex-chart-container').hide();
+    $('#gex-error').hide();
+    $('#gex-stats').hide();
+    $('#refresh-gex-btn').find('i').addClass('fa-spin');
+    $('#generate-gex-btn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-2"></i>Generating...');
+    
+    $.ajax({
+        url: '{{ url_for("fetch_gex_data") }}',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({}),
+        success: function(response) {
+            console.log('GEX Response received:', response);
+            try {
+                if (response.success) {
+                    console.log('Response successful, updating chart...');
+                    updateGEXChart(response.data);
+                    updateGEXStats(response.data);
+                    $('#gex-stats').show();
+                    $('#gex-chart-container').show();
+                    $('#refresh-gex-btn').show();
+                    console.log('Chart updated successfully');
+                } else {
+                    console.error('Response not successful:', response.message);
+                    showGEXError(response.message || 'Failed to fetch GEX data');
+                }
+            } catch (e) {
+                console.error('Error processing GEX response:', e);
+                showGEXError('Error processing GEX data: ' + e.message);
+            }
+        },
+        error: function(xhr, status, error) {
+            console.error('AJAX error:', status, error, xhr);
+            let errorMsg = 'Network error occurred';
+            if (xhr.responseJSON && xhr.responseJSON.message) {
+                errorMsg = xhr.responseJSON.message;
+            } else if (xhr.responseText) {
+                errorMsg = 'Server error: ' + xhr.responseText.substring(0, 100);
+            }
+            showGEXError(errorMsg);
+        },
+        complete: function() {
+            console.log('AJAX complete');
+            $('#gex-loading').hide();
+            $('#refresh-gex-btn').find('i').removeClass('fa-spin');
+            $('#generate-gex-btn').prop('disabled', false).html('<i class="fas fa-chart-area mr-2"></i>Generate GEX Chart');
+        }
+    });
+}
+
+function updateGEXStats(data) {
+    console.log('Updating GEX stats with data:', data);
+    try {
+        $('#gex-current-price').text('$' + data.current_price.toFixed(2));
+        
+        // Update expiration date badge
+        if (data.expiration_date) {
+            $('#gex-expiration-badge').text('Exp: ' + data.expiration_date).show();
+        }
+        
+        if (data.max_positive_strike) {
+            $('#gex-resistance').text('$' + data.max_positive_strike.toFixed(2));
+            $('#gex-resistance-value').text(data.max_positive_gex.toFixed(2) + 'B GEX');
+        } else {
+            $('#gex-resistance').text('N/A');
+            $('#gex-resistance-value').text('');
+        }
+        
+        if (data.zero_gamma_strike) {
+            $('#gex-flip').text('$' + data.zero_gamma_strike.toFixed(2));
+        } else {
+            $('#gex-flip').text('N/A');
+        }
+        
+        if (data.max_negative_strike) {
+            $('#gex-support').text('$' + data.max_negative_strike.toFixed(2));
+            $('#gex-support-value').text(data.max_negative_gex.toFixed(2) + 'B GEX');
+        } else {
+            $('#gex-support').text('N/A');
+            $('#gex-support-value').text('');
+        }
+        console.log('Stats updated successfully');
+    } catch (e) {
+        console.error('Error updating stats:', e);
+        throw e;
+    }
+}
+
+function updateGEXChart(data) {
+    console.log('Updating GEX chart with data:', data);
+    try {
+        const ctx = document.getElementById('gexChart');
+        if (!ctx) {
+            throw new Error('Chart canvas element not found');
+        }
+        
+        // Validate data
+        if (!data.strikes || data.strikes.length === 0) {
+            throw new Error('No strike data available. Market may be closed or no 0 DTE options found.');
+        }
+        
+        if (!data.total_gex || data.total_gex.length === 0) {
+            throw new Error('No GEX data available.');
+        }
+        
+        console.log('Data validated, strikes:', data.strikes.length, 'GEX values:', data.total_gex.length);
+    
+    // Destroy existing chart if it exists
+    if (gexChart) {
+        gexChart.destroy();
+    }
+    
+    // Prepare datasets with colors based on positive/negative values
+    const totalGexColors = data.total_gex.map(value => 
+        value >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)'
+    );
+    const totalGexBorderColors = data.total_gex.map(value => 
+        value >= 0 ? 'rgba(40, 167, 69, 1)' : 'rgba(220, 53, 69, 1)'
+    );
+    
+    // Create gradient for current price line
+    const gradient = ctx.getContext('2d').createLinearGradient(0, 0, 0, 400);
+    gradient.addColorStop(0, 'rgba(23, 162, 184, 0.8)');
+    gradient.addColorStop(1, 'rgba(23, 162, 184, 0.2)');
+    
+    gexChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: data.strikes,
+            datasets: [
+                {
+                    label: 'Total GEX (Billions)',
+                    data: data.total_gex,
+                    backgroundColor: totalGexColors,
+                    borderColor: totalGexBorderColors,
+                    borderWidth: 2,
+                    order: 2
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'SPX Gamma Exposure Profile' + (data.expiration_date ? ' (Exp: ' + data.expiration_date + ')' : ''),
+                    font: {
+                        size: 16,
+                        weight: 'bold'
+                    }
+                },
+                legend: {
+                    display: true,
+                    position: 'top',
+                },
+                tooltip: {
+                    callbacks: {
+                        title: function(context) {
+                            return 'Strike: $' + context[0].label;
+                        },
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            label += context.parsed.y.toFixed(2) + 'B';
+                            return label;
+                        },
+                        afterLabel: function(context) {
+                            const strike = parseFloat(context.label);
+                            const currentPrice = data.current_price;
+                            const distance = ((strike - currentPrice) / currentPrice * 100).toFixed(2);
+                            return distance > 0 ? '+' + distance + '%' : distance + '%';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Strike Price',
+                        font: {
+                            size: 14,
+                            weight: 'bold'
+                        }
+                    },
+                    ticks: {
+                        callback: function(value, index) {
+                            // Show every 5th label to avoid crowding
+                            return index % 5 === 0 ? '$' + this.getLabelForValue(value) : '';
+                        }
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Gamma Exposure (Billions)',
+                        font: {
+                            size: 14,
+                            weight: 'bold'
+                        }
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return value.toFixed(1) + 'B';
+                        }
+                    },
+                    grid: {
+                        color: function(context) {
+                            if (context.tick.value === 0) {
+                                return 'rgba(0, 0, 0, 0.5)';
+                            }
+                            return 'rgba(0, 0, 0, 0.1)';
+                        },
+                        lineWidth: function(context) {
+                            if (context.tick.value === 0) {
+                                return 2;
+                            }
+                            return 1;
+                        }
+                    }
+                }
+            }
+        }
+    });
+        console.log('Chart created successfully');
+    } catch (e) {
+        console.error('Error creating chart:', e);
+        throw e;
+    }
+}
+
+function showGEXError(message) {
+    $('#gex-error-message').text(message);
+    $('#gex-error').show();
+    $('#gex-chart-container').hide();
+    $('#gex-empty').hide();
+    $('#gex-stats').hide();
 }
 </script>
 {% endblock %}
