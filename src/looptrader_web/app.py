@@ -613,6 +613,16 @@ def positions():
             positions = query.all()
             accounts = db.query(BrokerageAccount).all()
             
+            # Build Schwab cache to avoid multiple API calls
+            print(f"DEBUG: Building Schwab cache for {len(positions)} positions")
+            from looptrader_web.models.database import build_schwab_cache_for_positions
+            schwab_cache = build_schwab_cache_for_positions(positions)
+            print(f"DEBUG: Schwab cache built with {len(schwab_cache)} accounts")
+            
+            # Inject cache into each position
+            for position in positions:
+                position._schwab_cache = schwab_cache
+            
             # Debug: Print to logs to see what we're getting
             print(f"DEBUG: Found {len(positions)} positions")
             if positions:
