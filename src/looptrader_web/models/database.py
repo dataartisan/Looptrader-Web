@@ -300,6 +300,8 @@ class Position(Base):
             import os
             import schwab
             
+            print(f"Position {self.id}: Starting get_current_market_value()")
+            
             # Load Schwab token
             token_path = '/app/token.json'
             if not os.path.exists(token_path):
@@ -307,9 +309,11 @@ class Position(Base):
                 token_path = os.path.join(app_root, 'token.json')
             
             if not os.path.exists(token_path):
+                print(f"Position {self.id}: Token file not found at {token_path}")
                 return None
             
             # Create Schwab client
+            print(f"Position {self.id}: Creating Schwab client")
             client = schwab.auth.client_from_token_file(
                 token_path,
                 api_key=os.environ.get('SCHWAB_API_KEY'),
@@ -318,11 +322,14 @@ class Position(Base):
             )
             
             # Get account numbers to find the hash for this account_id
+            print(f"Position {self.id}: Getting account numbers from Schwab")
             accounts_response = client.get_account_numbers()
             if accounts_response.status_code != 200:
+                print(f"Position {self.id}: Failed to get account numbers, status code: {accounts_response.status_code}")
                 return None
             
             accounts_data = accounts_response.json()
+            print(f"Position {self.id}: Found {len(accounts_data)} accounts from Schwab")
             
             # Find the matching account hash
             # We need to match by account number stored in our database
@@ -333,7 +340,10 @@ class Position(Base):
                 ).first()
                 
                 if not brokerage_account:
+                    print(f"Position {self.id}: No brokerage account found for account_id {self.account_id}")
                     return None
+                
+                print(f"Position {self.id}: Found brokerage account {brokerage_account.name} with account_id {brokerage_account.account_id}")
                 
                 # Match account by number (account_id might be the last 4 digits or full number)
                 account_hash = None
@@ -343,9 +353,11 @@ class Position(Base):
                     if (str(brokerage_account.account_id) in str(account_number) or 
                         str(account_number).endswith(str(brokerage_account.account_id))):
                         account_hash = account.get('hashValue')
+                        print(f"Position {self.id}: Matched account {account_number} with hash {account_hash}")
                         break
                 
                 if not account_hash:
+                    print(f"Position {self.id}: No matching account hash found for account_id {brokerage_account.account_id}")
                     return None
                 
                 # Get count of active positions in this account
@@ -354,6 +366,8 @@ class Position(Base):
                     Position.active == True
                 ).count()
                 
+                print(f"Position {self.id}: Found {active_positions_count} active positions in this account")
+                
                 # Get total initial premium for all active positions in this account
                 active_positions = db.query(Position).filter(
                     Position.account_id == self.account_id,
@@ -361,45 +375,60 @@ class Position(Base):
                 ).all()
                 
                 total_initial_premium = sum(pos.initial_premium_sold for pos in active_positions)
+                print(f"Position {self.id}: Total initial premium across all active positions: ${total_initial_premium:,.2f}")
                 
             finally:
                 db.close()
             
             # Get account with positions
+            print(f"Position {self.id}: Getting account positions from Schwab")
             account_response = client.get_account(account_hash, fields=['positions'])
             
             if account_response.status_code != 200:
+                print(f"Position {self.id}: Failed to get account positions, status code: {account_response.status_code}")
                 return None
             
             account_data = account_response.json()
             securities_account = account_data.get('securitiesAccount', {})
             positions = securities_account.get('positions', [])
             
+            print(f"Position {self.id}: Found {len(positions)} total positions in Schwab account")
+            
             # Sum up the absolute market value of all option positions
             # This represents the cost to close all option positions in the account
             total_option_market_value = 0.0
+            option_count = 0
             for position in positions:
                 instrument = position.get('instrument', {})
                 
                 # Check if this is an option position
                 if instrument.get('assetType') == 'OPTION':
                     market_value = position.get('marketValue', 0)
+                    option_count += 1
+                    print(f"Position {self.id}: Option {option_count} - Symbol: {instrument.get('symbol', 'N/A')}, Market Value: ${market_value:,.2f}")
                     # Use absolute value because we want the cost to close
                     # Negative market value means we owe money to close (short positions)
                     total_option_market_value += abs(float(market_value))
             
+            print(f"Position {self.id}: Total option market value: ${total_option_market_value:,.2f} from {option_count} options")
+            
             if total_option_market_value == 0:
+                print(f"Position {self.id}: No option positions found, returning None")
                 return None
             
             # If there's only one active position, all option market value belongs to it
             if active_positions_count == 1:
+                print(f"Position {self.id}: Only 1 active position, using full market value ${total_option_market_value:,.2f}")
                 return total_option_market_value
             
             # If there are multiple positions, allocate proportionally based on initial premium
             if total_initial_premium > 0:
                 proportion = self.initial_premium_sold / total_initial_premium
-                return total_option_market_value * proportion
+                allocated_value = total_option_market_value * proportion
+                print(f"Position {self.id}: Multiple positions, allocating {proportion*100:.1f}% = ${allocated_value:,.2f}")
+                return allocated_value
             
+            print(f"Position {self.id}: Could not allocate, returning None")
             return None
             
         except Exception as e:
