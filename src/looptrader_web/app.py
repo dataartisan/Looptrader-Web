@@ -615,7 +615,7 @@ def positions():
             
             # Build Schwab cache to avoid multiple API calls
             print(f"DEBUG: Building Schwab cache for {len(positions)} positions")
-            from looptrader_web.models.database import build_schwab_cache_for_positions
+            from models.database import build_schwab_cache_for_positions
             schwab_cache = build_schwab_cache_for_positions(positions)
             print(f"DEBUG: Schwab cache built with {len(schwab_cache)} accounts")
             
