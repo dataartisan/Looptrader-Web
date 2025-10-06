@@ -288,48 +288,124 @@ class Position(Base):
             }
     
     def get_current_market_value(self):
-        """Get the current market value from Schwab account data"""
+        """Get the current market value from Schwab account data
+        
+        Returns the cost to close this position based on real-time market data.
+        If there's only one active position in the account, returns the total option market value.
+        If there are multiple positions, returns a proportional amount based on this position's
+        initial premium relative to all active positions in the account.
+        """
         try:
             # Import here to avoid circular imports
-            from looptrader_web.app import get_schwab_account_positions
+            import os
+            import schwab
             
-            # Get the brokerage account for this position
-            brokerage_account = BrokerageAccount.query.filter_by(
-                account_id=self.account_id
-            ).first()
+            # Load Schwab token
+            token_path = '/app/token.json'
+            if not os.path.exists(token_path):
+                app_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                token_path = os.path.join(app_root, 'token.json')
             
-            if not brokerage_account:
+            if not os.path.exists(token_path):
                 return None
             
-            # Get account positions from Schwab
-            positions = get_schwab_account_positions(brokerage_account.account_hash)
+            # Create Schwab client
+            client = schwab.auth.client_from_token_file(
+                token_path,
+                api_key=os.environ.get('SCHWAB_API_KEY'),
+                app_secret=os.environ.get('SCHWAB_APP_SECRET'),
+                enforce_enums=False
+            )
             
-            if not positions:
+            # Get account numbers to find the hash for this account_id
+            accounts_response = client.get_account_numbers()
+            if accounts_response.status_code != 200:
                 return None
             
-            # Get position details
-            position_details = self.get_net_position_details()
+            accounts_data = accounts_response.json()
             
-            if not position_details['orders']:
+            # Find the matching account hash
+            # We need to match by account number stored in our database
+            db = SessionLocal()
+            try:
+                brokerage_account = db.query(BrokerageAccount).filter(
+                    BrokerageAccount.account_id == self.account_id
+                ).first()
+                
+                if not brokerage_account:
+                    return None
+                
+                # Match account by number (account_id might be the last 4 digits or full number)
+                account_hash = None
+                for account in accounts_data:
+                    account_number = account.get('accountNumber', '')
+                    # Check if the account number matches (exact or ends with our account_id)
+                    if (str(brokerage_account.account_id) in str(account_number) or 
+                        str(account_number).endswith(str(brokerage_account.account_id))):
+                        account_hash = account.get('hashValue')
+                        break
+                
+                if not account_hash:
+                    return None
+                
+                # Get count of active positions in this account
+                active_positions_count = db.query(Position).filter(
+                    Position.account_id == self.account_id,
+                    Position.active == True
+                ).count()
+                
+                # Get total initial premium for all active positions in this account
+                active_positions = db.query(Position).filter(
+                    Position.account_id == self.account_id,
+                    Position.active == True
+                ).all()
+                
+                total_initial_premium = sum(pos.initial_premium_sold for pos in active_positions)
+                
+            finally:
+                db.close()
+            
+            # Get account with positions
+            account_response = client.get_account(account_hash, fields=['positions'])
+            
+            if account_response.status_code != 200:
                 return None
             
-            # For options positions, try to match based on characteristics
-            # Since we may not have exact symbol matching, we'll use the improved fallback
-            # This gives us the foundation for when symbol matching is available
+            account_data = account_response.json()
+            securities_account = account_data.get('securitiesAccount', {})
+            positions = securities_account.get('positions', [])
             
-            # Check if any positions exist (indicating we have market data)
-            has_market_data = len(positions) > 0
+            # Sum up the absolute market value of all option positions
+            # This represents the cost to close all option positions in the account
+            total_option_market_value = 0.0
+            for position in positions:
+                instrument = position.get('instrument', {})
+                
+                # Check if this is an option position
+                if instrument.get('assetType') == 'OPTION':
+                    market_value = position.get('marketValue', 0)
+                    # Use absolute value because we want the cost to close
+                    # Negative market value means we owe money to close (short positions)
+                    total_option_market_value += abs(float(market_value))
             
-            if has_market_data:
-                # We have live market data available, but symbol matching needs refinement
-                # For now, return None to use the enhanced fallback calculation
-                # Future enhancement: implement symbol extraction and matching
-                pass
+            if total_option_market_value == 0:
+                return None
+            
+            # If there's only one active position, all option market value belongs to it
+            if active_positions_count == 1:
+                return total_option_market_value
+            
+            # If there are multiple positions, allocate proportionally based on initial premium
+            if total_initial_premium > 0:
+                proportion = self.initial_premium_sold / total_initial_premium
+                return total_option_market_value * proportion
             
             return None
             
         except Exception as e:
             print(f"Error getting current market value for position {self.id}: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     @property 
@@ -348,7 +424,10 @@ class Position(Base):
             # Try to get real market value first
             market_value = self.get_current_market_value()
             if market_value is not None:
+                print(f"Position {self.id}: Using real market value ${market_value:,.2f} for current open premium")
                 return market_value
+            else:
+                print(f"Position {self.id}: Real market value not available, using fallback calculation")
             
             # Enhanced fallback calculation
             net_contracts = position_details['net_contracts']
