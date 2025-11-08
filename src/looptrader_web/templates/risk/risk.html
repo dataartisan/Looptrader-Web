@@ -1,0 +1,427 @@
+{% extends "base.html" %}
+
+{% block title %}Current Risk - LoopTrader{% endblock %}
+
+{% block content %}
+<!-- Content Header (Page header) -->
+<div class="content-header">
+    <div class="container-fluid">
+        <div class="row mb-2">
+            <div class="col-sm-6">
+                <h1 class="m-0">📊 Portfolio Risk Summary</h1>
+            </div>
+            <div class="col-sm-6">
+                <ol class="breadcrumb float-sm-right">
+                    <li class="breadcrumb-item"><a href="/">Home</a></li>
+                    <li class="breadcrumb-item active">Current Risk</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Main content -->
+<section class="content">
+    <div class="container-fluid">
+        
+        {% if position_count == 0 %}
+        <!-- No Positions Message -->
+        <div class="row">
+            <div class="col-12">
+                <div class="alert alert-info">
+                    <i class="icon fas fa-info-circle"></i>
+                    <strong>No Active Positions</strong>
+                    <br>There are currently no active positions in your portfolio.
+                </div>
+            </div>
+        </div>
+        {% else %}
+        
+        <!-- Controls -->
+        <div class="row mb-3">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="custom-control custom-switch">
+                            <input type="checkbox" class="custom-control-input" id="aggregateToggle" 
+                                   {% if aggregate %}checked{% endif %}>
+                            <label class="custom-control-label" for="aggregateToggle">
+                                <strong>Show Per-Account Breakdown</strong>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="row">
+            <!-- Delta Card -->
+            <div class="col-lg-2 col-6">
+                <div class="small-box bg-{% if total_delta > 10 %}success{% elif total_delta < -10 %}danger{% else %}secondary{% endif %}">
+                    <div class="inner">
+                        <h3>{{ '%+.1f' % total_delta }}</h3>
+                        <p>Delta</p>
+                        <small>{% if total_delta > 10 %}Bullish{% elif total_delta < -10 %}Bearish{% else %}Neutral{% endif %}</small>
+                    </div>
+                    <div class="icon">
+                        <i class="fas fa-arrow-{% if total_delta > 0 %}up{% else %}down{% endif %}"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Gamma Card -->
+            <div class="col-lg-2 col-6">
+                <div class="small-box bg-info">
+                    <div class="inner">
+                        <h3>{{ '%+.2f' % total_gamma }}</h3>
+                        <p>Gamma</p>
+                        <small>Delta Sensitivity</small>
+                    </div>
+                    <div class="icon">
+                        <i class="fas fa-wave-square"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Theta Card -->
+            <div class="col-lg-2 col-6">
+                <div class="small-box bg-{% if total_theta > 0 %}success{% else %}warning{% endif %}">
+                    <div class="inner">
+                        <h3>${{ '%+.2f' % total_theta }}</h3>
+                        <p>Theta/Day</p>
+                        <small>{% if total_theta > 0 %}Income{% else %}Cost{% endif %}</small>
+                    </div>
+                    <div class="icon">
+                        <i class="fas fa-clock"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Vega Card -->
+            <div class="col-lg-2 col-6">
+                <div class="small-box bg-{% if total_vega > 0 %}primary{% else %}warning{% endif %}">
+                    <div class="inner">
+                        <h3>{{ '%+.2f' % total_vega }}</h3>
+                        <p>Vega</p>
+                        <small>{% if total_vega > 0 %}Long Vol{% else %}Short Vol{% endif %}</small>
+                    </div>
+                    <div class="icon">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Notional Risk Card -->
+            <div class="col-lg-2 col-6">
+                <div class="small-box bg-danger">
+                    <div class="inner">
+                        <h3>${{ '{:,.0f}'.format(total_notional_risk) }}</h3>
+                        <p>Max Risk</p>
+                        <small>{{ position_count }} Position{{ 's' if position_count > 1 else '' }}</small>
+                    </div>
+                    <div class="icon">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- P&L Card -->
+            <div class="col-lg-2 col-6">
+                <div class="small-box bg-{{ 'success' if total_pnl >= 0 else 'danger' }}">
+                    <div class="inner">
+                        <h3>${{ '%+.2f' % total_pnl }}</h3>
+                        <p>Unrealized P&L</p>
+                        <small>{{ '%+.1f' % total_pnl_pct }}%</small>
+                    </div>
+                    <div class="icon">
+                        <i class="fas fa-dollar-sign"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Per-Account Breakdown (if aggregate mode) -->
+        {% if aggregate and account_metrics %}
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title"><strong>Per-Account Breakdown</strong></h3>
+                    </div>
+                    <div class="card-body">
+                        {% for account_id, metrics in account_metrics.items()|sort(attribute='1.name') %}
+                        <div class="account-section mb-4">
+                            <h5><strong>📊 {{ metrics.name }}</strong></h5>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <table class="table table-sm table-borderless">
+                                        <tr>
+                                            <td><strong>Delta:</strong></td>
+                                            <td>{{ '%+.1f' % metrics.delta }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Theta:</strong></td>
+                                            <td>{{ '%+.2f' % metrics.theta }}/day</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>P&L:</strong></td>
+                                            <td>
+                                                <span class="badge badge-{{ 'success' if metrics.pnl >= 0 else 'danger' }}">
+                                                    ${{ '%+.2f' % metrics.pnl }} ({{ '%+.1f' % ((metrics.pnl / metrics.cost_basis * 100) if metrics.cost_basis > 0 else 0) }}%)
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </div>
+                                <div class="col-md-6">
+                                    <table class="table table-sm table-borderless">
+                                        <tr>
+                                            <td><strong>Risk:</strong></td>
+                                            <td>${{ '{:,.2f}'.format(metrics.notional_risk) }}</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Positions:</strong></td>
+                                            <td>{{ metrics.position_count }}</td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        {% if not loop.last %}<hr>{% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Portfolio Totals -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title"><strong>📈 Portfolio Totals</strong></h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <!-- Greeks Section -->
+                            <div class="col-md-6">
+                                <h5><strong>Greeks</strong></h5>
+                                <table class="table table-sm">
+                                    <tr>
+                                        <td><strong>Delta:</strong></td>
+                                        <td>{{ '%+.1f' % total_delta }}</td>
+                                        <td>
+                                            <span class="badge badge-{% if total_delta > 10 %}success{% elif total_delta < -10 %}danger{% else %}secondary{% endif %}">
+                                                {% if total_delta > 10 %}Bullish{% elif total_delta < -10 %}Bearish{% else %}Neutral{% endif %}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Gamma:</strong></td>
+                                        <td>{{ '%+.2f' % total_gamma }}</td>
+                                        <td><small class="text-muted">Delta sensitivity</small></td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Theta:</strong></td>
+                                        <td>{{ '%+.2f' % total_theta }}/day</td>
+                                        <td>
+                                            <span class="badge badge-{% if total_theta > 0 %}success{% else %}warning{% endif %}">
+                                                {% if total_theta > 0 %}Income{% else %}Cost{% endif %}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Vega:</strong></td>
+                                        <td>{{ '%+.2f' % total_vega }}</td>
+                                        <td>
+                                            <span class="badge badge-{% if total_vega > 0 %}primary{% else %}info{% endif %}">
+                                                {% if total_vega > 0 %}Long Vol{% else %}Short Vol{% endif %}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+                            
+                            <!-- Exposure Section -->
+                            <div class="col-md-6">
+                                <h5><strong>Exposure</strong></h5>
+                                <table class="table table-sm">
+                                    <tr>
+                                        <td><strong>Total Notional Risk:</strong></td>
+                                        <td>${{ '{:,.2f}'.format(total_notional_risk) }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Active Positions:</strong></td>
+                                        <td>{{ position_count }} position{{ 's' if position_count > 1 else '' }}</td>
+                                    </tr>
+                                    {% if aggregate and account_metrics|length > 1 %}
+                                    <tr>
+                                        <td><strong>Accounts:</strong></td>
+                                        <td>{{ account_metrics|length }} account{{ 's' if account_metrics|length > 1 else '' }}</td>
+                                    </tr>
+                                    {% endif %}
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- P&L Summary -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title"><strong>💰 P&L Summary</strong></h3>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm">
+                            <tr>
+                                <td style="width: 250px;"><strong>Unrealized P&L:</strong></td>
+                                <td>
+                                    <span class="badge badge-{{ 'success' if total_pnl >= 0 else 'danger' }}" style="font-size: 1.1em;">
+                                        ${{ '%+.2f' % total_pnl }} ({{ '%+.1f' % total_pnl_pct }}%)
+                                    </span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Total Premium Open:</strong></td>
+                                <td>${{ '{:,.2f}'.format(total_premium) }}</td>
+                            </tr>
+                            {% if best_position %}
+                            <tr>
+                                <td><strong>Best Position:</strong></td>
+                                <td>
+                                    <span class="text-success">
+                                        {{ best_position[0] }} 
+                                        ${{ '%+.2f' % best_position[1] }} ({{ '%+.1f' % best_position[2] }}%)
+                                    </span>
+                                </td>
+                            </tr>
+                            {% endif %}
+                            {% if worst_position %}
+                            <tr>
+                                <td><strong>Worst Position:</strong></td>
+                                <td>
+                                    <span class="text-danger">
+                                        {{ worst_position[0] }} 
+                                        ${{ '%+.2f' % worst_position[1] }} ({{ '%+.1f' % worst_position[2] }}%)
+                                    </span>
+                                </td>
+                            </tr>
+                            {% endif %}
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Concentration Analysis -->
+        {% if underlying_concentration %}
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title"><strong>📊 Concentration Analysis</strong></h3>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Underlying</th>
+                                    <th>Positions</th>
+                                    <th>Concentration</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for symbol, count in underlying_concentration[:3] %}
+                                {% set concentration_pct = (count / position_count * 100) %}
+                                <tr>
+                                    <td><strong>{{ symbol }}</strong></td>
+                                    <td>{{ count }} position{{ 's' if count > 1 else '' }}</td>
+                                    <td>
+                                        <span class="badge badge-{{ 'warning' if concentration_pct > 50 else 'info' }}">
+                                            {{ '%.0f' % concentration_pct }}%
+                                            {% if concentration_pct > 50 %} ⚠️{% endif %}
+                                        </span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Warnings -->
+        {% if warnings %}
+        <div class="row">
+            <div class="col-12">
+                <div class="alert alert-warning">
+                    <h5><i class="icon fas fa-exclamation-triangle"></i> <strong>Warnings</strong></h5>
+                    <ul class="mb-0">
+                        {% for warning in warnings %}
+                        <li>{{ warning }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Last Updated -->
+        <div class="row">
+            <div class="col-12">
+                <small class="text-muted">
+                    <i class="fas fa-sync-alt"></i> 
+                    Last updated: <span id="lastUpdated">Just now</span>
+                    <span class="ml-3">Auto-refresh in <span id="countdown">30</span>s</span>
+                </small>
+            </div>
+        </div>
+        
+        {% endif %}
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    // Handle aggregate toggle
+    $('#aggregateToggle').change(function() {
+        const isAggregated = $(this).is(':checked');
+        const url = new URL(window.location.href);
+        if (isAggregated) {
+            url.searchParams.set('aggregate', 'true');
+        } else {
+            url.searchParams.delete('aggregate');
+        }
+        window.location.href = url.toString();
+    });
+    
+    // Auto-refresh functionality
+    let countdown = 30;
+    const countdownInterval = setInterval(function() {
+        countdown--;
+        $('#countdown').text(countdown);
+        if (countdown <= 0) {
+            location.reload();
+        }
+    }, 1000);
+    
+    // Update "last updated" time
+    function updateLastUpdatedTime() {
+        const now = new Date();
+        const timeString = now.toLocaleTimeString();
+        $('#lastUpdated').text(timeString);
+    }
+    updateLastUpdatedTime();
+});
+</script>
+{% endblock %}

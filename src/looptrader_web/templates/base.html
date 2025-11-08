@@ -168,6 +168,14 @@
             </a>
           </li>
 
+          <!-- Current Risk -->
+          <li class="nav-item">
+            <a href="{{ url_for('risk') }}" class="nav-link {% if request.endpoint == 'risk' %}active{% endif %}">
+              <i class="nav-icon fas fa-exclamation-triangle"></i>
+              <p>Current Risk</p>
+            </a>
+          </li>
+
           <!-- Trailing Stops -->
           <li class="nav-item {% if request.endpoint and request.endpoint.startswith('trailing') %}menu-open{% endif %}">
             <a href="#" class="nav-link {% if request.endpoint and request.endpoint.startswith('trailing') %}active{% endif %}">
