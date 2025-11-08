@@ -446,15 +446,37 @@ def update_bot_route(bot_id):
 def upsert_trailing_stop_route(bot_id):
     try:
         activation_threshold = request.form.get('activation_threshold', type=float)
+        trailing_mode = request.form.get('trailing_mode', 'percentage')
         trailing_percentage = request.form.get('trailing_percentage', type=float)
-        if activation_threshold is None or trailing_percentage is None:
-            raise ValueError("Activation threshold and trailing percentage are required")
+        trailing_dollar_amount = request.form.get('trailing_dollar_amount', type=float)
+        
+        if activation_threshold is None:
+            raise ValueError("Activation threshold is required")
+        
+        if trailing_mode == 'percentage' and trailing_percentage is None:
+            raise ValueError("Trailing percentage is required for percentage mode")
+        
+        if trailing_mode == 'dollar' and trailing_dollar_amount is None:
+            raise ValueError("Trailing dollar amount is required for dollar mode")
+        
         # Debug print to container logs for verification
-        print(f"[TrailingStopUpdate] bot_id={bot_id} activation={activation_threshold} trailing={trailing_percentage}")
-        # Don't pass is_active parameter - let the database function handle activation state
-        ok, msg = upsert_trailing_stop(bot_id, activation_threshold, trailing_percentage)
+        if trailing_mode == 'percentage':
+            print(f"[TrailingStopUpdate] bot_id={bot_id} activation={activation_threshold} trailing={trailing_percentage}% mode=percentage")
+        else:
+            print(f"[TrailingStopUpdate] bot_id={bot_id} activation={activation_threshold} trailing=${trailing_dollar_amount} mode=dollar")
+        
+        # Call upsert with mode-specific parameters
+        ok, msg = upsert_trailing_stop(
+            bot_id, 
+            activation_threshold, 
+            trailing_percentage=trailing_percentage if trailing_mode == 'percentage' else None,
+            trailing_dollar_amount=trailing_dollar_amount if trailing_mode == 'dollar' else None,
+            trailing_mode=trailing_mode
+        )
+        
         if ok:
-            flash('Trailing stop saved', 'success')
+            mode_label = f"{trailing_percentage}%" if trailing_mode == 'percentage' else f"${trailing_dollar_amount}"
+            flash(f'Trailing stop saved ({trailing_mode}: {mode_label})', 'success')
         else:
             flash(f'Failed to save trailing stop: {msg}', 'danger')
     except Exception as e:
@@ -684,18 +706,30 @@ def add_trailing_stops():
                 elif action == 'add':
                     # Handle bulk trailing stop creation
                     activation_threshold = request.form.get('activation_threshold', type=float)
+                    trailing_mode = request.form.get('trailing_mode', 'percentage')
                     trailing_percentage = request.form.get('trailing_percentage', type=float)
+                    trailing_dollar_amount = request.form.get('trailing_dollar_amount', type=float)
                     
-                    if activation_threshold is None or trailing_percentage is None:
-                        flash('Activation threshold and trailing percentage are required', 'danger')
+                    if activation_threshold is None:
+                        flash('Activation threshold is required', 'danger')
+                    elif trailing_mode == 'percentage' and trailing_percentage is None:
+                        flash('Trailing percentage is required for percentage mode', 'danger')
+                    elif trailing_mode == 'dollar' and trailing_dollar_amount is None:
+                        flash('Trailing dollar amount is required for dollar mode', 'danger')
                     else:
                         success_count = 0
                         error_count = 0
                         
                         for bot_id in selected_bots:
                             try:
-                                # Don't pass is_active parameter - let the database function handle activation state
-                                ok, msg = upsert_trailing_stop(int(bot_id), activation_threshold, trailing_percentage)
+                                # Pass mode-specific parameters
+                                ok, msg = upsert_trailing_stop(
+                                    int(bot_id), 
+                                    activation_threshold, 
+                                    trailing_percentage=trailing_percentage if trailing_mode == 'percentage' else None,
+                                    trailing_dollar_amount=trailing_dollar_amount if trailing_mode == 'dollar' else None,
+                                    trailing_mode=trailing_mode
+                                )
                                 if ok:
                                     success_count += 1
                                 else:
@@ -706,7 +740,8 @@ def add_trailing_stops():
                                 print(f"Error adding trailing stop for bot {bot_id}: {e}")
                         
                         if success_count > 0:
-                            flash(f'Successfully added/updated trailing stops for {success_count} bot(s)', 'success')
+                            mode_label = f"{trailing_percentage}%" if trailing_mode == 'percentage' else f"${trailing_dollar_amount}"
+                            flash(f'Successfully added/updated trailing stops for {success_count} bot(s) with {mode_label} trailing {trailing_mode}', 'success')
                         if error_count > 0:
                             flash(f'Failed to add trailing stops for {error_count} bot(s)', 'warning')
                         
@@ -1726,7 +1761,37 @@ def calculate_gex_levels(token_data):
     """
     try:
         import schwab
-        from datetime import date
+        from datetime import date, datetime, timedelta
+        
+        def is_market_closed(check_date):
+            """Check if market is closed (weekend or US stock market holiday)"""
+            # Check weekend
+            weekday = check_date.weekday()
+            if weekday >= 5:  # Saturday = 5, Sunday = 6
+                return True
+            
+            # US Stock Market Holidays for 2025
+            holidays_2025 = [
+                date(2025, 1, 1),   # New Year's Day
+                date(2025, 1, 20),  # MLK Day
+                date(2025, 2, 17),  # Presidents' Day
+                date(2025, 4, 18),  # Good Friday
+                date(2025, 5, 26),  # Memorial Day
+                date(2025, 6, 19),  # Juneteenth
+                date(2025, 7, 4),   # Independence Day
+                date(2025, 9, 1),   # Labor Day
+                date(2025, 11, 27), # Thanksgiving
+                date(2025, 12, 25), # Christmas
+            ]
+            
+            return check_date in holidays_2025
+        
+        def get_next_trading_day(start_date):
+            """Get the next trading day after start_date"""
+            next_day = start_date + timedelta(days=1)
+            while is_market_closed(next_day):
+                next_day += timedelta(days=1)
+            return next_day
         
         # Create Schwab client
         token_path = '/app/token.json'
@@ -1750,10 +1815,18 @@ def calculate_gex_levels(token_data):
             if '$SPX' in spx_data and 'quote' in spx_data['$SPX']:
                 spx_price = spx_data['$SPX']['quote'].get('lastPrice', 5800)
         
-        # Get today's date for 0 DTE (exactly like get_0dte_options)
+        # Check if market is open today, if not use next trading day
         today = date.today()
         
-        print(f"Fetching SPX options for GEX calculation, date: {today}")
+        if is_market_closed(today):
+            target_date = get_next_trading_day(today)
+            print(f"Market is CLOSED today ({today.strftime('%A, %Y-%m-%d')})")
+            print(f"Using next trading day: {target_date.strftime('%A, %Y-%m-%d')}")
+        else:
+            target_date = today
+            print(f"Market is OPEN today ({today.strftime('%A, %Y-%m-%d')})")
+        
+        print(f"Fetching SPX options for GEX calculation, date: {target_date}")
         print(f"Current SPX Price: {spx_price}")
         
         # Define strike range around current price (we'll filter after fetching)
@@ -1763,7 +1836,7 @@ def calculate_gex_levels(token_data):
         
         print(f"Will filter strikes from {strike_range_min} to {strike_range_max}")
         
-        # Fetch SPX options chain for today
+        # Fetch SPX options chain for target date
         # Try different symbol formats for SPX
         symbols_to_try = ['$SPX.X', 'SPX', '$SPX']
         
@@ -1771,8 +1844,8 @@ def calculate_gex_levels(token_data):
             print(f"Trying symbol: {symbol}")
             response = client.get_option_chain(
                 symbol=symbol,
-                from_date=today,
-                to_date=today
+                from_date=target_date,
+                to_date=target_date
             )
             
             if response.status_code == 200:

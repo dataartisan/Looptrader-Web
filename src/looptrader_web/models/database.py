@@ -638,19 +638,24 @@ class TrailingStopState(Base):
     id = mapped_column(Integer, primary_key=True, autoincrement=True)
     bot_id = mapped_column(Integer, ForeignKey("Bot.id"), nullable=False)
     activation_threshold = mapped_column(Float, nullable=False)
-    trailing_percentage = mapped_column(Float, nullable=False)
+    trailing_percentage = mapped_column(Float, nullable=True)  # Nullable when using dollar mode
     is_active = mapped_column(Boolean, default=False)
     entry_value = mapped_column(Float, nullable=True)
     high_water_mark = mapped_column(Float, nullable=True)
     created_at = mapped_column(DateTime, default=datetime.utcnow)
     updated_at = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
+    # New columns for different trailing stop modes
+    trailing_mode = mapped_column(String(20), nullable=False, default='percentage')
+    trailing_dollar_amount = mapped_column(Float, nullable=True)
+    
     # Relationship
     bot = relationship("Bot", back_populates="trailing_stop_state")
     
     def __repr__(self):
         status = "Active" if self.is_active else "Inactive"
-        return f"<TrailingStop Bot:{self.bot_id} ({status})>"
+        mode = f"{self.trailing_mode.upper()}" if self.trailing_mode else "PERCENTAGE"
+        return f"<TrailingStop Bot:{self.bot_id} ({status}, {mode})>"
     
     @property
     def status_badge_class(self):
@@ -659,6 +664,14 @@ class TrailingStopState(Base):
     @property
     def status_text(self):
         return "Active" if self.is_active else "Inactive"
+    
+    @property
+    def trailing_display(self):
+        """Display trailing amount based on mode"""
+        if self.trailing_mode == 'dollar':
+            return f"${self.trailing_dollar_amount:.2f}" if self.trailing_dollar_amount else "N/A"
+        else:
+            return f"{self.trailing_percentage:.1f}%" if self.trailing_percentage else "N/A"
 
 class Order(Base):
     """Order model matching LoopTrader Pro"""
@@ -1044,25 +1057,47 @@ def update_bot(bot_id: int, name: Optional[str] = None, enabled: Optional[bool] 
     finally:
         db.close()
 
-def upsert_trailing_stop(bot_id: int, activation_threshold: float, trailing_percentage: float, is_active: Optional[bool] = None):
-    """Create or update a trailing stop configuration for a bot."""
+def upsert_trailing_stop(bot_id: int, activation_threshold: float, trailing_percentage: Optional[float] = None, 
+                         trailing_dollar_amount: Optional[float] = None, trailing_mode: str = 'percentage',
+                         is_active: Optional[bool] = None):
+    """Create or update a trailing stop configuration for a bot.
+    
+    Args:
+        bot_id: The bot ID
+        activation_threshold: Profit threshold to activate trailing stop
+        trailing_percentage: Percentage to trail (for percentage mode)
+        trailing_dollar_amount: Dollar amount to trail (for dollar mode)
+        trailing_mode: 'percentage' or 'dollar'
+        is_active: Whether the trailing stop is active
+    """
     db = SessionLocal()
     try:
         bot = db.query(Bot).filter(Bot.id == bot_id).first()
         if not bot:
             return False, "Bot not found"
+        
+        # Validate mode and corresponding value
+        if trailing_mode == 'percentage' and trailing_percentage is None:
+            return False, "trailing_percentage required for percentage mode"
+        if trailing_mode == 'dollar' and trailing_dollar_amount is None:
+            return False, "trailing_dollar_amount required for dollar mode"
+            
         ts = bot.trailing_stop_state
         if ts is None:
             ts = TrailingStopState(
                 bot_id=bot.id,
                 activation_threshold=activation_threshold,
                 trailing_percentage=trailing_percentage,
+                trailing_dollar_amount=trailing_dollar_amount,
+                trailing_mode=trailing_mode,
                 is_active=is_active if is_active is not None else False
             )
             db.add(ts)
         else:
             ts.activation_threshold = activation_threshold
             ts.trailing_percentage = trailing_percentage
+            ts.trailing_dollar_amount = trailing_dollar_amount
+            ts.trailing_mode = trailing_mode
             # Only set is_active if explicitly provided (preserve existing state when just updating config)
             if is_active is not None:
                 ts.is_active = bool(is_active)
