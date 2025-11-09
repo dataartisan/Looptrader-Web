@@ -1208,6 +1208,1018 @@ def risk():
             account_metrics=None
         )
 
+
+###############################################################################
+# ANALYTICS HELPER FUNCTIONS
+###############################################################################
+
+def is_market_closed(check_date):
+    """Check if market is closed (weekend or US stock market holiday)"""
+    from datetime import date
+    
+    # Check weekend
+    weekday = check_date.weekday()
+    if weekday >= 5:  # Saturday = 5, Sunday = 6
+        return True
+    
+    # US Stock Market Holidays for 2025
+    holidays_2025 = [
+        date(2025, 1, 1),   # New Year's Day
+        date(2025, 1, 20),  # MLK Day
+        date(2025, 2, 17),  # Presidents' Day
+        date(2025, 4, 18),  # Good Friday
+        date(2025, 5, 26),  # Memorial Day
+        date(2025, 6, 19),  # Juneteenth
+        date(2025, 7, 4),   # Independence Day
+        date(2025, 9, 1),   # Labor Day
+        date(2025, 11, 27), # Thanksgiving
+        date(2025, 12, 25), # Christmas
+    ]
+    
+    return check_date in holidays_2025
+
+def get_next_trading_day(start_date):
+    """Get the next trading day after start_date"""
+    from datetime import timedelta
+    next_day = start_date + timedelta(days=1)
+    while is_market_closed(next_day):
+        next_day += timedelta(days=1)
+    return next_day
+
+###############################################################################
+# ANALYTICS ROUTES
+###############################################################################
+
+@app.route('/analytics')
+@login_required
+def analytics():
+    """Main analytics page with Greek exposure analysis"""
+    return render_template('analytics/analytics.html')
+
+
+@app.route('/analytics/gex', methods=['POST'])
+@login_required
+def analytics_gex():
+    """Calculate Gamma Exposure (GEX) for a given ticker"""
+    print("=" * 50)
+    print("ANALYTICS GEX ENDPOINT CALLED")
+    print("=" * 50)
+    try:
+        from datetime import date
+        
+        data = request.get_json()
+        print(f"Received data: {data}")
+        ticker = data.get('ticker', 'SPX').upper()
+        detail = data.get('detail', False)
+        show_all = data.get('show_all', False)
+        strike_range = data.get('strike_range')
+        print(f"Ticker: {ticker}, Detail: {detail}, Show All: {show_all}, Strike Range: {strike_range}")
+        
+        # Check if market is closed and determine target date
+        today = date.today()
+        if is_market_closed(today):
+            target_date = get_next_trading_day(today)
+            print(f"Market is CLOSED today ({today.strftime('%A, %Y-%m-%d')})")
+            print(f"Using next trading day: {target_date.strftime('%A, %Y-%m-%d')}")
+        else:
+            target_date = today
+            print(f"Market is OPEN today ({today.strftime('%A, %Y-%m-%d')})")
+        
+        # Initialize Schwab client
+        import schwab
+        token_path = '/app/token.json'
+        if not os.path.exists(token_path):
+            app_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            token_path = os.path.join(app_root, 'token.json')
+        
+        schwab_client = schwab.auth.client_from_token_file(
+            token_path,
+            api_key=os.environ.get('SCHWAB_API_KEY'),
+            app_secret=os.environ.get('SCHWAB_APP_SECRET'),
+            enforce_enums=False
+        )
+        
+        # Fetch option chains with target date
+        symbols_to_try = [f'${ticker}.X', ticker, f'${ticker}']
+        chain_response = None
+        
+        for symbol in symbols_to_try:
+            print(f"Trying symbol: {symbol} for date {target_date}")
+            try:
+                chain_response = schwab_client.get_option_chain(
+                    symbol=symbol,
+                    from_date=target_date,
+                    to_date=target_date
+                )
+                if chain_response.status_code == 200:
+                    print(f"Success with symbol: {symbol}")
+                    break
+            except Exception as e:
+                print(f"Failed with symbol {symbol}: {e}")
+                continue
+        
+        if not chain_response or chain_response.status_code != 200:
+            return jsonify({'error': 'Failed to fetch option chain'}), 400
+        
+        chain_data = chain_response.json()
+        
+        if chain_data.get('status') == 'FAILED':
+            return jsonify({'error': 'Failed to fetch option chain'}), 400
+        
+        # Get underlying price
+        spot_price = chain_data.get('underlyingPrice', 0)
+        
+        # Calculate strike range
+        if strike_range:
+            strike_min = spot_price - float(strike_range)
+            strike_max = spot_price + float(strike_range)
+        elif detail:
+            # Detail mode: ±15%
+            strike_min = spot_price * 0.85
+            strike_max = spot_price * 1.15
+        else:
+            # Default: ±50 points
+            strike_min = spot_price - 50
+            strike_max = spot_price + 50
+        
+        # Process option chain and calculate GEX
+        gex_data = {}
+        expiration_map = chain_data.get('callExpDateMap', {})
+        
+        # Get first expiration if not show_all
+        if not show_all and expiration_map:
+            first_exp = sorted(expiration_map.keys())[0]
+            expiration_map = {first_exp: expiration_map[first_exp]}
+        
+        for exp_date, strikes in expiration_map.items():
+            for strike_key, options in strikes.items():
+                strike = float(strike_key.split(':')[0])
+                
+                if strike < strike_min or strike > strike_max:
+                    continue
+                
+                for option in options:
+                    gamma = option.get('gamma', 0)
+                    volume = option.get('totalVolume', 0)
+                    
+                    if gamma and volume:
+                        # GEX formula: gamma × volume × 100 × spot²
+                        gex = gamma * volume * 100 * (spot_price ** 2)
+                        
+                        if strike not in gex_data:
+                            gex_data[strike] = {'call': 0, 'put': 0}
+                        gex_data[strike]['call'] += gex
+        
+        # Process puts
+        put_exp_map = chain_data.get('putExpDateMap', {})
+        if not show_all and put_exp_map:
+            first_exp = sorted(put_exp_map.keys())[0]
+            put_exp_map = {first_exp: put_exp_map[first_exp]}
+        
+        for exp_date, strikes in put_exp_map.items():
+            for strike_key, options in strikes.items():
+                strike = float(strike_key.split(':')[0])
+                
+                if strike < strike_min or strike > strike_max:
+                    continue
+                
+                for option in options:
+                    gamma = option.get('gamma', 0)
+                    volume = option.get('totalVolume', 0)
+                    
+                    if gamma and volume:
+                        # GEX formula: gamma × volume × 100 × spot² (negative for puts)
+                        gex = -1 * gamma * volume * 100 * (spot_price ** 2)
+                        
+                        if strike not in gex_data:
+                            gex_data[strike] = {'call': 0, 'put': 0}
+                        gex_data[strike]['put'] += gex
+        
+        # Sort and limit to top 50 strikes
+        sorted_strikes = sorted(gex_data.items(), key=lambda x: abs(x[1]['call'] + x[1]['put']), reverse=True)[:50]
+        
+        # Build chart data
+        chart_data = []
+        total_gex = 0
+        max_call_wall = {'strike': 0, 'exposure': 0}
+        max_put_wall = {'strike': 0, 'exposure': 0}
+        
+        for strike, exposure in sorted_strikes:
+            net_gex = exposure['call'] + exposure['put']
+            total_gex += net_gex
+            chart_data.append({
+                'strike': strike,
+                'exposure': net_gex
+            })
+            
+            if exposure['call'] > max_call_wall['exposure']:
+                max_call_wall = {'strike': strike, 'exposure': exposure['call']}
+            if abs(exposure['put']) > abs(max_put_wall['exposure']):
+                max_put_wall = {'strike': strike, 'exposure': exposure['put']}
+        
+        # Sort chart data by strike
+        chart_data.sort(key=lambda x: x['strike'])
+        
+        # Find zero GEX (flip point)
+        zero_gex_strike = None
+        for i in range(len(chart_data) - 1):
+            if chart_data[i]['exposure'] < 0 and chart_data[i+1]['exposure'] > 0:
+                zero_gex_strike = (chart_data[i]['strike'] + chart_data[i+1]['strike']) / 2
+                break
+        
+        # Key levels (top 3 resistance and support)
+        positive_levels = [{'strike': d['strike'], 'exposure': d['exposure']} 
+                          for d in chart_data if d['exposure'] > 0]
+        negative_levels = [{'strike': d['strike'], 'exposure': d['exposure']} 
+                          for d in chart_data if d['exposure'] < 0]
+        
+        positive_levels.sort(key=lambda x: x['exposure'], reverse=True)
+        negative_levels.sort(key=lambda x: abs(x['exposure']), reverse=True)
+        
+        key_levels = positive_levels[:3] + negative_levels[:3]
+        
+        # Market interpretation
+        interpretation = []
+        if zero_gex_strike:
+            interpretation.append(f"Zero GEX flip point at ${zero_gex_strike:.0f}")
+            if spot_price > zero_gex_strike:
+                interpretation.append("Price above zero GEX - positive gamma environment, potential downside resistance")
+            else:
+                interpretation.append("Price below zero GEX - negative gamma environment, potential upside resistance")
+        
+        if max_call_wall['exposure'] > 0:
+            interpretation.append(f"Strongest call wall at ${max_call_wall['strike']:.0f} (${max_call_wall['exposure']/1e9:.2f}B GEX)")
+        
+        if max_put_wall['exposure'] < 0:
+            interpretation.append(f"Strongest put wall at ${max_put_wall['strike']:.0f} (${abs(max_put_wall['exposure'])/1e9:.2f}B GEX)")
+        
+        # Get expiration info
+        exp_date_str = sorted(chain_data.get('callExpDateMap', {}).keys())[0] if chain_data.get('callExpDateMap') else 'N/A'
+        dte = chain_data.get('daysToExpiration', 0)
+        
+        return jsonify({
+            'ticker': ticker,
+            'spot_price': spot_price,
+            'expiration': exp_date_str.split(':')[0] if ':' in exp_date_str else exp_date_str,
+            'dte': dte,
+            'total_exposure': total_gex,
+            'chart_data': chart_data,
+            'key_levels': key_levels,
+            'interpretation': interpretation
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"Error in GEX calculation: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/analytics/vex', methods=['POST'])
+@login_required
+def analytics_vex():
+    """Calculate Vega Exposure (VEX) for a given ticker"""
+    try:
+        from datetime import date
+        
+        data = request.get_json()
+        ticker = data.get('ticker', 'SPX').upper()
+        detail = data.get('detail', False)
+        show_all = data.get('show_all', False)
+        strike_range = data.get('strike_range')
+        
+        # Check if market is closed and determine target date
+        today = date.today()
+        if is_market_closed(today):
+            target_date = get_next_trading_day(today)
+            print(f"VEX: Market CLOSED, using {target_date.strftime('%A, %Y-%m-%d')}")
+        else:
+            target_date = today
+            print(f"VEX: Market OPEN, using {today.strftime('%A, %Y-%m-%d')}")
+        
+        # Initialize Schwab client
+        import schwab
+        token_path = '/app/token.json'
+        if not os.path.exists(token_path):
+            app_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            token_path = os.path.join(app_root, 'token.json')
+        
+        schwab_client = schwab.auth.client_from_token_file(
+            token_path,
+            api_key=os.environ.get('SCHWAB_API_KEY'),
+            app_secret=os.environ.get('SCHWAB_APP_SECRET'),
+            enforce_enums=False
+        )
+        
+        # Fetch option chains with target date
+        symbols_to_try = [f'${ticker}.X', ticker, f'${ticker}']
+        chain_response = None
+        
+        for symbol in symbols_to_try:
+            try:
+                chain_response = schwab_client.get_option_chain(
+                    symbol=symbol,
+                    from_date=target_date,
+                    to_date=target_date
+                )
+                if chain_response.status_code == 200:
+                    break
+            except:
+                continue
+        
+        if not chain_response or chain_response.status_code != 200:
+            return jsonify({'error': 'Failed to fetch option chain'}), 400
+        
+        chain_data = chain_response.json()
+        
+        if chain_data.get('status') == 'FAILED':
+            return jsonify({'error': 'Failed to fetch option chain'}), 400
+        
+        spot_price = chain_data.get('underlyingPrice', 0)
+        
+        # Calculate strike range
+        if strike_range:
+            strike_min = spot_price - float(strike_range)
+            strike_max = spot_price + float(strike_range)
+        elif detail:
+            strike_min = spot_price * 0.85
+            strike_max = spot_price * 1.15
+        else:
+            strike_min = spot_price - 50
+            strike_max = spot_price + 50
+        
+        # Process VEX
+        vex_data = {}
+        expiration_map = chain_data.get('callExpDateMap', {})
+        
+        if not show_all and expiration_map:
+            first_exp = sorted(expiration_map.keys())[0]
+            expiration_map = {first_exp: expiration_map[first_exp]}
+        
+        for exp_date, strikes in expiration_map.items():
+            for strike_key, options in strikes.items():
+                strike = float(strike_key.split(':')[0])
+                
+                if strike < strike_min or strike > strike_max:
+                    continue
+                
+                for option in options:
+                    vega = option.get('vega', 0)
+                    volume = option.get('totalVolume', 0)
+                    
+                    if vega and volume:
+                        # VEX formula: vega × volume × 100
+                        vex = vega * volume * 100
+                        
+                        if strike not in vex_data:
+                            vex_data[strike] = 0
+                        vex_data[strike] += vex
+        
+        # Process puts
+        put_exp_map = chain_data.get('putExpDateMap', {})
+        if not show_all and put_exp_map:
+            first_exp = sorted(put_exp_map.keys())[0]
+            put_exp_map = {first_exp: put_exp_map[first_exp]}
+        
+        for exp_date, strikes in put_exp_map.items():
+            for strike_key, options in strikes.items():
+                strike = float(strike_key.split(':')[0])
+                
+                if strike < strike_min or strike > strike_max:
+                    continue
+                
+                for option in options:
+                    vega = option.get('vega', 0)
+                    volume = option.get('totalVolume', 0)
+                    
+                    if vega and volume:
+                        vex = vega * volume * 100
+                        
+                        if strike not in vex_data:
+                            vex_data[strike] = 0
+                        vex_data[strike] += vex
+        
+        # Sort and limit
+        sorted_strikes = sorted(vex_data.items(), key=lambda x: abs(x[1]), reverse=True)[:50]
+        
+        chart_data = []
+        total_vex = 0
+        
+        for strike, exposure in sorted_strikes:
+            total_vex += exposure
+            chart_data.append({
+                'strike': strike,
+                'exposure': exposure
+            })
+        
+        chart_data.sort(key=lambda x: x['strike'])
+        
+        # Key levels
+        key_levels = sorted(sorted_strikes, key=lambda x: abs(x[1]), reverse=True)[:5]
+        key_levels = [{'strike': k[0], 'exposure': k[1]} for k in key_levels]
+        
+        # Interpretation
+        interpretation = []
+        if key_levels:
+            interpretation.append(f"Highest vega concentration at ${key_levels[0]['strike']:.0f}")
+            interpretation.append(f"Total VEX: ${total_vex/1e6:.2f}M - shows volatility exposure distribution")
+        
+        exp_date_str = sorted(chain_data.get('callExpDateMap', {}).keys())[0] if chain_data.get('callExpDateMap') else 'N/A'
+        dte = chain_data.get('daysToExpiration', 0)
+        
+        return jsonify({
+            'ticker': ticker,
+            'spot_price': spot_price,
+            'expiration': exp_date_str.split(':')[0] if ':' in exp_date_str else exp_date_str,
+            'dte': dte,
+            'total_exposure': total_vex,
+            'chart_data': chart_data,
+            'key_levels': key_levels,
+            'interpretation': interpretation
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"Error in VEX calculation: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/analytics/dex', methods=['POST'])
+@login_required
+def analytics_dex():
+    """Calculate Delta Exposure (DEX) for a given ticker"""
+    try:
+        from datetime import date
+        
+        data = request.get_json()
+        ticker = data.get('ticker', 'SPX').upper()
+        detail = data.get('detail', False)
+        show_all = data.get('show_all', False)
+        strike_range = data.get('strike_range')
+        
+        # Check if market is closed
+        today = date.today()
+        target_date = get_next_trading_day(today) if is_market_closed(today) else today
+        
+        # Initialize Schwab client
+        import schwab
+        token_path = '/app/token.json'
+        if not os.path.exists(token_path):
+            app_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            token_path = os.path.join(app_root, 'token.json')
+        
+        schwab_client = schwab.auth.client_from_token_file(
+            token_path,
+            api_key=os.environ.get('SCHWAB_API_KEY'),
+            app_secret=os.environ.get('SCHWAB_APP_SECRET'),
+            enforce_enums=False
+        )
+        
+        # Fetch option chains with target date
+        symbols_to_try = [f'${ticker}.X', ticker, f'${ticker}']
+        chain_response = None
+        
+        for symbol in symbols_to_try:
+            try:
+                chain_response = schwab_client.get_option_chain(
+                    symbol=symbol,
+                    from_date=target_date,
+                    to_date=target_date
+                )
+                if chain_response.status_code == 200:
+                    break
+            except:
+                continue
+        
+        if not chain_response or chain_response.status_code != 200:
+            return jsonify({'error': 'Failed to fetch option chain'}), 400
+        
+        chain_data = chain_response.json()
+        
+        if chain_data.get('status') == 'FAILED':
+            return jsonify({'error': 'Failed to fetch option chain'}), 400
+        
+        spot_price = chain_data.get('underlyingPrice', 0)
+        
+        # Calculate strike range
+        if strike_range:
+            strike_min = spot_price - float(strike_range)
+            strike_max = spot_price + float(strike_range)
+        elif detail:
+            strike_min = spot_price * 0.85
+            strike_max = spot_price * 1.15
+        else:
+            strike_min = spot_price - 50
+            strike_max = spot_price + 50
+        
+        # Process DEX
+        dex_data = {}
+        expiration_map = chain_data.get('callExpDateMap', {})
+        
+        if not show_all and expiration_map:
+            first_exp = sorted(expiration_map.keys())[0]
+            expiration_map = {first_exp: expiration_map[first_exp]}
+        
+        for exp_date, strikes in expiration_map.items():
+            for strike_key, options in strikes.items():
+                strike = float(strike_key.split(':')[0])
+                
+                if strike < strike_min or strike > strike_max:
+                    continue
+                
+                for option in options:
+                    delta = option.get('delta', 0)
+                    volume = option.get('totalVolume', 0)
+                    
+                    if delta and volume:
+                        # DEX formula: delta × volume × 100 × spot
+                        dex = delta * volume * 100 * spot_price
+                        
+                        if strike not in dex_data:
+                            dex_data[strike] = {'call': 0, 'put': 0}
+                        dex_data[strike]['call'] += dex
+        
+        # Process puts
+        put_exp_map = chain_data.get('putExpDateMap', {})
+        if not show_all and put_exp_map:
+            first_exp = sorted(put_exp_map.keys())[0]
+            put_exp_map = {first_exp: put_exp_map[first_exp]}
+        
+        for exp_date, strikes in put_exp_map.items():
+            for strike_key, options in strikes.items():
+                strike = float(strike_key.split(':')[0])
+                
+                if strike < strike_min or strike > strike_max:
+                    continue
+                
+                for option in options:
+                    delta = option.get('delta', 0)
+                    volume = option.get('totalVolume', 0)
+                    
+                    if delta and volume:
+                        # DEX formula (puts are negative delta)
+                        dex = delta * volume * 100 * spot_price
+                        
+                        if strike not in dex_data:
+                            dex_data[strike] = {'call': 0, 'put': 0}
+                        dex_data[strike]['put'] += dex
+        
+        # Sort and limit
+        sorted_strikes = sorted(dex_data.items(), key=lambda x: abs(x[1]['call'] + x[1]['put']), reverse=True)[:50]
+        
+        chart_data = []
+        total_dex = 0
+        
+        for strike, exposure in sorted_strikes:
+            net_dex = exposure['call'] + exposure['put']
+            total_dex += net_dex
+            chart_data.append({
+                'strike': strike,
+                'exposure': net_dex
+            })
+        
+        chart_data.sort(key=lambda x: x['strike'])
+        
+        # Key levels
+        positive_levels = [{'strike': d['strike'], 'exposure': d['exposure']} 
+                          for d in chart_data if d['exposure'] > 0]
+        negative_levels = [{'strike': d['strike'], 'exposure': d['exposure']} 
+                          for d in chart_data if d['exposure'] < 0]
+        
+        positive_levels.sort(key=lambda x: x['exposure'], reverse=True)
+        negative_levels.sort(key=lambda x: abs(x['exposure']), reverse=True)
+        
+        key_levels = positive_levels[:3] + negative_levels[:3]
+        
+        # Interpretation
+        interpretation = []
+        if total_dex > 0:
+            interpretation.append(f"Net positive delta exposure (${total_dex/1e6:.2f}M) - bullish positioning")
+        elif total_dex < 0:
+            interpretation.append(f"Net negative delta exposure (${abs(total_dex)/1e6:.2f}M) - bearish positioning")
+        else:
+            interpretation.append("Balanced delta exposure")
+        
+        if positive_levels:
+            interpretation.append(f"Strongest bullish zone at ${positive_levels[0]['strike']:.0f}")
+        if negative_levels:
+            interpretation.append(f"Strongest bearish zone at ${negative_levels[0]['strike']:.0f}")
+        
+        exp_date_str = sorted(chain_data.get('callExpDateMap', {}).keys())[0] if chain_data.get('callExpDateMap') else 'N/A'
+        dte = chain_data.get('daysToExpiration', 0)
+        
+        return jsonify({
+            'ticker': ticker,
+            'spot_price': spot_price,
+            'expiration': exp_date_str.split(':')[0] if ':' in exp_date_str else exp_date_str,
+            'dte': dte,
+            'total_exposure': total_dex,
+            'chart_data': chart_data,
+            'key_levels': key_levels,
+            'interpretation': interpretation
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"Error in DEX calculation: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/analytics/chex', methods=['POST'])
+@login_required
+def analytics_chex():
+    """Calculate Charm Exposure (CHEX) for a given ticker"""
+    try:
+        from datetime import date
+        
+        data = request.get_json()
+        ticker = data.get('ticker', 'SPX').upper()
+        detail = data.get('detail', False)
+        show_all = data.get('show_all', False)
+        strike_range = data.get('strike_range')
+        
+        # Check if market is closed
+        today = date.today()
+        target_date = get_next_trading_day(today) if is_market_closed(today) else today
+        
+        # Initialize Schwab client
+        import schwab
+        token_path = '/app/token.json'
+        if not os.path.exists(token_path):
+            app_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            token_path = os.path.join(app_root, 'token.json')
+        
+        schwab_client = schwab.auth.client_from_token_file(
+            token_path,
+            api_key=os.environ.get('SCHWAB_API_KEY'),
+            app_secret=os.environ.get('SCHWAB_APP_SECRET'),
+            enforce_enums=False
+        )
+        
+        # Fetch option chains with target date
+        symbols_to_try = [f'${ticker}.X', ticker, f'${ticker}']
+        chain_response = None
+        
+        for symbol in symbols_to_try:
+            try:
+                chain_response = schwab_client.get_option_chain(
+                    symbol=symbol,
+                    from_date=target_date,
+                    to_date=target_date
+                )
+                if chain_response.status_code == 200:
+                    break
+            except:
+                continue
+        
+        if not chain_response or chain_response.status_code != 200:
+            return jsonify({'error': 'Failed to fetch option chain'}), 400
+        
+        chain_data = chain_response.json()
+        
+        if chain_data.get('status') == 'FAILED':
+            return jsonify({'error': 'Failed to fetch option chain'}), 400
+        
+        spot_price = chain_data.get('underlyingPrice', 0)
+        dte = chain_data.get('daysToExpiration', 1)  # Avoid division by zero
+        
+        if dte == 0:
+            dte = 1
+        
+        # Calculate strike range
+        if strike_range:
+            strike_min = spot_price - float(strike_range)
+            strike_max = spot_price + float(strike_range)
+        elif detail:
+            strike_min = spot_price * 0.85
+            strike_max = spot_price * 1.15
+        else:
+            strike_min = spot_price - 50
+            strike_max = spot_price + 50
+        
+        # Process CHEX
+        chex_data = {}
+        expiration_map = chain_data.get('callExpDateMap', {})
+        
+        if not show_all and expiration_map:
+            first_exp = sorted(expiration_map.keys())[0]
+            expiration_map = {first_exp: expiration_map[first_exp]}
+        
+        for exp_date, strikes in expiration_map.items():
+            for strike_key, options in strikes.items():
+                strike = float(strike_key.split(':')[0])
+                
+                if strike < strike_min or strike > strike_max:
+                    continue
+                
+                for option in options:
+                    delta = option.get('delta', 0)
+                    volume = option.get('totalVolume', 0)
+                    
+                    if delta and volume:
+                        # CHEX formula: (delta × volume × 100 × spot) / DTE
+                        chex = (delta * volume * 100 * spot_price) / dte
+                        
+                        if strike not in chex_data:
+                            chex_data[strike] = 0
+                        chex_data[strike] += chex
+        
+        # Process puts
+        put_exp_map = chain_data.get('putExpDateMap', {})
+        if not show_all and put_exp_map:
+            first_exp = sorted(put_exp_map.keys())[0]
+            put_exp_map = {first_exp: put_exp_map[first_exp]}
+        
+        for exp_date, strikes in put_exp_map.items():
+            for strike_key, options in strikes.items():
+                strike = float(strike_key.split(':')[0])
+                
+                if strike < strike_min or strike > strike_max:
+                    continue
+                
+                for option in options:
+                    delta = option.get('delta', 0)
+                    volume = option.get('totalVolume', 0)
+                    
+                    if delta and volume:
+                        chex = (delta * volume * 100 * spot_price) / dte
+                        
+                        if strike not in chex_data:
+                            chex_data[strike] = 0
+                        chex_data[strike] += chex
+        
+        # Sort and limit
+        sorted_strikes = sorted(chex_data.items(), key=lambda x: abs(x[1]), reverse=True)[:50]
+        
+        chart_data = []
+        total_chex = 0
+        
+        for strike, exposure in sorted_strikes:
+            total_chex += exposure
+            chart_data.append({
+                'strike': strike,
+                'exposure': exposure
+            })
+        
+        chart_data.sort(key=lambda x: x['strike'])
+        
+        # Key levels
+        key_levels = sorted(sorted_strikes, key=lambda x: abs(x[1]), reverse=True)[:5]
+        key_levels = [{'strike': k[0], 'exposure': k[1]} for k in key_levels]
+        
+        # Interpretation
+        interpretation = []
+        interpretation.append(f"Charm shows time-based delta decay pressure over {dte} days")
+        if total_chex > 0:
+            interpretation.append(f"Net positive charm (${total_chex/1e6:.2f}M) - delta will increase over time")
+        elif total_chex < 0:
+            interpretation.append(f"Net negative charm (${abs(total_chex)/1e6:.2f}M) - delta will decrease over time")
+        
+        if key_levels:
+            interpretation.append(f"Highest time decay pressure at ${key_levels[0]['strike']:.0f}")
+        
+        exp_date_str = sorted(chain_data.get('callExpDateMap', {}).keys())[0] if chain_data.get('callExpDateMap') else 'N/A'
+        
+        return jsonify({
+            'ticker': ticker,
+            'spot_price': spot_price,
+            'expiration': exp_date_str.split(':')[0] if ':' in exp_date_str else exp_date_str,
+            'dte': dte,
+            'total_exposure': total_chex,
+            'chart_data': chart_data,
+            'key_levels': key_levels,
+            'interpretation': interpretation
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"Error in CHEX calculation: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/analytics/analyze', methods=['POST'])
+@login_required
+def analytics_analyze():
+    """Comprehensive analysis with all Greeks"""
+    try:
+        from datetime import date
+        
+        data = request.get_json()
+        ticker = data.get('ticker', 'SPX').upper()
+        
+        # Check if market is closed
+        today = date.today()
+        target_date = get_next_trading_day(today) if is_market_closed(today) else today
+        
+        # Initialize Schwab client
+        import schwab
+        token_path = '/app/token.json'
+        if not os.path.exists(token_path):
+            app_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            token_path = os.path.join(app_root, 'token.json')
+        
+        schwab_client = schwab.auth.client_from_token_file(
+            token_path,
+            api_key=os.environ.get('SCHWAB_API_KEY'),
+            app_secret=os.environ.get('SCHWAB_APP_SECRET'),
+            enforce_enums=False
+        )
+        
+        # Fetch option chains with target date
+        symbols_to_try = [f'${ticker}.X', ticker, f'${ticker}']
+        chain_response = None
+        
+        for symbol in symbols_to_try:
+            try:
+                chain_response = schwab_client.get_option_chain(
+                    symbol=symbol,
+                    from_date=target_date,
+                    to_date=target_date
+                )
+                if chain_response.status_code == 200:
+                    break
+            except:
+                continue
+        
+        if not chain_response or chain_response.status_code != 200:
+            return jsonify({'error': 'Failed to fetch option chain'}), 400
+        
+        chain_data = chain_response.json()
+        
+        if chain_data.get('status') == 'FAILED':
+            return jsonify({'error': 'Failed to fetch option chain'}), 400
+        
+        spot_price = chain_data.get('underlyingPrice', 0)
+        dte = chain_data.get('daysToExpiration', 1)
+        
+        # Calculate all Greeks for default range (±50 pts)
+        strike_min = spot_price - 50
+        strike_max = spot_price + 50
+        
+        # Initialize accumulators
+        total_gex = 0
+        total_vex = 0
+        total_dex = 0
+        total_chex = 0
+        total_call_volume = 0
+        total_put_volume = 0
+        
+        gex_max = {'strike': 0, 'value': 0}
+        vex_max = {'strike': 0, 'value': 0}
+        dex_max = {'strike': 0, 'value': 0}
+        chex_max = {'strike': 0, 'value': 0}
+        
+        # Process calls
+        expiration_map = chain_data.get('callExpDateMap', {})
+        if expiration_map:
+            first_exp = sorted(expiration_map.keys())[0]
+            expiration_map = {first_exp: expiration_map[first_exp]}
+        
+        for exp_date, strikes in expiration_map.items():
+            for strike_key, options in strikes.items():
+                strike = float(strike_key.split(':')[0])
+                
+                if strike < strike_min or strike > strike_max:
+                    continue
+                
+                for option in options:
+                    gamma = option.get('gamma', 0)
+                    vega = option.get('vega', 0)
+                    delta = option.get('delta', 0)
+                    volume = option.get('totalVolume', 0)
+                    
+                    if volume:
+                        total_call_volume += volume
+                        
+                        # GEX
+                        if gamma:
+                            gex = gamma * volume * 100 * (spot_price ** 2)
+                            total_gex += gex
+                            if abs(gex) > abs(gex_max['value']):
+                                gex_max = {'strike': strike, 'value': gex}
+                        
+                        # VEX
+                        if vega:
+                            vex = vega * volume * 100
+                            total_vex += vex
+                            if abs(vex) > abs(vex_max['value']):
+                                vex_max = {'strike': strike, 'value': vex}
+                        
+                        # DEX
+                        if delta:
+                            dex = delta * volume * 100 * spot_price
+                            total_dex += dex
+                            if abs(dex) > abs(dex_max['value']):
+                                dex_max = {'strike': strike, 'value': dex}
+                        
+                        # CHEX
+                        if delta and dte:
+                            chex = (delta * volume * 100 * spot_price) / dte
+                            total_chex += chex
+                            if abs(chex) > abs(chex_max['value']):
+                                chex_max = {'strike': strike, 'value': chex}
+        
+        # Process puts
+        put_exp_map = chain_data.get('putExpDateMap', {})
+        if put_exp_map:
+            first_exp = sorted(put_exp_map.keys())[0]
+            put_exp_map = {first_exp: put_exp_map[first_exp]}
+        
+        for exp_date, strikes in put_exp_map.items():
+            for strike_key, options in strikes.items():
+                strike = float(strike_key.split(':')[0])
+                
+                if strike < strike_min or strike > strike_max:
+                    continue
+                
+                for option in options:
+                    gamma = option.get('gamma', 0)
+                    vega = option.get('vega', 0)
+                    delta = option.get('delta', 0)
+                    volume = option.get('totalVolume', 0)
+                    
+                    if volume:
+                        total_put_volume += volume
+                        
+                        # GEX (negative for puts)
+                        if gamma:
+                            gex = -1 * gamma * volume * 100 * (spot_price ** 2)
+                            total_gex += gex
+                        
+                        # VEX
+                        if vega:
+                            vex = vega * volume * 100
+                            total_vex += vex
+                        
+                        # DEX (delta is already negative for puts)
+                        if delta:
+                            dex = delta * volume * 100 * spot_price
+                            total_dex += dex
+                        
+                        # CHEX
+                        if delta and dte:
+                            chex = (delta * volume * 100 * spot_price) / dte
+                            total_chex += chex
+        
+        # Build summaries
+        gex_summary = f"<strong>Total GEX:</strong> ${total_gex/1e9:.2f}B<br>"
+        gex_summary += f"<strong>Peak at:</strong> ${gex_max['strike']:.0f} (${gex_max['value']/1e9:.2f}B)"
+        
+        vex_summary = f"<strong>Total VEX:</strong> ${total_vex/1e6:.2f}M<br>"
+        vex_summary += f"<strong>Peak at:</strong> ${vex_max['strike']:.0f} (${vex_max['value']/1e6:.2f}M)"
+        
+        dex_summary = f"<strong>Total DEX:</strong> ${total_dex/1e6:.2f}M<br>"
+        dex_summary += f"<strong>Peak at:</strong> ${dex_max['strike']:.0f} (${dex_max['value']/1e6:.2f}M)"
+        
+        chex_summary = f"<strong>Total CHEX:</strong> ${total_chex/1e6:.2f}M<br>"
+        chex_summary += f"<strong>Peak at:</strong> ${chex_max['strike']:.0f} (${chex_max['value']/1e6:.2f}M)"
+        
+        # Market interpretation
+        interpretation = []
+        interpretation.append(f"<strong>Spot Price:</strong> ${spot_price:.2f} | <strong>DTE:</strong> {dte}")
+        
+        # Volume imbalance
+        put_call_ratio = total_put_volume / total_call_volume if total_call_volume > 0 else 0
+        interpretation.append(f"<strong>Put/Call Volume:</strong> {put_call_ratio:.2f} ({total_put_volume:,.0f}/{total_call_volume:,.0f})")
+        
+        if put_call_ratio > 1.5:
+            interpretation.append("⚠️ Heavy put volume - defensive positioning")
+        elif put_call_ratio < 0.67:
+            interpretation.append("🚀 Heavy call volume - aggressive positioning")
+        
+        # Gamma environment
+        if total_gex > 0:
+            interpretation.append("✅ Positive GEX environment - dealers hedging reduces volatility")
+        else:
+            interpretation.append("⚠️ Negative GEX environment - dealers hedging amplifies volatility")
+        
+        # Delta bias
+        if total_dex > 0:
+            interpretation.append("📈 Bullish delta exposure")
+        elif total_dex < 0:
+            interpretation.append("📉 Bearish delta exposure")
+        
+        return jsonify({
+            'ticker': ticker,
+            'spot_price': spot_price,
+            'dte': dte,
+            'gex_summary': gex_summary,
+            'vex_summary': vex_summary,
+            'dex_summary': dex_summary,
+            'chex_summary': chex_summary,
+            'interpretation': interpretation
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"Error in comprehensive analysis: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/trailing')
 
 @login_required

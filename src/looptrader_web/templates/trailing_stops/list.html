@@ -73,7 +73,6 @@
                 <th>Activation Threshold (%)</th>
                 <th>Trailing Mode</th>
                 <th>Trailing Value</th>
-                <th>Entry Value</th>
                 <th>High Water Mark</th>
                 <th>Actions</th>
               </tr>
@@ -149,8 +148,8 @@
                   {% endif %}
                 </td>
                 <td>
-                  {% if trailing_stop.entry_value %}
-                    ${{ "%.2f"|format(trailing_stop.entry_value) }}
+                  {% if trailing_stop.high_water_mark %}
+                    ${{ "%.2f"|format(trailing_stop.high_water_mark) }}
                   {% else %}
                     <span class="text-muted">N/A</span>
                   {% endif %}

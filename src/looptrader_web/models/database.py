@@ -640,7 +640,6 @@ class TrailingStopState(Base):
     activation_threshold = mapped_column(Float, nullable=False)
     trailing_percentage = mapped_column(Float, nullable=True)  # Nullable when using dollar mode
     is_active = mapped_column(Boolean, default=False)
-    entry_value = mapped_column(Float, nullable=True)
     high_water_mark = mapped_column(Float, nullable=True)
     created_at = mapped_column(DateTime, default=datetime.utcnow)
     updated_at = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

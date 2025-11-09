@@ -176,6 +176,14 @@
             </a>
           </li>
 
+          <!-- Analytics -->
+          <li class="nav-item">
+            <a href="{{ url_for('analytics') }}" class="nav-link {% if request.endpoint == 'analytics' %}active{% endif %}">
+              <i class="nav-icon fas fa-chart-bar"></i>
+              <p>Analytics</p>
+            </a>
+          </li>
+
           <!-- Trailing Stops -->
           <li class="nav-item {% if request.endpoint and request.endpoint.startswith('trailing') %}menu-open{% endif %}">
             <a href="#" class="nav-link {% if request.endpoint and request.endpoint.startswith('trailing') %}active{% endif %}">
