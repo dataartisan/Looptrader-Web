@@ -639,6 +639,7 @@ function renderChart(canvasId, data, greekType) {
             }]
         },
         options: {
+            indexAxis: 'y',
             responsive: true,
             plugins: {
                 legend: {
@@ -651,14 +652,14 @@ function renderChart(canvasId, data, greekType) {
                             if (label) {
                                 label += ': ';
                             }
-                            label += '$' + (context.parsed.y / 1e9).toFixed(2) + 'B';
+                            label += '$' + (context.parsed.x / 1e9).toFixed(2) + 'B';
                             return label;
                         }
                     }
                 }
             },
             scales: {
-                y: {
+                x: {
                     beginAtZero: true,
                     ticks: {
                         callback: function(value) {
