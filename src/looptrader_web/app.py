@@ -1438,20 +1438,88 @@ def analytics_gex():
         
         key_levels = positive_levels[:3] + negative_levels[:3]
         
-        # Market interpretation
+        # Enhanced Market interpretation
         interpretation = []
+        
+        # 1. Basic GEX Levels
         if zero_gex_strike:
-            interpretation.append(f"Zero GEX flip point at ${zero_gex_strike:.0f}")
-            if spot_price > zero_gex_strike:
-                interpretation.append("Price above zero GEX - positive gamma environment, potential downside resistance")
-            else:
-                interpretation.append("Price below zero GEX - negative gamma environment, potential upside resistance")
+            interpretation.append(f"🎯 Zero GEX flip point at ${zero_gex_strike:.0f}")
         
         if max_call_wall['exposure'] > 0:
-            interpretation.append(f"Strongest call wall at ${max_call_wall['strike']:.0f} (${max_call_wall['exposure']/1e9:.2f}B GEX)")
+            interpretation.append(f"📞 Strongest call wall at ${max_call_wall['strike']:.0f} (${max_call_wall['exposure']/1e9:.2f}B GEX)")
         
         if max_put_wall['exposure'] < 0:
-            interpretation.append(f"Strongest put wall at ${max_put_wall['strike']:.0f} (${abs(max_put_wall['exposure'])/1e9:.2f}B GEX)")
+            interpretation.append(f"📉 Strongest put wall at ${max_put_wall['strike']:.0f} (${abs(max_put_wall['exposure'])/1e9:.2f}B GEX)")
+        
+        # 2. Market Regime Context
+        if zero_gex_strike:
+            if spot_price > zero_gex_strike:
+                interpretation.append(f"✅ POSITIVE GAMMA REGIME: Spot (${spot_price:.0f}) is above flip point (${zero_gex_strike:.0f})")
+                interpretation.append("Market makers are long gamma — their hedging dampens volatility (sell rallies, buy dips)")
+                interpretation.append(f"⚠️ If spot breaks below ${zero_gex_strike:.0f}, market transitions to negative gamma with expanding volatility")
+            else:
+                interpretation.append(f"⚠️ NEGATIVE GAMMA REGIME: Spot (${spot_price:.0f}) is below flip point (${zero_gex_strike:.0f})")
+                interpretation.append("Market makers are short gamma — their hedging amplifies volatility (sell dips, buy rallies)")
+                interpretation.append(f"📈 If spot breaks above ${zero_gex_strike:.0f}, volatility may compress in positive gamma zone")
+        
+        # 3. Expected Volatility and Range
+        if max_call_wall['strike'] > 0 and max_put_wall['strike'] > 0:
+            range_width = abs(max_call_wall['strike'] - max_put_wall['strike'])
+            upper_bound = max(max_call_wall['strike'], max_put_wall['strike'])
+            lower_bound = min(max_call_wall['strike'], max_put_wall['strike'])
+            
+            interpretation.append(f"📊 Expected intraday range: ${lower_bound:.0f}–${upper_bound:.0f} ({range_width:.0f} pts)")
+            
+            if range_width < 100:
+                interpretation.append(f"🔒 Narrow range ({range_width:.0f} pts) implies compressed volatility and mean-reversion bias")
+            else:
+                interpretation.append(f"📏 Wide range ({range_width:.0f} pts) allows for directional movement")
+        
+        # 4. Liquidity and Pinning Zones
+        if max_call_wall['strike'] > 0 and max_put_wall['strike'] > 0:
+            if abs(spot_price - max_call_wall['strike']) < 30:
+                interpretation.append(f"📍 Price near call wall (${max_call_wall['strike']:.0f}) — watch for pinning effects and resistance")
+            elif abs(spot_price - max_put_wall['strike']) < 30:
+                interpretation.append(f"📍 Price near put wall (${max_put_wall['strike']:.0f}) — watch for pinning effects and support")
+            else:
+                interpretation.append(f"🎯 Price between walls — high dealer gamma exposure creates liquidity magnets at extremes")
+        
+        # 5. Trading Implications
+        interpretation.append("💡 TRADING IMPLICATIONS:")
+        
+        if zero_gex_strike and spot_price > zero_gex_strike:
+            # Positive gamma regime
+            if max_call_wall['strike'] > 0 and abs(spot_price - max_call_wall['strike']) < 50:
+                interpretation.append(f"• Directional Bias: Neutral-to-slightly bearish (capped by call wall at ${max_call_wall['strike']:.0f})")
+            else:
+                interpretation.append("• Directional Bias: Neutral (positive gamma supports mean reversion)")
+            
+            interpretation.append("• Volatility Bias: Expect low realized volatility unless walls are breached")
+            interpretation.append("• Strategy: Favor mean-reversion trades (iron condors, credit spreads)")
+            interpretation.append(f"• Risk Management: Tight stops if spot breaks below ${zero_gex_strike:.0f} flip point")
+        else:
+            # Negative gamma regime or no flip point
+            interpretation.append("• Directional Bias: Higher directional risk in negative gamma")
+            interpretation.append("• Volatility Bias: Expect elevated realized volatility")
+            interpretation.append("• Strategy: Consider long gamma trades (buying options, straddles)")
+            interpretation.append("• Risk Management: Wider stops to accommodate volatility expansion")
+        
+        # 6. Summary
+        if max_call_wall['strike'] > 0 and max_put_wall['strike'] > 0 and zero_gex_strike:
+            summary = f"📋 SUMMARY: "
+            if spot_price > zero_gex_strike:
+                summary += f"Positive gamma regime with controlled volatility. "
+            else:
+                summary += f"Negative gamma regime with elevated volatility. "
+            
+            summary += f"Price expected to gravitate between ${min(max_call_wall['strike'], max_put_wall['strike']):.0f}–${max(max_call_wall['strike'], max_put_wall['strike']):.0f}. "
+            
+            if total_gex > 0:
+                summary += f"Net positive GEX (${total_gex/1e9:.2f}B) suggests downside support."
+            elif total_gex < 0:
+                summary += f"Net negative GEX (${total_gex/1e9:.2f}B) suggests upside resistance."
+            
+            interpretation.append(summary)
         
         # Get expiration info
         exp_date_str = sorted(chain_data.get('callExpDateMap', {}).keys())[0] if chain_data.get('callExpDateMap') else 'N/A'
@@ -1618,11 +1686,90 @@ def analytics_vex():
         key_levels = sorted(sorted_strikes, key=lambda x: abs(x[1]), reverse=True)[:5]
         key_levels = [{'strike': k[0], 'exposure': k[1]} for k in key_levels]
         
-        # Interpretation
+        # Enhanced VEX Interpretation
         interpretation = []
-        if key_levels:
-            interpretation.append(f"Highest vega concentration at ${key_levels[0]['strike']:.0f}")
-            interpretation.append(f"Total VEX: ${total_vex/1e6:.2f}M - shows volatility exposure distribution")
+        
+        # Find highest VEX strike
+        highest_vex_strike = key_levels[0]['strike'] if key_levels else None
+        highest_vex_value = key_levels[0]['exposure'] if key_levels else 0
+        
+        # Calculate VEX concentration metrics
+        if highest_vex_strike:
+            interpretation.append(f"🎯 Highest VEX concentration at ${highest_vex_strike:.0f} (${highest_vex_value/1e6:.2f}M)")
+            interpretation.append(f"💰 Total VEX: ${total_vex/1e6:.2f}M - shows volatility exposure distribution")
+        
+        # Determine vega regime and pinning effects
+        if highest_vex_strike:
+            distance_from_spot = abs(spot_price - highest_vex_strike)
+            
+            if distance_from_spot < 30:
+                interpretation.append(f"📍 PINNING ALERT: Spot (${spot_price:.0f}) is very close to highest VEX level (${highest_vex_strike:.0f})")
+                interpretation.append("High vega exposure creates strong pinning force — dealers' volatility hedging flows will resist price movement")
+                interpretation.append("Expect spot to gravitate toward this strike, especially approaching expiration")
+            elif distance_from_spot < 100:
+                interpretation.append(f"⚠️ Spot (${spot_price:.0f}) is within VEX influence zone around ${highest_vex_strike:.0f}")
+                interpretation.append("Moderate pinning effects — dealers hedging vega exposure may dampen volatility")
+            
+        # Analyze VEX distribution pattern
+        if len(key_levels) >= 3:
+            vex_range = max([k['strike'] for k in key_levels]) - min([k['strike'] for k in key_levels])
+            
+            interpretation.append(f"📊 VEX DISTRIBUTION:")
+            if vex_range < 100:
+                interpretation.append(f"• Concentrated VEX ({vex_range:.0f} pts range) — strong pinning force in tight band")
+                interpretation.append("• Implied volatility should remain stable and compressed")
+            else:
+                interpretation.append(f"• Dispersed VEX ({vex_range:.0f} pts range) — weaker pinning, more directional freedom")
+        
+        # Volatility regime assessment
+        interpretation.append("📈 VOLATILITY IMPLICATIONS:")
+        
+        if highest_vex_strike and abs(spot_price - highest_vex_strike) < 50:
+            interpretation.append(f"• High vega-exposure regime near ${highest_vex_strike:.0f}")
+            interpretation.append("• Dealers' vega hedging flows are suppressing directional volatility")
+            interpretation.append("• Implied vol should remain stable — expect low realized volatility")
+            interpretation.append("• IV crush risk near expiration as vega exposure unwinds")
+        else:
+            interpretation.append("• Moderate vega-exposure regime")
+            interpretation.append("• Less pinning pressure — spot has more freedom to move")
+            interpretation.append("• IV may expand if price moves away from VEX concentrations")
+        
+        # Trading strategy recommendations
+        interpretation.append("💡 TRADING STRATEGIES:")
+        
+        if highest_vex_strike and abs(spot_price - highest_vex_strike) < 30:
+            # Strong pinning near highest VEX
+            interpretation.append(f"• PRIMARY: Sell premium around ${highest_vex_strike:.0f} (iron condors, credit spreads)")
+            interpretation.append("• Exploit pinning effects and stable IV")
+            interpretation.append(f"• Define risk outside VEX concentration zone (>${highest_vex_strike + 50:.0f} or <${highest_vex_strike - 50:.0f})")
+            interpretation.append("• Fade breakout attempts — mean reversion bias is strong")
+        else:
+            # Away from VEX concentration
+            interpretation.append("• Reduced pinning effects — consider directional trades")
+            interpretation.append("• Monitor for IV expansion if price continues away from VEX levels")
+            interpretation.append("• Long volatility trades may benefit if spot breaks out of range")
+        
+        # Risk warnings based on VEX positioning
+        interpretation.append("⚠️ RISK FACTORS:")
+        if total_vex > 50e6:  # >$50M VEX
+            interpretation.append(f"• Very high VEX (${total_vex/1e6:.2f}M) — strong dealer hedging flows active")
+            interpretation.append("• Price and IV pinning effects are maximum")
+            interpretation.append("• Breakouts may be violent if pinning breaks")
+        
+        # Summary
+        if highest_vex_strike:
+            summary = f"📋 SUMMARY: "
+            if abs(spot_price - highest_vex_strike) < 30:
+                summary += f"High vega-exposure regime with spot pinned near ${highest_vex_strike:.0f}. "
+                summary += "Dealers' vega hedging flows are suppressing volatility. "
+                summary += "Expect narrow ranges and stable IV. "
+                summary += "Favor premium selling strategies within the VEX concentration zone."
+            else:
+                summary += f"Spot (${spot_price:.0f}) is away from main VEX level (${highest_vex_strike:.0f}). "
+                summary += "Reduced pinning effects allow for more directional movement. "
+                summary += "Monitor for IV changes as price moves relative to VEX concentrations."
+            
+            interpretation.append(summary)
         
         exp_date_str = sorted(chain_data.get('callExpDateMap', {}).keys())[0] if chain_data.get('callExpDateMap') else 'N/A'
         dte = chain_data.get('daysToExpiration', 0)
@@ -1792,19 +1939,143 @@ def analytics_dex():
         
         key_levels = positive_levels[:3] + negative_levels[:3]
         
-        # Interpretation
+        # Enhanced DEX Interpretation
         interpretation = []
-        if total_dex > 0:
-            interpretation.append(f"Net positive delta exposure (${total_dex/1e6:.2f}M) - bullish positioning")
+        
+        # 1. Net DEX Positioning (Directional Bias)
+        interpretation.append("📊 DELTA EXPOSURE ANALYSIS:")
+        
+        net_dex_billion = total_dex / 1e9
+        if total_dex > 5e9:  # >$5B
+            interpretation.append(f"🟢 STRONG BULLISH DELTA: Net +${net_dex_billion:.2f}B")
+            interpretation.append("Dealers are short delta (long calls, short puts) — forced to buy on dips")
+            bias = "bullish"
+        elif total_dex > 0:
+            interpretation.append(f"🟢 Bullish Delta: Net +${net_dex_billion:.2f}B")
+            interpretation.append("Moderate bullish positioning — dealers have positive delta exposure")
+            bias = "neutral-bullish"
+        elif total_dex < -5e9:  # <-$5B
+            interpretation.append(f"🔴 STRONG BEARISH DELTA: Net ${net_dex_billion:.2f}B")
+            interpretation.append("Dealers are long delta (short calls, long puts) — forced to sell on rallies")
+            bias = "bearish"
         elif total_dex < 0:
-            interpretation.append(f"Net negative delta exposure (${abs(total_dex)/1e6:.2f}M) - bearish positioning")
+            interpretation.append(f"🔴 Bearish Delta: Net ${net_dex_billion:.2f}B")
+            interpretation.append("Moderate bearish positioning — dealers have negative delta exposure")
+            bias = "neutral-bearish"
         else:
-            interpretation.append("Balanced delta exposure")
+            interpretation.append("⚖️ BALANCED DELTA: Net ~$0")
+            interpretation.append("Neutral dealer positioning — no strong directional bias")
+            bias = "neutral"
+        
+        # 2. Key Delta Concentration Zones
+        interpretation.append("🎯 KEY DELTA ZONES:")
         
         if positive_levels:
-            interpretation.append(f"Strongest bullish zone at ${positive_levels[0]['strike']:.0f}")
+            top_bull_strike = positive_levels[0]['strike']
+            top_bull_dex = positive_levels[0]['exposure']
+            interpretation.append(f"• Strongest bullish zone: ${top_bull_strike:.0f} (${top_bull_dex/1e9:.2f}B DEX)")
+            
+            if abs(spot_price - top_bull_strike) < 30:
+                interpretation.append(f"  → Spot is AT this bullish zone — expect dip buying support")
+            elif spot_price < top_bull_strike:
+                interpretation.append(f"  → Spot is BELOW — this level acts as upside magnet")
+        
         if negative_levels:
-            interpretation.append(f"Strongest bearish zone at ${negative_levels[0]['strike']:.0f}")
+            top_bear_strike = negative_levels[0]['strike']
+            top_bear_dex = negative_levels[0]['exposure']
+            interpretation.append(f"• Strongest bearish zone: ${top_bear_strike:.0f} (${abs(top_bear_dex)/1e9:.2f}B DEX)")
+            
+            if abs(spot_price - top_bear_strike) < 30:
+                interpretation.append(f"  → Spot is AT this bearish zone — expect rally selling pressure")
+            elif spot_price > top_bear_strike:
+                interpretation.append(f"  → Spot is ABOVE — this level acts as downside magnet")
+        
+        # 3. Dealer Hedging Flow Implications
+        interpretation.append("🔄 DEALER HEDGING FLOWS:")
+        
+        if total_dex > 5e9:
+            interpretation.append("• Dealers are SHORT delta → must BUY on dips to stay hedged")
+            interpretation.append("• Creates automatic dip-buying pressure (bullish feedback loop)")
+            interpretation.append("• Rallies may accelerate as dealers chase rising prices")
+        elif total_dex > 0:
+            interpretation.append("• Dealers have modest bullish delta → mild dip-buying tendency")
+            interpretation.append("• Moderate support on pullbacks")
+        elif total_dex < -5e9:
+            interpretation.append("• Dealers are LONG delta → must SELL on rallies to stay hedged")
+            interpretation.append("• Creates automatic rally-selling pressure (bearish feedback loop)")
+            interpretation.append("• Declines may accelerate as dealers chase falling prices")
+        elif total_dex < 0:
+            interpretation.append("• Dealers have modest bearish delta → mild rally-selling tendency")
+            interpretation.append("• Moderate resistance on bounces")
+        else:
+            interpretation.append("• Balanced dealer positioning → minimal directional hedging flows")
+        
+        # 4. Combined with GEX/VEX Context
+        interpretation.append("🧩 MULTI-GREEK CONTEXT:")
+        
+        if positive_levels and negative_levels:
+            dex_range = abs(positive_levels[0]['strike'] - negative_levels[0]['strike'])
+            
+            if total_dex > 5e9:
+                interpretation.append(f"• Bullish DEX ({net_dex_billion:.2f}B) suggests dealers will support dips")
+                interpretation.append(f"• If combined with positive GEX and high VEX near ${positive_levels[0]['strike']:.0f}:")
+                interpretation.append("  → Creates TRIPLE ANCHOR (gamma + vega + delta pinning)")
+                interpretation.append("  → Expect strong mean-reversion and dip-buying absorption")
+            elif total_dex < -5e9:
+                interpretation.append(f"• Bearish DEX ({net_dex_billion:.2f}B) suggests dealers will sell rallies")
+                interpretation.append(f"• If combined with negative GEX zone:")
+                interpretation.append("  → Amplified downside risk on breaks")
+        
+        # 5. Trading Implications
+        interpretation.append("💡 TRADING IMPLICATIONS:")
+        
+        if bias == "bullish":
+            interpretation.append("• Directional Bias: BULLISH — favor long delta strategies")
+            interpretation.append("• Dealers' forced buying on dips creates support")
+            interpretation.append("• Strategy: Buy dips, long call spreads, bull put spreads")
+            interpretation.append("• Risk: Bearish reversal if DEX flips negative")
+        elif bias == "neutral-bullish":
+            interpretation.append("• Directional Bias: Neutral-to-Bullish")
+            interpretation.append("• Strategy: Sell put premium, bullish risk reversals")
+            interpretation.append("• Watch for DEX to strengthen or weaken")
+        elif bias == "bearish":
+            interpretation.append("• Directional Bias: BEARISH — favor short delta strategies")
+            interpretation.append("• Dealers' forced selling on rallies creates resistance")
+            interpretation.append("• Strategy: Sell rallies, put spreads, bear call spreads")
+            interpretation.append("• Risk: Bullish reversal if DEX flips positive")
+        elif bias == "neutral-bearish":
+            interpretation.append("• Directional Bias: Neutral-to-Bearish")
+            interpretation.append("• Strategy: Sell call premium, bearish risk reversals")
+            interpretation.append("• Watch for DEX to strengthen or weaken")
+        else:
+            interpretation.append("• Directional Bias: NEUTRAL — no strong delta edge")
+            interpretation.append("• Strategy: Non-directional (iron condors, straddles)")
+        
+        # 6. Summary
+        summary = f"📋 SUMMARY: "
+        
+        if total_dex > 5e9:
+            summary += f"Strong bullish delta regime (${net_dex_billion:.2f}B). "
+            summary += "Dealers' hedging flows will support dips and amplify rallies. "
+            if positive_levels:
+                summary += f"Key support zone at ${positive_levels[0]['strike']:.0f}. "
+            summary += "Favor bullish strategies and buy dips."
+        elif total_dex > 0:
+            summary += f"Bullish delta bias (${net_dex_billion:.2f}B). "
+            summary += "Moderate dip-buying support from dealer hedging. "
+        elif total_dex < -5e9:
+            summary += f"Strong bearish delta regime (${net_dex_billion:.2f}B). "
+            summary += "Dealers' hedging flows will resist rallies and amplify declines. "
+            if negative_levels:
+                summary += f"Key resistance zone at ${negative_levels[0]['strike']:.0f}. "
+            summary += "Favor bearish strategies and sell rallies."
+        elif total_dex < 0:
+            summary += f"Bearish delta bias (${net_dex_billion:.2f}B). "
+            summary += "Moderate rally-selling pressure from dealer hedging. "
+        else:
+            summary += "Balanced delta exposure — no strong directional bias from dealer positioning."
+        
+        interpretation.append(summary)
         
         exp_date_str = sorted(chain_data.get('callExpDateMap', {}).keys())[0] if chain_data.get('callExpDateMap') else 'N/A'
         dte = chain_data.get('daysToExpiration', 0)
@@ -2177,39 +2448,205 @@ def analytics_analyze():
         chex_summary = f"<strong>Total CHEX:</strong> ${total_chex/1e6:.2f}M<br>"
         chex_summary += f"<strong>Peak at:</strong> ${chex_max['strike']:.0f} (${chex_max['value']/1e6:.2f}M)"
         
-        # Market interpretation
+        # Calculate GEX flip point (zero-gamma level)
+        # Find the strike where GEX crosses from positive to negative
+        gex_by_strike = {}
+        
+        # Recalculate GEX by strike to find flip point
+        for exp_date, strikes in expiration_map.items():
+            for strike_key, options in strikes.items():
+                strike = float(strike_key.split(':')[0])
+                if strike < strike_min or strike > strike_max:
+                    continue
+                
+                for option in options:
+                    gamma = option.get('gamma', 0)
+                    volume = option.get('totalVolume', 0)
+                    if gamma and volume:
+                        gex = gamma * volume * 100 * (spot_price ** 2)
+                        if strike not in gex_by_strike:
+                            gex_by_strike[strike] = 0
+                        gex_by_strike[strike] += gex
+        
+        for exp_date, strikes in put_exp_map.items():
+            for strike_key, options in strikes.items():
+                strike = float(strike_key.split(':')[0])
+                if strike < strike_min or strike > strike_max:
+                    continue
+                
+                for option in options:
+                    gamma = option.get('gamma', 0)
+                    volume = option.get('totalVolume', 0)
+                    if gamma and volume:
+                        gex = -1 * gamma * volume * 100 * (spot_price ** 2)
+                        if strike not in gex_by_strike:
+                            gex_by_strike[strike] = 0
+                        gex_by_strike[strike] += gex
+        
+        # Find flip point (strike where GEX changes sign)
+        sorted_strikes = sorted(gex_by_strike.items())
+        flip_point = spot_price  # default to spot
+        
+        for i in range(len(sorted_strikes) - 1):
+            current_strike, current_gex = sorted_strikes[i]
+            next_strike, next_gex = sorted_strikes[i + 1]
+            
+            # Check if GEX crosses zero between these strikes
+            if (current_gex > 0 and next_gex < 0) or (current_gex < 0 and next_gex > 0):
+                # Flip point is between current_strike and next_strike
+                flip_point = (current_strike + next_strike) / 2
+                break
+        
+        # Find call and put walls (highest absolute GEX)
+        call_wall_strike = 0
+        call_wall_gex = 0
+        put_wall_strike = 0
+        put_wall_gex = 0
+        
+        for strike, gex in gex_by_strike.items():
+            if gex > call_wall_gex and strike > spot_price:
+                call_wall_strike = strike
+                call_wall_gex = gex
+            
+            if abs(gex) > abs(put_wall_gex) and gex < 0 and strike < spot_price:
+                put_wall_strike = strike
+                put_wall_gex = gex
+        
+        # INSTITUTIONAL-GRADE ANALYSIS SUMMARY
         interpretation = []
-        interpretation.append(f"<strong>Spot Price:</strong> ${spot_price:.2f} | <strong>DTE:</strong> {dte}")
         
-        # Volume imbalance
-        put_call_ratio = total_put_volume / total_call_volume if total_call_volume > 0 else 0
-        interpretation.append(f"<strong>Put/Call Volume:</strong> {put_call_ratio:.2f} ({total_put_volume:,.0f}/{total_call_volume:,.0f})")
+        interpretation.append("═══════════════════════════════════════════════════════")
+        interpretation.append("📊 DEALER FLOW ANALYSIS SUMMARY — " + ticker + f" (Spot ${spot_price:.0f})")
+        interpretation.append("═══════════════════════════════════════════════════════")
+        interpretation.append("")
         
-        if put_call_ratio > 1.5:
-            interpretation.append("⚠️ Heavy put volume - defensive positioning")
-        elif put_call_ratio < 0.67:
-            interpretation.append("🚀 Heavy call volume - aggressive positioning")
+        # Key Levels
+        interpretation.append("🎯 KEY EXPOSURE LEVELS:")
+        interpretation.append(f"• Zero-GEX Flip: ${flip_point:.0f} → {'Positive gamma regime' if spot_price > flip_point else 'Negative gamma regime'}")
+        interpretation.append(f"• Call Wall: ${call_wall_strike:.0f} (${call_wall_gex/1e9:.2f}B GEX)")
+        interpretation.append(f"• Put Wall: ${put_wall_strike:.0f} (${abs(put_wall_gex)/1e9:.2f}B GEX)")
+        interpretation.append(f"• Highest VEX: ${vex_max['strike']:.0f} (${vex_max['value']/1e6:.2f}M)")
+        interpretation.append(f"• Net DEX: ${total_dex/1e9:+.2f}B")
+        interpretation.append(f"• Net CHEX: ${total_chex/1e9:+.2f}B")
+        interpretation.append("")
         
-        # Gamma environment
-        if total_gex > 0:
-            interpretation.append("✅ Positive GEX environment - dealers hedging reduces volatility")
+        # Market Context
+        interpretation.append("🌐 MARKET CONTEXT:")
+        
+        # Check if all exposures cluster near a level
+        vex_concentration = abs(vex_max['strike'] - spot_price)
+        dex_concentration = abs(dex_max['strike'] - spot_price)
+        
+        if vex_concentration < 30 and dex_concentration < 30 and abs(put_wall_strike - spot_price) < 30:
+            interpretation.append(f"• Dealer positioning remains structurally supportive, with all exposures (GEX, VEX, DEX, CHEX) clustered near ${int(round(spot_price, -1))}.")
+            interpretation.append("• This creates a low-volatility, mean-reverting environment with a mild bullish drift driven by time-decay hedging flows.")
         else:
-            interpretation.append("⚠️ Negative GEX environment - dealers hedging amplifies volatility")
+            interpretation.append("• Dealer exposures are dispersed across multiple levels, indicating potential for directional moves.")
         
-        # Delta bias
-        if total_dex > 0:
-            interpretation.append("📈 Bullish delta exposure")
-        elif total_dex < 0:
-            interpretation.append("📉 Bearish delta exposure")
+        interpretation.append("• Broader vol markets remain subdued, and no major macro catalysts are disrupting dealer equilibrium.")
+        interpretation.append("")
+        
+        # Flow Dynamics
+        interpretation.append("🔄 FLOW DYNAMICS:")
+        
+        # Gamma + Charm analysis
+        if total_gex > 0 and total_chex > 0:
+            interpretation.append("• Positive gamma and charm indicate continued buy-side hedging support.")
+        elif total_gex > 0:
+            interpretation.append("• Positive gamma environment provides downside support via dealer hedging.")
+        elif total_gex < 0:
+            interpretation.append("• Negative gamma environment amplifies volatility via dealer hedging flows.")
+        
+        # Vega analysis
+        if vex_max['strike'] and abs(vex_max['strike'] - spot_price) < 30:
+            interpretation.append(f"• Vega exposure concentrated at ${vex_max['strike']:.0f} suppresses implied volatility, reinforcing vol compression.")
+        
+        # Delta analysis
+        if total_dex > 5e9:
+            interpretation.append(f"• Delta exposure remains positive (${total_dex/1e9:.2f}B), biasing flows upward but limiting runaway rallies via dealer supply into strength.")
+        elif total_dex < -5e9:
+            interpretation.append(f"• Delta exposure is negative (${total_dex/1e9:.2f}B), biasing flows downward with dealer resistance on bounces.")
+        elif total_dex > 0:
+            interpretation.append(f"• Modest bullish delta (${total_dex/1e9:.2f}B) provides mild upward bias.")
+        else:
+            interpretation.append(f"• Balanced delta exposure (${total_dex/1e9:.2f}B) suggests neutral dealer positioning.")
+        
+        # Gamma flip implications
+        if call_wall_strike > 0:
+            interpretation.append(f"• A break above ${call_wall_strike:.0f} could trigger dealer buybacks and a momentum extension.")
+        
+        if flip_point > 0:
+            interpretation.append(f"• Below ${flip_point:.0f}, flows flip short gamma, amplifying volatility.")
+        
+        interpretation.append("")
+        
+        # Tactical Outlook
+        interpretation.append("💡 TACTICAL OUTLOOK:")
+        
+        # Determine bias
+        if total_gex > 0 and total_dex > 0 and total_vex > 0:
+            bias = "Bullish drift, low volatility"
+        elif total_gex < 0 and total_dex < 0:
+            bias = "Bearish, elevated volatility"
+        elif total_gex > 0 and abs(total_dex) < 5e9:
+            bias = "Range-bound, low volatility"
+        elif total_dex > 5e9:
+            bias = "Bullish bias"
+        elif total_dex < -5e9:
+            bias = "Bearish bias"
+        else:
+            bias = "Neutral"
+        
+        interpretation.append(f"• <strong>Bias:</strong> {bias}")
+        interpretation.append(f"• <strong>Support:</strong> ${put_wall_strike:.0f} | <strong>Resistance:</strong> ${call_wall_strike:.0f}")
+        interpretation.append(f"• <strong>Volatility Outlook:</strong> {'Suppressed' if total_gex > 0 and vex_concentration < 30 else 'Elevated' if total_gex < 0 else 'Moderate'}")
+        
+        # Expected range
+        if call_wall_strike > 0 and put_wall_strike > 0:
+            interpretation.append(f"• <strong>Expected Range:</strong> ${put_wall_strike:.0f}–${call_wall_strike:.0f} unless gamma flip triggers volatility expansion")
+        
+        # Trade ideas
+        interpretation.append("")
+        interpretation.append("📈 TRADE IDEAS:")
+        
+        if total_gex > 0 and abs(total_dex) < 10e9 and vex_concentration < 30:
+            # Low vol, range-bound
+            interpretation.append("• Short-vol structures (iron condors, credit spreads) or delta-neutral call spreads with time-decay tailwinds")
+            interpretation.append(f"• Sell {put_wall_strike:.0f}-{call_wall_strike:.0f} iron condor for premium decay")
+        elif total_dex > 5e9 and total_gex > 0:
+            # Bullish with support
+            interpretation.append("• Buy dips for long delta exposure")
+            interpretation.append("• Bull call spreads or sell put spreads below support")
+        elif total_dex < -5e9:
+            # Bearish
+            interpretation.append("• Sell rallies, bear put spreads")
+            interpretation.append("• Long volatility if approaching gamma flip")
+        elif total_gex < 0:
+            # High vol environment
+            interpretation.append("• Long straddles/strangles to capture volatility expansion")
+            interpretation.append(f"• Avoid short premium positions near ${flip_point:.0f} flip point")
+        else:
+            interpretation.append("• Non-directional strategies (butterflies, calendars)")
+        
+        interpretation.append("")
+        interpretation.append("═══════════════════════════════════════════════════════")
+        
+        # Volume imbalance (moved to bottom)
+        put_call_ratio = total_put_volume / total_call_volume if total_call_volume > 0 else 0
+        volume_summary = f"Put/Call Volume: {put_call_ratio:.2f} ({total_put_volume:,.0f}/{total_call_volume:,.0f})"
         
         return jsonify({
             'ticker': ticker,
             'spot_price': spot_price,
             'dte': dte,
+            'flip_point': flip_point,
+            'call_wall': call_wall_strike,
+            'put_wall': put_wall_strike,
             'gex_summary': gex_summary,
             'vex_summary': vex_summary,
             'dex_summary': dex_summary,
             'chex_summary': chex_summary,
+            'volume_summary': volume_summary,
             'interpretation': interpretation
         })
         
@@ -3628,6 +4065,92 @@ def calculate_gex_levels(token_data):
                 zero_gamma_strike = strikes[i]
                 break
         
+        # Enhanced Market interpretation
+        interpretation = []
+        
+        # 1. Basic GEX Levels
+        if zero_gamma_strike:
+            interpretation.append(f"🎯 Zero GEX flip point at ${zero_gamma_strike:.0f}")
+        
+        if max_positive_strike:
+            interpretation.append(f"📞 Strongest call wall at ${max_positive_strike:.0f} ({max_positive_gex:.2f}B GEX)")
+        
+        if max_negative_strike:
+            interpretation.append(f"📉 Strongest put wall at ${max_negative_strike:.0f} ({abs(max_negative_gex):.2f}B GEX)")
+        
+        # 2. Market Regime Context
+        if zero_gamma_strike:
+            if spx_price > zero_gamma_strike:
+                regime = "positive gamma"
+                interpretation.append(f"✅ POSITIVE GAMMA REGIME: Spot (${spx_price:.0f}) is above flip point (${zero_gamma_strike:.0f})")
+                interpretation.append("Market makers are long gamma — their hedging dampens volatility (sell rallies, buy dips)")
+                interpretation.append(f"⚠️ If spot breaks below ${zero_gamma_strike:.0f}, market transitions to negative gamma with expanding volatility")
+            else:
+                regime = "negative gamma"
+                interpretation.append(f"⚠️ NEGATIVE GAMMA REGIME: Spot (${spx_price:.0f}) is below flip point (${zero_gamma_strike:.0f})")
+                interpretation.append("Market makers are short gamma — their hedging amplifies volatility (sell dips, buy rallies)")
+                interpretation.append(f"📈 If spot breaks above ${zero_gamma_strike:.0f}, volatility may compress in positive gamma zone")
+        
+        # 3. Expected Volatility and Range
+        if max_positive_strike and max_negative_strike:
+            range_width = abs(max_positive_strike - max_negative_strike)
+            upper_bound = max(max_positive_strike, max_negative_strike)
+            lower_bound = min(max_positive_strike, max_negative_strike)
+            
+            interpretation.append(f"📊 Expected intraday range: ${lower_bound:.0f}–${upper_bound:.0f} ({range_width:.0f} pts)")
+            
+            if range_width < 100:
+                interpretation.append(f"🔒 Narrow range ({range_width:.0f} pts) implies compressed volatility and mean-reversion bias")
+            else:
+                interpretation.append(f"📏 Wide range ({range_width:.0f} pts) allows for directional movement")
+        
+        # 4. Liquidity and Pinning Zones
+        if max_positive_strike and max_negative_strike:
+            if abs(spx_price - max_positive_strike) < 30:
+                interpretation.append(f"📍 Price near call wall (${max_positive_strike:.0f}) — watch for pinning effects and resistance")
+            elif abs(spx_price - max_negative_strike) < 30:
+                interpretation.append(f"📍 Price near put wall (${max_negative_strike:.0f}) — watch for pinning effects and support")
+            else:
+                interpretation.append(f"🎯 Price between walls — high dealer gamma exposure creates liquidity magnets at extremes")
+        
+        # 5. Trading Implications
+        interpretation.append("💡 TRADING IMPLICATIONS:")
+        
+        if zero_gamma_strike and spx_price > zero_gamma_strike:
+            # Positive gamma regime
+            if max_positive_strike and abs(spx_price - max_positive_strike) < 50:
+                interpretation.append(f"• Directional Bias: Neutral-to-slightly bearish (capped by call wall at ${max_positive_strike:.0f})")
+            else:
+                interpretation.append("• Directional Bias: Neutral (positive gamma supports mean reversion)")
+            
+            interpretation.append("• Volatility Bias: Expect low realized volatility unless walls are breached")
+            interpretation.append("• Strategy: Favor mean-reversion trades (iron condors, credit spreads)")
+            interpretation.append(f"• Risk Management: Tight stops if spot breaks below ${zero_gamma_strike:.0f} flip point")
+        else:
+            # Negative gamma regime or no flip point
+            interpretation.append("• Directional Bias: Higher directional risk in negative gamma")
+            interpretation.append("• Volatility Bias: Expect elevated realized volatility")
+            interpretation.append("• Strategy: Consider long gamma trades (buying options, straddles)")
+            interpretation.append("• Risk Management: Wider stops to accommodate volatility expansion")
+        
+        # 6. Summary
+        total_net_gex = sum(total_gex_values)
+        if max_positive_strike and max_negative_strike and zero_gamma_strike:
+            summary = f"📋 SUMMARY: "
+            if spx_price > zero_gamma_strike:
+                summary += f"Positive gamma regime with controlled volatility. "
+            else:
+                summary += f"Negative gamma regime with elevated volatility. "
+            
+            summary += f"Price expected to gravitate between ${min(max_positive_strike, max_negative_strike):.0f}–${max(max_positive_strike, max_negative_strike):.0f}. "
+            
+            if total_net_gex > 0:
+                summary += f"Net positive GEX ({total_net_gex:.2f}B) suggests downside support."
+            elif total_net_gex < 0:
+                summary += f"Net negative GEX ({total_net_gex:.2f}B) suggests upside resistance."
+            
+            interpretation.append(summary)
+        
         return {
             'strikes': strikes,
             'call_gex': call_gex_values,
@@ -3640,7 +4163,8 @@ def calculate_gex_levels(token_data):
             'max_negative_strike': max_negative_strike,
             'zero_gamma_strike': zero_gamma_strike,
             'expiration_date': exp_date_str,
-            'expiration_full': nearest_expiration
+            'expiration_full': nearest_expiration,
+            'interpretation': interpretation
         }
         
     except Exception as e:
@@ -3671,12 +4195,18 @@ def get_0dte_options(token_data, calls_delta_target, puts_delta_target):
             enforce_enums=False
         )
         
-        # Get today's date for 0 DTE
+        # Check if market is closed and determine target date
         today = date.today()
+        if is_market_closed(today):
+            target_date = get_next_trading_day(today)
+            print(f"Market is CLOSED today ({today.strftime('%A, %Y-%m-%d')})")
+            print(f"Fetching options for next trading day: {target_date.strftime('%A, %Y-%m-%d')}")
+        else:
+            target_date = today
+            print(f"Market is OPEN today ({today.strftime('%A, %Y-%m-%d')})")
+            print(f"Fetching 0 DTE options for: {target_date}")
         
-        print(f"Fetching SPX options for date: {today}")
-        
-        # Fetch SPX options chain for today
+        # Fetch SPX options chain for target date
         # Try different symbol formats for SPX
         symbols_to_try = ['$SPX.X', 'SPX', '$SPX']
         
@@ -3684,8 +4214,8 @@ def get_0dte_options(token_data, calls_delta_target, puts_delta_target):
             print(f"Trying symbol: {symbol}")
             response = client.get_option_chain(
                 symbol=symbol,
-                from_date=today,
-                to_date=today
+                from_date=target_date,
+                to_date=target_date
             )
             
             if response.status_code == 200:

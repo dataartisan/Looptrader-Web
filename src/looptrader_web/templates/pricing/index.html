@@ -193,6 +193,21 @@
           </div>
         </div>
 
+        <!-- Market Interpretation -->
+        <div class="row mb-3" id="gex-interpretation" style="display: none;">
+          <div class="col-12">
+            <div class="card card-info">
+              <div class="card-header">
+                <h3 class="card-title"><i class="fas fa-lightbulb mr-2"></i>Market Interpretation</h3>
+              </div>
+              <div class="card-body">
+                <ul id="gex-interpretation-list" class="mb-0">
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Empty State -->
         <div id="gex-empty" class="text-center" style="padding: 50px;">
           <i class="fas fa-chart-area fa-4x text-muted mb-3"></i>
@@ -340,6 +355,7 @@ function fetchGEXData() {
     $('#gex-chart-container').hide();
     $('#gex-error').hide();
     $('#gex-stats').hide();
+    $('#gex-interpretation').hide();
     $('#refresh-gex-btn').find('i').addClass('fa-spin');
     $('#generate-gex-btn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-2"></i>Generating...');
     
@@ -418,6 +434,19 @@ function updateGEXStats(data) {
             $('#gex-support').text('N/A');
             $('#gex-support-value').text('');
         }
+        
+        // Update interpretation
+        if (data.interpretation && data.interpretation.length > 0) {
+            let interpretationHtml = '';
+            data.interpretation.forEach(function(line) {
+                interpretationHtml += '<li>' + line + '</li>';
+            });
+            $('#gex-interpretation-list').html(interpretationHtml);
+            $('#gex-interpretation').show();
+        } else {
+            $('#gex-interpretation').hide();
+        }
+        
         console.log('Stats updated successfully');
     } catch (e) {
         console.error('Error updating stats:', e);
@@ -478,6 +507,7 @@ function updateGEXChart(data) {
             ]
         },
         options: {
+            indexAxis: 'y',
             responsive: true,
             maintainAspectRatio: false,
             interaction: {
@@ -507,7 +537,7 @@ function updateGEXChart(data) {
                             if (label) {
                                 label += ': ';
                             }
-                            label += context.parsed.y.toFixed(2) + 'B';
+                            label += context.parsed.x.toFixed(2) + 'B';
                             return label;
                         },
                         afterLabel: function(context) {
@@ -520,7 +550,7 @@ function updateGEXChart(data) {
                 }
             },
             scales: {
-                x: {
+                y: {
                     title: {
                         display: true,
                         text: 'Strike Price',
@@ -536,7 +566,7 @@ function updateGEXChart(data) {
                         }
                     }
                 },
-                y: {
+                x: {
                     title: {
                         display: true,
                         text: 'Gamma Exposure (Billions)',
@@ -581,6 +611,7 @@ function showGEXError(message) {
     $('#gex-chart-container').hide();
     $('#gex-empty').hide();
     $('#gex-stats').hide();
+    $('#gex-interpretation').hide();
 }
 </script>
 {% endblock %}
