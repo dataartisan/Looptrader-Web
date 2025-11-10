@@ -686,6 +686,7 @@ class Order(Base):
     enteredTime = mapped_column(DateTime, nullable=True)
     position_id = mapped_column(Integer, ForeignKey("Position.id"))
     accountId = mapped_column(Integer, nullable=True)
+    isOpenPosition = mapped_column(Boolean, nullable=True, default=False)
     
     # Relationships
     position = relationship("Position", back_populates="orders")

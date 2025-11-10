@@ -664,14 +664,28 @@ def positions():
                 if not db_position:
                     continue
                 
-                # Get the opening order
+                # Get the opening order - try isOpenPosition first, fallback to first filled order
                 opening_order = None
                 for order in db_position.orders:
-                    if order.isOpenPosition:
+                    # Check if this order is explicitly marked as opening position
+                    if hasattr(order, 'isOpenPosition') and order.isOpenPosition:
                         opening_order = order
                         break
                 
-                if not opening_order or not opening_order.orderLegCollection or opening_order.price is None:
+                # Fallback: use first FILLED order if no explicit opening order
+                if not opening_order:
+                    for order in db_position.orders:
+                        if order.status and 'FILLED' in order.status.upper():
+                            opening_order = order
+                            break
+                
+                # Skip if no valid order found or no price
+                if not opening_order or opening_order.price is None:
+                    continue
+                
+                # Skip if no orderLegCollection (this feature may not be implemented yet)
+                if not hasattr(opening_order, 'orderLegCollection') or not opening_order.orderLegCollection:
+                    print(f"Position {db_position.id}: No orderLegCollection, skipping")
                     continue
                 
                 # Get account name
@@ -979,14 +993,27 @@ def risk():
                 if not position:
                     continue
                 
-                # Get opening order
-                opening_order = db.query(Order).filter_by(
-                    bot_id=bot.id,
-                    position_id=position.id,
-                    isOpenPosition=True
-                ).first()
+                # Get opening order - try isOpenPosition first, fallback to first filled order
+                opening_order = None
+                for order in position.orders:
+                    # Check if this order is explicitly marked as opening position
+                    if hasattr(order, 'isOpenPosition') and order.isOpenPosition:
+                        opening_order = order
+                        break
                 
-                if not opening_order or not opening_order.orderLegCollection:
+                # Fallback: use first FILLED order if no explicit opening order
+                if not opening_order:
+                    for order in position.orders:
+                        if order.status and 'FILLED' in order.status.upper():
+                            opening_order = order
+                            break
+                
+                # Skip if no valid order found
+                if not opening_order:
+                    continue
+                
+                # Skip if no orderLegCollection (this feature may not be implemented yet)
+                if not hasattr(opening_order, 'orderLegCollection') or not opening_order.orderLegCollection:
                     continue
                 
                 position_count += 1
