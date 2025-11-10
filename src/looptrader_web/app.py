@@ -659,23 +659,39 @@ def risk():
             bots = db.query(Bot).all()
             accounts = db.query(BrokerageAccount).all()
             
+            position_count = len(active_positions)
+            
+            print(f"Risk page: Found {position_count} active positions out of {len(all_positions)} total")
+            
             # Calculate totals using the Position model's initial_premium_sold property
             total_premium = 0.0
-            position_count = len(active_positions)
             
             for pos in active_positions:
                 try:
                     premium = pos.initial_premium_sold
+                    print(f"Position {pos.id}: Premium = ${premium}")
                     if premium:
                         total_premium += premium
                 except Exception as e:
                     print(f"Error calculating premium for position {pos.id}: {e}")
             
+            print(f"Risk page: Total premium = ${total_premium}")
+            
             # Group by account
             account_metrics = {}
             for account in accounts:
                 account_positions = [p for p in active_positions if p.account_id == account.account_id]
-                account_premium = sum(p.initial_premium_sold for p in account_positions if p.initial_premium_sold)
+                account_premium = 0.0
+                
+                for p in account_positions:
+                    try:
+                        prem = p.initial_premium_sold
+                        if prem:
+                            account_premium += prem
+                    except:
+                        pass
+                
+                print(f"Account {account.name}: {len(account_positions)} positions, ${account_premium} premium")
                 
                 account_metrics[account.account_id] = {
                     'name': account.name,
@@ -692,6 +708,11 @@ def risk():
                     'underlying_concentration': {}
                 }
             
+            warnings = []
+            if position_count > 0 and total_premium == 0:
+                warnings.append('Warning: Positions found but premium is $0 - check order data')
+            warnings.append('Greeks data not available - order leg collection missing from database')
+            
             return render_template(
                 'risk/risk.html',
                 aggregate=False,
@@ -707,7 +728,7 @@ def risk():
                 best_position=None,
                 worst_position=None,
                 underlying_concentration=[],
-                warnings=['Greeks data not available - order leg collection missing from database'],
+                warnings=warnings,
                 account_metrics=account_metrics
             )
         finally:
