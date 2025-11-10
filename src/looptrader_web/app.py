@@ -608,632 +608,96 @@ def accounts():
 @app.route('/positions')
 @login_required
 def positions():
-    """
-    Enhanced positions page matching Telegram /positions command functionality.
-    Shows all open positions grouped by account with:
-    - Bot ID and name
-    - Strikes display
-    - P&L ($ and %)
-    - Entry time and duration
-    - Entry vs current price
-    - Greeks (optional)
-    - Stop loss status
-    - Trailing stop status
-    """
+    """Display all positions with basic information"""
     try:
         db = SessionLocal()
         try:
-            # Get filter parameters from request
-            bot_id_filter = request.args.get('bot_id')
+            # Get filter parameters
             account_filter = request.args.get('account')
-            show_greeks = request.args.get('show_greeks') == 'true'
-            profitable_only = request.args.get('profitable') == 'true'
-            losing_only = request.args.get('losing') == 'true'
+            status_filter = request.args.get('status')
+            active_only = request.args.get('active_only')
             
-            # Initialize Schwab client for quotes
-            import schwab
-            token_path = '/app/token.json' if os.path.exists('/app/token.json') else os.path.join(os.path.dirname(os.path.abspath(__file__)), 'token.json')
+            query = db.query(Position).order_by(Position.opened_datetime.desc())
             
-            try:
-                client = schwab.auth.client_from_token_file(
-                    token_path,
-                    api_key=os.environ.get('SCHWAB_API_KEY'),
-                    app_secret=os.environ.get('SCHWAB_APP_SECRET'),
-                    enforce_enums=False
-                )
-            except Exception as e:
-                print(f"Error initializing Schwab client: {e}")
-                flash('Unable to connect to Schwab API for quotes', 'warning')
-                client = None
+            if account_filter:
+                query = query.filter(Position.account_id == account_filter)
             
-            # Get all active bots and accounts for filters
-            all_bots = db.query(Bot).all()
-            all_accounts = db.query(BrokerageAccount).all()
+            if status_filter == 'active' or active_only == 'true':
+                query = query.filter(Position.active == True)
+            elif status_filter == 'closed':
+                query = query.filter(Position.active == False)
             
-            # Build position data matching Telegram command output
-            position_data = []
+            positions = query.all()
+            accounts = db.query(BrokerageAccount).all()
+            bots = db.query(Bot).all()
             
-            for bot in all_bots:
-                # Apply bot_id filter
-                if bot_id_filter and str(bot.id) != bot_id_filter:
-                    continue
-                
-                # Get active position for this bot
-                db_position = db.query(Position).filter_by(bot_id=bot.id, active=True).first()
-                
-                if not db_position:
-                    continue
-                
-                # Get the opening order - try isOpenPosition first, fallback to first filled order
-                opening_order = None
-                for order in db_position.orders:
-                    # Check if this order is explicitly marked as opening position
-                    if hasattr(order, 'isOpenPosition') and order.isOpenPosition:
-                        opening_order = order
-                        break
-                
-                # Fallback: use first FILLED order if no explicit opening order
-                if not opening_order:
-                    for order in db_position.orders:
-                        if order.status and 'FILLED' in order.status.upper():
-                            opening_order = order
-                            break
-                
-                # Skip if no valid order found or no price
-                if not opening_order or opening_order.price is None:
-                    continue
-                
-                # Skip if no orderLegCollection (this feature may not be implemented yet)
-                if not hasattr(opening_order, 'orderLegCollection') or not opening_order.orderLegCollection:
-                    print(f"Position {db_position.id}: No orderLegCollection, skipping")
-                    continue
-                
-                # Get account name
-                account = db.query(BrokerageAccount).filter_by(id=db_position.account_id).first()
-                account_name = account.name if account else f"Account {db_position.account_id}"
-                account_id = account.account_id if account else str(db_position.account_id)
-                
-                # Apply account filter
-                if account_filter and str(account_id) != account_filter:
-                    continue
-                
-                # Get position symbols for quotes
-                position_symbols = [leg.instrument.symbol for leg in opening_order.orderLegCollection]
-                
-                # Extract strikes from symbols (last 7 chars / 1000)
-                position_strikes = []
-                for symbol in position_symbols:
-                    if len(symbol) >= 7:
-                        strike_part = symbol[-7:]
-                        try:
-                            strike_value = f"${float(strike_part) / 1000:.0f}"
-                            position_strikes.append(strike_value)
-                        except ValueError:
-                            continue
-                
-                position_symbol_str = "/".join(position_strikes)
-                
-                try:
-                    # Get current quotes for P&L calculation
-                    quotes = {}
-                    if client:
-                        try:
-                            quote_response = client.get_quotes(position_symbols)
-                            if quote_response.status_code == 200:
-                                quotes = quote_response.json()
-                        except Exception as e:
-                            print(f"Error getting quotes for {position_symbols}: {e}")
-                    
-                    # Calculate current market value and P&L
-                    entry_price = opening_order.price  # Positive for credit, negative for debit
-                    current_value = 0.0
-                    total_delta = 0.0
-                    gamma = theta = vega = 0.0
-                    
-                    # Calculate current market value
-                    for leg in opening_order.orderLegCollection:
-                        symbol = leg.instrument.symbol
-                        quote_data = quotes.get(symbol, {}) if quotes else {}
-                        
-                        if not quote_data:
-                            continue
-                        
-                        # Get mid price
-                        bid = quote_data.get('bid', quote_data.get('bidPrice', 0))
-                        ask = quote_data.get('ask', quote_data.get('askPrice', 0))
-                        mid_price = (bid + ask) / 2 if bid and ask else 0
-                        
-                        # Calculate position value
-                        if leg.instruction.startswith("SELL"):
-                            current_value -= mid_price * leg.quantity * 100
-                        else:
-                            current_value += mid_price * leg.quantity * 100
-                        
-                        # Accumulate delta
-                        quote_delta = quote_data.get('delta', 0)
-                        if quote_delta:
-                            if leg.instruction.startswith("SELL"):
-                                total_delta -= abs(quote_delta) * 100
-                            else:
-                                total_delta += abs(quote_delta) * 100
-                        
-                        # Accumulate Greeks if requested
-                        if show_greeks:
-                            if leg.instruction.startswith("SELL"):
-                                gamma += quote_data.get('gamma', 0)
-                                theta += quote_data.get('theta', 0)
-                                vega += quote_data.get('vega', 0)
-                            else:
-                                gamma -= quote_data.get('gamma', 0)
-                                theta -= quote_data.get('theta', 0)
-                                vega -= quote_data.get('vega', 0)
-                    
-                    # Calculate P&L
-                    if entry_price > 0:
-                        # Credit spread
-                        entry_credit = entry_price * opening_order.quantity * 100
-                        cost_to_close = abs(current_value)
-                        pnl = entry_credit - cost_to_close
-                        pnl_pct = (pnl / entry_credit) * 100 if entry_credit > 0 else 0
-                    else:
-                        # Debit spread
-                        entry_debit = abs(entry_price) * opening_order.quantity * 100
-                        pnl = current_value - entry_debit
-                        pnl_pct = (pnl / entry_debit) * 100 if entry_debit > 0 else 0
-                    
-                    # Apply profitable/losing filters
-                    if profitable_only and pnl < 0:
-                        continue
-                    if losing_only and pnl >= 0:
-                        continue
-                    
-                    # Calculate time in position
-                    if db_position.opened_datetime:
-                        entry_time = db_position.opened_datetime
-                        if entry_time.tzinfo is None:
-                            entry_time = entry_time.replace(tzinfo=timezone.utc)
-                        
-                        now = datetime.now(timezone.utc)
-                        duration = now - entry_time
-                        hours = int(duration.total_seconds() / 3600)
-                        minutes = int((duration.total_seconds() % 3600) / 60)
-                        duration_text = f"{hours}h {minutes}m"
-                        entry_time_str = entry_time.strftime("%H:%M ET")
-                    else:
-                        duration_text = "Unknown"
-                        entry_time_str = "Unknown"
-                    
-                    # Check stop loss
-                    stop_loss_text = None
-                    if hasattr(bot, 'settings'):
-                        # For web app, we don't have direct access to bot settings like in looptrader-pro
-                        # So we'll skip stop loss display for now
-                        pass
-                    
-                    # Check trailing stop
-                    trailing_text = None
-                    trailing_stop = db.query(TrailingStopState).filter_by(bot_id=bot.id).first()
-                    if trailing_stop and trailing_stop.is_active:
-                        peak_profit = trailing_stop.high_water_mark if trailing_stop.high_water_mark else 0
-                        if trailing_stop.trailing_mode == 'dollar':
-                            trail_value = f"${trailing_stop.trailing_dollar_amount:.2f}"
-                        else:
-                            trail_value = f"{int(trailing_stop.trailing_percentage * 100)}%"
-                        trailing_text = f"✓ Trailing: {trail_value} (Peak: ${peak_profit:.2f})"
-                    
-                    # Calculate display values
-                    entry_price_display = abs(entry_price)
-                    current_price_display = abs(current_value) / (opening_order.quantity * 100)
-                    
-                    pnl_indicator = "🟢" if pnl >= 0 else "🔴"
-                    
-                    position_dict = {
-                        'bot_id': bot.id,
-                        'bot_name': bot.name,
-                        'account_name': account_name,
-                        'account_id': account_id,
-                        'strikes': position_symbol_str,
-                        'pnl': pnl,
-                        'pnl_pct': pnl_pct,
-                        'pnl_indicator': pnl_indicator,
-                        'entry_time': entry_time_str,
-                        'duration': duration_text,
-                        'entry_price': entry_price_display,
-                        'current_price': current_price_display,
-                        'stop_loss_text': stop_loss_text,
-                        'trailing_text': trailing_text,
-                        'greeks': {
-                            'delta': total_delta,
-                            'gamma': gamma,
-                            'theta': theta,
-                            'vega': vega
-                        } if show_greeks else None
-                    }
-                    
-                    position_data.append(position_dict)
-                    
-                except Exception as e:
-                    print(f"Error processing position for bot {bot.id}: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    continue
-            
-            # Sort positions by P&L percentage (worst to best)
-            position_data.sort(key=lambda x: x['pnl_pct'])
-            
-            # Group positions by account
-            from collections import defaultdict
-            account_groups = defaultdict(list)
-            for pos in position_data:
-                account_groups[pos['account_name']].append(pos)
-            
-            # Calculate per-account and overall statistics
-            account_summary = {}
-            total_pnl = 0
-            total_count = 0
-            total_winning = 0
-            total_losing = 0
-            
-            for account_name, positions in account_groups.items():
-                account_pnl = sum(p['pnl'] for p in positions)
-                account_avg_pct = sum(p['pnl_pct'] for p in positions) / len(positions)
-                account_winning = sum(1 for p in positions if p['pnl'] > 0)
-                account_losing = sum(1 for p in positions if p['pnl'] < 0)
-                
-                account_summary[account_name] = {
-                    'pnl': account_pnl,
-                    'avg_pct': account_avg_pct,
-                    'winning': account_winning,
-                    'losing': account_losing,
-                    'count': len(positions),
-                    'positions': positions
-                }
-                
-                total_pnl += account_pnl
-                total_count += len(positions)
-                total_winning += account_winning
-                total_losing += account_losing
-            
-            # Build overall summary
-            avg_pnl_pct = (sum(p['pnl_pct'] for p in position_data) / len(position_data)) if position_data else 0
-            
-            position_summary = {
-                'total_count': total_count,
-                'total_pnl': total_pnl,
-                'avg_pnl_pct': avg_pnl_pct,
-                'winning_count': total_winning,
-                'losing_count': total_losing
-            }
-            
-            return render_template(
-                'positions/list_enhanced.html',
-                account_groups=account_summary,
-                position_summary=position_summary,
-                all_bots=all_bots,
-                all_accounts=all_accounts
-            )
-            
+            # Pass the active_only flag to template for button styling
+            return render_template('positions/list.html', 
+                                 positions=positions, 
+                                 accounts=accounts, 
+                                 bots=bots,
+                                 active_only=(active_only == 'true'))
         finally:
             db.close()
     except Exception as e:
-        print(f"Error loading positions: {e}")
         import traceback
-        traceback.print_exc()
+        print(f"Error in positions route: {str(e)}")
+        print(traceback.format_exc())
         flash(f'Error loading positions: {str(e)}', 'danger')
-        return render_template(
-            'positions/list_enhanced.html',
-            account_groups={},
-            position_summary={
-                'total_count': 0,
-                'total_pnl': 0,
-                'avg_pnl_pct': 0,
-                'winning_count': 0,
-                'losing_count': 0
-            },
-            all_bots=[],
-            all_accounts=[]
-        )
+        return render_template('positions/list.html', positions=[], accounts=[], bots=[], active_only=False)
 
 @app.route('/risk')
 @login_required
 def risk():
-    """Display portfolio-level risk metrics matching Telegram /risk command"""
+    """Display portfolio-level risk metrics"""
     try:
         db = SessionLocal()
         try:
-            # Get aggregate parameter
-            aggregate = request.args.get('aggregate', 'false').lower() == 'true'
-            
-            # Initialize Schwab client for real-time quotes
-            import schwab
-            
-            # Create Schwab client with token file path
-            token_path = '/app/token.json'
-            if not os.path.exists(token_path):
-                # Fallback for local development
-                app_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                token_path = os.path.join(app_root, 'token.json')
-            
-            schwab_client = schwab.auth.client_from_token_file(
-                token_path,
-                api_key=os.environ.get('SCHWAB_API_KEY'),
-                app_secret=os.environ.get('SCHWAB_APP_SECRET'),
-                enforce_enums=False
-            )
-            
-            # Initialize aggregates
-            total_delta = 0.0
-            total_gamma = 0.0
-            total_theta = 0.0
-            total_vega = 0.0
-            total_notional_risk = 0.0
-            total_premium = 0.0
-            total_pnl = 0.0
-            total_cost_basis = 0.0
-            position_count = 0
-            underlying_concentration = {}
-            best_position = None
-            worst_position = None
-            best_pnl_pct = float('-inf')
-            worst_pnl_pct = float('inf')
-            
-            # For aggregate mode: track metrics per account
-            account_metrics = {}
-            
-            # Get all active positions
+            # Get basic statistics from positions
+            active_positions = db.query(Position).filter_by(active=True).all()
+            all_positions = db.query(Position).all()
             bots = db.query(Bot).all()
+            accounts = db.query(BrokerageAccount).all()
             
-            for bot in bots:
-                # Get active position for each bot
-                position = db.query(Position).filter_by(
-                    bot_id=bot.id,
-                    active=True
-                ).first()
-                
-                if not position:
-                    continue
-                
-                # Get opening order - try isOpenPosition first, fallback to first filled order
-                opening_order = None
-                for order in position.orders:
-                    # Check if this order is explicitly marked as opening position
-                    if hasattr(order, 'isOpenPosition') and order.isOpenPosition:
-                        opening_order = order
-                        break
-                
-                # Fallback: use first FILLED order if no explicit opening order
-                if not opening_order:
-                    for order in position.orders:
-                        if order.status and 'FILLED' in order.status.upper():
-                            opening_order = order
-                            break
-                
-                # Skip if no valid order found
-                if not opening_order:
-                    continue
-                
-                # Skip if no orderLegCollection (this feature may not be implemented yet)
-                if not hasattr(opening_order, 'orderLegCollection') or not opening_order.orderLegCollection:
-                    continue
-                
-                position_count += 1
-                account_id = position.account_id
-                
-                # Initialize account metrics if needed (for aggregate mode)
-                if aggregate:
-                    if account_id not in account_metrics:
-                        # Get account name
-                        account = db.query(BrokerageAccount).filter_by(
-                            account_id=account_id
-                        ).first()
-                        account_name = account.name if account else f"Account {account_id}"
-                        
-                        account_metrics[account_id] = {
-                            'name': account_name,
-                            'delta': 0.0,
-                            'gamma': 0.0,
-                            'theta': 0.0,
-                            'vega': 0.0,
-                            'notional_risk': 0.0,
-                            'premium': 0.0,
-                            'pnl': 0.0,
-                            'cost_basis': 0.0,
-                            'position_count': 0,
-                            'underlying_concentration': {}
-                        }
-                
-                # Extract symbols for this position
-                position_symbols = []
-                for leg in opening_order.orderLegCollection:
-                    position_symbols.append(leg.instrument.symbol)
-                
-                # Get quotes for Greeks
+            # Calculate totals using the Position model's initial_premium_sold property
+            total_premium = 0.0
+            total_positions = len(active_positions)
+            
+            for pos in active_positions:
                 try:
-                    quotes_response = schwab_client.get_quotes(position_symbols).json()
-                    
-                    # Extract quotes from response
-                    quotes = {}
-                    for symbol, data in quotes_response.items():
-                        if 'quote' in data:
-                            quote_data = data['quote']
-                            quotes[symbol] = type('Quote', (), {
-                                'bid': quote_data.get('bidPrice', 0),
-                                'ask': quote_data.get('askPrice', 0),
-                                'delta': quote_data.get('delta'),
-                                'gamma': quote_data.get('gamma'),
-                                'theta': quote_data.get('theta'),
-                                'vega': quote_data.get('vega'),
-                                'strikePrice': quote_data.get('strikePrice')
-                            })()
-                    
+                    premium = pos.initial_premium_sold
+                    if premium:
+                        total_premium += premium
                 except Exception as e:
-                    print(f"Failed to get quotes for bot {bot.name}: {str(e)}")
-                    continue
-                
-                # Calculate position-level metrics
-                position_delta = 0.0
-                position_gamma = 0.0
-                position_theta = 0.0
-                position_vega = 0.0
-                position_value = 0.0
-                position_notional_risk = 0.0
-                strikes = []
-                
-                # Determine underlying symbol (remove option suffixes)
-                underlying_symbol = position_symbols[0].split('_')[0] if position_symbols else "UNKNOWN"
-                
-                # Process each leg
-                for leg in opening_order.orderLegCollection:
-                    quote = quotes.get(leg.instrument.symbol)
-                    if not quote:
-                        continue
-                    
-                    # Get greeks (positive for long, negative for short)
-                    multiplier = leg.quantity if leg.instruction.startswith('B') else -leg.quantity
-                    
-                    position_delta += (quote.delta or 0) * multiplier * 100
-                    position_gamma += (quote.gamma or 0) * multiplier * 100
-                    position_theta += (quote.theta or 0) * multiplier * 100
-                    position_vega += (quote.vega or 0) * multiplier * 100
-                    
-                    # Calculate position value
-                    mid_price = (quote.bid + quote.ask) / 2
-                    if leg.instruction.startswith('S'):  # Short
-                        position_value -= mid_price * leg.quantity * 100
-                    else:  # Long
-                        position_value += mid_price * leg.quantity * 100
-                    
-                    # Track strikes for notional risk
-                    if quote.strikePrice:
-                        strikes.append(quote.strikePrice)
-                
-                # Calculate notional risk (spread width * quantity * 100)
-                if len(strikes) >= 2:
-                    spread_width = abs(max(strikes) - min(strikes))
-                    position_notional_risk = spread_width * opening_order.quantity * 100
-                elif len(strikes) == 1:
-                    position_notional_risk = strikes[0] * opening_order.quantity * 100
-                
-                # Calculate position cost basis
-                position_cost = abs(opening_order.price) * opening_order.quantity * 100 if opening_order.price else 0
-                
-                # Calculate position P&L
-                position_pnl = 0.0
-                position_pnl_pct = 0.0
-                
-                if position_cost > 0 and opening_order.price is not None:
-                    # For credit spreads (price > 0), we received credit
-                    if opening_order.price > 0:
-                        position_pnl = opening_order.price * opening_order.quantity * 100 - abs(position_value)
-                    else:  # Debit spreads (price < 0), we paid debit
-                        position_pnl = position_value - abs(opening_order.price) * opening_order.quantity * 100
-                    
-                    position_pnl_pct = (position_pnl / position_cost) * 100
-                    
-                    # Track best/worst positions
-                    if position_pnl_pct > best_pnl_pct:
-                        best_pnl_pct = position_pnl_pct
-                        best_position = (bot.name, position_pnl, position_pnl_pct)
-                    
-                    if position_pnl_pct < worst_pnl_pct:
-                        worst_pnl_pct = position_pnl_pct
-                        worst_position = (bot.name, position_pnl, position_pnl_pct)
-                
-                # Aggregate portfolio-level metrics
-                total_delta += position_delta
-                total_gamma += position_gamma
-                total_theta += position_theta
-                total_vega += position_vega
-                total_notional_risk += position_notional_risk
-                total_premium += abs(position_value)
-                total_pnl += position_pnl
-                total_cost_basis += position_cost
-                
-                # Track underlying concentration
-                if underlying_symbol not in underlying_concentration:
-                    underlying_concentration[underlying_symbol] = 0
-                underlying_concentration[underlying_symbol] += 1
-                
-                # Also aggregate per-account metrics if needed
-                if aggregate and account_id in account_metrics:
-                    account_metrics[account_id]['delta'] += position_delta
-                    account_metrics[account_id]['gamma'] += position_gamma
-                    account_metrics[account_id]['theta'] += position_theta
-                    account_metrics[account_id]['vega'] += position_vega
-                    account_metrics[account_id]['notional_risk'] += position_notional_risk
-                    account_metrics[account_id]['premium'] += abs(position_value)
-                    account_metrics[account_id]['pnl'] += position_pnl
-                    account_metrics[account_id]['cost_basis'] += position_cost
-                    account_metrics[account_id]['position_count'] += 1
-                    
-                    # Track per-account concentration
-                    if underlying_symbol not in account_metrics[account_id]['underlying_concentration']:
-                        account_metrics[account_id]['underlying_concentration'][underlying_symbol] = 0
-                    account_metrics[account_id]['underlying_concentration'][underlying_symbol] += 1
+                    print(f"Error calculating premium for position {pos.id}: {e}")
             
-            # Calculate P&L percentage
-            total_pnl_pct = (total_pnl / total_cost_basis * 100) if total_cost_basis > 0 else 0
+            # Group by account
+            account_summary = {}
+            for account in accounts:
+                account_positions = [p for p in active_positions if p.account_id == account.account_id]
+                account_premium = sum(p.initial_premium_sold for p in account_positions if p.initial_premium_sold)
+                
+                account_summary[account.name] = {
+                    'count': len(account_positions),
+                    'premium': account_premium
+                }
             
-            # Sort concentration by count
-            underlying_concentration_sorted = sorted(
-                underlying_concentration.items(),
-                key=lambda x: x[1],
-                reverse=True
-            )
-            
-            # Generate warnings
-            warnings = []
-            if abs(total_delta) > 50:
-                warnings.append(f"High directional exposure (Delta: {total_delta:.1f})")
-            if total_vega < -100:
-                warnings.append(f"Significant short volatility exposure (Vega: {total_vega:.1f})")
-            if len(underlying_concentration) == 1 and position_count > 1:
-                warnings.append("All positions on same underlying")
-            
-            # Render template
             return render_template(
-                'risk/risk.html',
-                aggregate=aggregate,
-                position_count=position_count,
-                total_delta=total_delta,
-                total_gamma=total_gamma,
-                total_theta=total_theta,
-                total_vega=total_vega,
-                total_notional_risk=total_notional_risk,
+                'risk.html',
+                total_positions=total_positions,
                 total_premium=total_premium,
-                total_pnl=total_pnl,
-                total_pnl_pct=total_pnl_pct,
-                best_position=best_position,
-                worst_position=worst_position,
-                underlying_concentration=underlying_concentration_sorted,
-                warnings=warnings,
-                account_metrics=account_metrics if aggregate else None
+                account_summary=account_summary,
+                bots=bots,
+                accounts=accounts
             )
-            
         finally:
             db.close()
     except Exception as e:
-        print(f"Error loading risk metrics: {e}")
         import traceback
-        traceback.print_exc()
-        flash(f'Error loading risk metrics: {str(e)}', 'danger')
-        return render_template(
-            'risk/risk.html',
-            position_count=0,
-            total_delta=0,
-            total_gamma=0,
-            total_theta=0,
-            total_vega=0,
-            total_notional_risk=0,
-            total_premium=0,
-            total_pnl=0,
-            total_pnl_pct=0,
-            best_position=None,
-            worst_position=None,
-            underlying_concentration=[],
-            warnings=[],
-            account_metrics=None
-        )
+        print(f"Error in risk route: {str(e)}")
+        print(traceback.format_exc())
+        flash(f'Error loading risk data: {str(e)}', 'danger')
+        return render_template('risk.html', total_positions=0, total_premium=0, account_summary={}, bots=[], accounts=[])
 
 
 ###############################################################################
