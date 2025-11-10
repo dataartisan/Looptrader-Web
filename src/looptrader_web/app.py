@@ -661,7 +661,7 @@ def risk():
             
             # Calculate totals using the Position model's initial_premium_sold property
             total_premium = 0.0
-            total_positions = len(active_positions)
+            position_count = len(active_positions)
             
             for pos in active_positions:
                 try:
@@ -672,23 +672,43 @@ def risk():
                     print(f"Error calculating premium for position {pos.id}: {e}")
             
             # Group by account
-            account_summary = {}
+            account_metrics = {}
             for account in accounts:
                 account_positions = [p for p in active_positions if p.account_id == account.account_id]
                 account_premium = sum(p.initial_premium_sold for p in account_positions if p.initial_premium_sold)
                 
-                account_summary[account.name] = {
-                    'count': len(account_positions),
-                    'premium': account_premium
+                account_metrics[account.account_id] = {
+                    'name': account.name,
+                    'position_count': len(account_positions),
+                    'premium': account_premium,
+                    # Set Greeks to 0 since we don't have this data
+                    'delta': 0.0,
+                    'gamma': 0.0,
+                    'theta': 0.0,
+                    'vega': 0.0,
+                    'notional_risk': 0.0,
+                    'pnl': 0.0,
+                    'cost_basis': account_premium,
+                    'underlying_concentration': {}
                 }
             
             return render_template(
-                'risk.html',
-                total_positions=total_positions,
+                'risk/risk.html',
+                aggregate=False,
+                position_count=position_count,
+                total_delta=0.0,
+                total_gamma=0.0,
+                total_theta=0.0,
+                total_vega=0.0,
+                total_notional_risk=0.0,
                 total_premium=total_premium,
-                account_summary=account_summary,
-                bots=bots,
-                accounts=accounts
+                total_pnl=0.0,
+                total_pnl_pct=0.0,
+                best_position=None,
+                worst_position=None,
+                underlying_concentration=[],
+                warnings=['Greeks data not available - order leg collection missing from database'],
+                account_metrics=account_metrics
             )
         finally:
             db.close()
@@ -697,7 +717,24 @@ def risk():
         print(f"Error in risk route: {str(e)}")
         print(traceback.format_exc())
         flash(f'Error loading risk data: {str(e)}', 'danger')
-        return render_template('risk.html', total_positions=0, total_premium=0, account_summary={}, bots=[], accounts=[])
+        return render_template(
+            'risk/risk.html',
+            aggregate=False,
+            position_count=0,
+            total_delta=0.0,
+            total_gamma=0.0,
+            total_theta=0.0,
+            total_vega=0.0,
+            total_notional_risk=0.0,
+            total_premium=0.0,
+            total_pnl=0.0,
+            total_pnl_pct=0.0,
+            best_position=None,
+            worst_position=None,
+            underlying_concentration=[],
+            warnings=[],
+            account_metrics={}
+        )
 
 
 ###############################################################################
