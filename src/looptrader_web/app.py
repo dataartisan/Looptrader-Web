@@ -2488,13 +2488,27 @@ def update_trailing_stop():
     try:
         bot_id = request.form.get('bot_id', type=int)
         activation_threshold = request.form.get('activation_threshold', type=float)
+        trailing_mode = request.form.get('trailing_mode', 'percentage')
         trailing_percentage = request.form.get('trailing_percentage', type=float)
+        trailing_dollar_amount = request.form.get('trailing_dollar_amount', type=float)
         
-        if not bot_id or activation_threshold is None or trailing_percentage is None:
+        if not bot_id or activation_threshold is None:
             return jsonify({'success': False, 'message': 'Missing required parameters'})
         
+        # Validate mode-specific requirements
+        if trailing_mode == 'percentage' and trailing_percentage is None:
+            return jsonify({'success': False, 'message': 'Trailing percentage required for percentage mode'})
+        if trailing_mode == 'dollar' and trailing_dollar_amount is None:
+            return jsonify({'success': False, 'message': 'Trailing dollar amount required for dollar mode'})
+        
         # Don't pass is_active parameter - let the database function handle activation state
-        ok, msg = upsert_trailing_stop(bot_id, activation_threshold, trailing_percentage)
+        ok, msg = upsert_trailing_stop(
+            bot_id, 
+            activation_threshold, 
+            trailing_percentage=trailing_percentage if trailing_mode == 'percentage' else None,
+            trailing_dollar_amount=trailing_dollar_amount if trailing_mode == 'dollar' else None,
+            trailing_mode=trailing_mode
+        )
         return jsonify({'success': ok, 'message': msg})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})

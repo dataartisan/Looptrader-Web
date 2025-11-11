@@ -297,9 +297,24 @@ $(document).ready(function() {
         const row = $(`tr[data-bot-id="${botId}"]`);
         const activationThreshold = row.find('input[data-field="activation_threshold"]').val();
         const trailingPercentage = row.find('input[data-field="trailing_percentage"]').val();
+        const trailingDollarAmount = row.find('input[data-field="trailing_dollar_amount"]').val();
         
-        if (!activationThreshold || !trailingPercentage) {
-            alert('Please enter both activation threshold and trailing percentage.');
+        // Determine mode based on which field has a value
+        let trailingMode = 'percentage';
+        let hasPercentage = trailingPercentage && parseFloat(trailingPercentage) > 0;
+        let hasDollar = trailingDollarAmount && parseFloat(trailingDollarAmount) > 0;
+        
+        if (hasDollar) {
+            trailingMode = 'dollar';
+        }
+        
+        if (!activationThreshold) {
+            alert('Please enter activation threshold.');
+            return;
+        }
+        
+        if (!hasPercentage && !hasDollar) {
+            alert('Please enter either trailing percentage or trailing dollar amount.');
             return;
         }
 
@@ -309,7 +324,9 @@ $(document).ready(function() {
             data: {
                 bot_id: botId,
                 activation_threshold: activationThreshold,
-                trailing_percentage: trailingPercentage
+                trailing_mode: trailingMode,
+                trailing_percentage: trailingPercentage || null,
+                trailing_dollar_amount: trailingDollarAmount || null
             },
             success: function(response) {
                 if (response.success) {
