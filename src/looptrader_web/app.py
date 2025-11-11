@@ -655,10 +655,17 @@ def risk():
         try:
             from sqlalchemy.orm import joinedload
             
-            # Eagerly load orders with their legs and instruments
-            active_positions = db.query(Position).options(
-                joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument)
-            ).filter_by(active=True).all()
+            # Query active positions
+            print("Risk page: Querying active positions...")
+            try:
+                # Eagerly load orders with their legs and instruments
+                active_positions = db.query(Position).options(
+                    joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument)
+                ).filter_by(active=True).all()
+            except Exception as e:
+                print(f"Risk page: Error with eager loading, falling back to lazy loading: {e}")
+                # Fallback to simple query without eager loading
+                active_positions = db.query(Position).filter_by(active=True).all()
             
             all_positions = db.query(Position).all()
             bots = db.query(Bot).all()
@@ -667,6 +674,19 @@ def risk():
             position_count = len(active_positions)
             
             print(f"Risk page: Found {position_count} active positions out of {len(all_positions)} total")
+            
+            # Build Schwab cache to avoid multiple API calls
+            if position_count > 0:
+                print(f"Risk page: Building Schwab cache for {position_count} positions")
+                from models.database import build_schwab_cache_for_positions
+                schwab_cache = build_schwab_cache_for_positions(active_positions)
+                print(f"Risk page: Schwab cache built with {len(schwab_cache)} position entries")
+                
+                # Inject cache into each position
+                for position in active_positions:
+                    position._schwab_cache = schwab_cache
+            else:
+                schwab_cache = {}
             
             # Initialize Schwab client once for all positions
             schwab_client = None
