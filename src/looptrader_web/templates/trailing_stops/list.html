@@ -71,8 +71,8 @@
                 <th>Bot Name</th>
                 <th>Status</th>
                 <th>Activation Threshold (%)</th>
-                <th>Trailing (%)</th>
-                <th>Entry Value</th>
+                <th>Trailing Mode</th>
+                <th>Trailing Value</th>
                 <th>High Water Mark</th>
                 <th>Actions</th>
               </tr>
@@ -122,20 +122,34 @@
                   {% endif %}
                 </td>
                 <td>
-                  {% if trailing_stop.trailing_percentage %}
+                  <span class="badge badge-{{ 'primary' if trailing_stop.trailing_mode == 'percentage' else 'warning' }}">
+                    {{ trailing_stop.trailing_mode|upper if trailing_stop.trailing_mode else 'PERCENTAGE' }}
+                  </span>
+                </td>
+                <td>
+                  {% if trailing_stop.trailing_mode == 'dollar' and trailing_stop.trailing_dollar_amount %}
+                    <input type="number" step="0.01" 
+                           class="form-control form-control-sm editable-field" 
+                           style="width: 80px; display: inline-block;"
+                           data-field="trailing_dollar_amount"
+                           data-bot-id="{{ trailing_stop.bot.id if trailing_stop.bot else '' }}"
+                           value="{{ "%.2f"|format(trailing_stop.trailing_dollar_amount) }}">
+                    <span class="text-muted ml-1">$</span>
+                  {% elif trailing_stop.trailing_percentage %}
                     <input type="number" step="0.01" 
                            class="form-control form-control-sm editable-field" 
                            style="width: 80px; display: inline-block;"
                            data-field="trailing_percentage"
                            data-bot-id="{{ trailing_stop.bot.id if trailing_stop.bot else '' }}"
                            value="{{ "%.2f"|format(trailing_stop.trailing_percentage) }}">
+                    <span class="text-muted ml-1">%</span>
                   {% else %}
                     <span class="text-muted">N/A</span>
                   {% endif %}
                 </td>
                 <td>
-                  {% if trailing_stop.entry_value %}
-                    ${{ "%.2f"|format(trailing_stop.entry_value) }}
+                  {% if trailing_stop.high_water_mark %}
+                    ${{ "%.2f"|format(trailing_stop.high_water_mark) }}
                   {% else %}
                     <span class="text-muted">N/A</span>
                   {% endif %}

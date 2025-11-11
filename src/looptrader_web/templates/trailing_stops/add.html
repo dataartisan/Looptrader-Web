@@ -51,7 +51,7 @@
           <!-- Trailing Stop Settings (only shown for Add action) -->
           <div id="trailing-stop-settings">
             <div class="row">
-              <div class="col-md-4">
+              <div class="col-md-3">
                 <div class="form-group">
                   <label for="activation_threshold">Activation Threshold (%)</label>
                   <input type="number" step="0.01" id="activation_threshold" name="activation_threshold" 
@@ -59,12 +59,30 @@
                   <small class="form-text text-muted">Percentage gain required to activate trailing stop</small>
                 </div>
               </div>
-              <div class="col-md-4">
+              <div class="col-md-3">
+                <div class="form-group">
+                  <label for="trailing_mode">Trailing Mode</label>
+                  <select id="trailing_mode" name="trailing_mode" class="form-control">
+                    <option value="percentage" selected>Percentage</option>
+                    <option value="dollar">Dollar Amount</option>
+                  </select>
+                  <small class="form-text text-muted">Trail by percentage or fixed dollar amount</small>
+                </div>
+              </div>
+              <div class="col-md-3" id="percentage_input_group">
                 <div class="form-group">
                   <label for="trailing_percentage">Trailing Percentage (%)</label>
                   <input type="number" step="0.01" id="trailing_percentage" name="trailing_percentage" 
                          class="form-control" placeholder="e.g., 1.0">
-                  <small class="form-text text-muted">Percentage below high water mark to trigger stop</small>
+                  <small class="form-text text-muted">Percentage below high water mark</small>
+                </div>
+              </div>
+              <div class="col-md-3" id="dollar_input_group" style="display: none;">
+                <div class="form-group">
+                  <label for="trailing_dollar_amount">Trailing Dollar Amount ($)</label>
+                  <input type="number" step="0.01" id="trailing_dollar_amount" name="trailing_dollar_amount" 
+                         class="form-control" placeholder="e.g., 50.00">
+                  <small class="form-text text-muted">Dollar amount below high water mark</small>
                 </div>
               </div>
             </div>
@@ -166,6 +184,22 @@
 {% block extra_js %}
 <script>
 $(document).ready(function() {
+    // Toggle between percentage and dollar inputs based on trailing mode
+    $('#trailing_mode').on('change', function() {
+        const mode = $(this).val();
+        if (mode === 'percentage') {
+            $('#percentage_input_group').show();
+            $('#dollar_input_group').hide();
+            $('#trailing_percentage').prop('required', true);
+            $('#trailing_dollar_amount').prop('required', false);
+        } else {
+            $('#percentage_input_group').hide();
+            $('#dollar_input_group').show();
+            $('#trailing_percentage').prop('required', false);
+            $('#trailing_dollar_amount').prop('required', true);
+        }
+    });
+
     // Handle action radio button changes
     $('input[name="action"]').change(function() {
         const action = $(this).val();
@@ -174,12 +208,19 @@ $(document).ready(function() {
             $('#trailing-stop-settings').show();
             $('#add-btn').show();
             $('#remove-btn').hide();
-            $('#activation_threshold, #trailing_percentage').prop('required', true);
+            $('#activation_threshold').prop('required', true);
+            // Set required on the appropriate trailing field based on mode
+            const mode = $('#trailing_mode').val();
+            if (mode === 'percentage') {
+                $('#trailing_percentage').prop('required', true);
+            } else {
+                $('#trailing_dollar_amount').prop('required', true);
+            }
         } else if (action === 'remove') {
             $('#trailing-stop-settings').hide();
             $('#add-btn').hide();
             $('#remove-btn').show();
-            $('#activation_threshold, #trailing_percentage').prop('required', false);
+            $('#activation_threshold, #trailing_percentage, #trailing_dollar_amount').prop('required', false);
         }
     });
 
@@ -228,15 +269,29 @@ $(document).ready(function() {
         let confirmMessage;
         if (action === 'add') {
             const threshold = $('#activation_threshold').val();
-            const percentage = $('#trailing_percentage').val();
+            const mode = $('#trailing_mode').val();
+            let trailingValue;
+            let trailingLabel;
             
-            if (!threshold || !percentage) {
-                e.preventDefault();
-                alert('Please enter both activation threshold and trailing percentage.');
-                return false;
+            if (mode === 'percentage') {
+                trailingValue = $('#trailing_percentage').val();
+                trailingLabel = 'percentage';
+                if (!threshold || !trailingValue) {
+                    e.preventDefault();
+                    alert('Please enter both activation threshold and trailing percentage.');
+                    return false;
+                }
+            } else {
+                trailingValue = $('#trailing_dollar_amount').val();
+                trailingLabel = 'dollar amount';
+                if (!threshold || !trailingValue) {
+                    e.preventDefault();
+                    alert('Please enter both activation threshold and trailing dollar amount.');
+                    return false;
+                }
             }
             
-            confirmMessage = `Add/update trailing stops for ${selectedBots} selected bot(s) with ${threshold}% activation threshold and ${percentage}% trailing percentage?`;
+            confirmMessage = `Add/update trailing stops for ${selectedBots} selected bot(s) with ${threshold}% activation threshold and ${trailingValue}${mode === 'percentage' ? '%' : '$'} trailing ${trailingLabel}?`;
         } else {
             confirmMessage = `Remove trailing stops from ${selectedBots} selected bot(s)? This action cannot be undone.`;
         }

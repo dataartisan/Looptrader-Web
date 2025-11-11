@@ -42,20 +42,29 @@
             </div>
           </div>
           <div class="col-md-3">
-            <div class="info-box {% if schwab_accounts.total_pnl and schwab_accounts.total_pnl.startswith('$-') %}bg-danger{% else %}bg-info{% endif %}">
+            <div class="info-box bg-primary">
               <span class="info-box-icon"><i class="fas fa-chart-line"></i></span>
               <div class="info-box-content">
-                <span class="info-box-text">Today's P&L</span>
-                <span class="info-box-number">{{ schwab_accounts.total_pnl or '$0.00' }}</span>
+                <span class="info-box-text">Total Premium Opened</span>
+                <span class="info-box-number">{{ schwab_accounts.total_premium_opened or '$0.00' }}</span>
               </div>
             </div>
           </div>
           <div class="col-md-3">
-            <div class="info-box {% if schwab_accounts.total_pnl_percent and schwab_accounts.total_pnl_percent.startswith('-') %}bg-danger{% else %}bg-info{% endif %}">
+            <div class="info-box bg-warning">
+              <span class="info-box-icon"><i class="fas fa-dollar-sign"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Current Open Premium</span>
+                <span class="info-box-number">{{ schwab_accounts.current_open_premium or '$0.00' }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="info-box {% if schwab_accounts.current_profit_loss and schwab_accounts.current_profit_loss.startswith('$-') %}bg-danger{% else %}bg-info{% endif %}">
               <span class="info-box-icon"><i class="fas fa-percentage"></i></span>
               <div class="info-box-content">
-                <span class="info-box-text">Today's P&L %</span>
-                <span class="info-box-number">{{ schwab_accounts.total_pnl_percent or '0.00%' }}</span>
+                <span class="info-box-text">Current Profit / Loss</span>
+                <span class="info-box-number">{{ schwab_accounts.current_profit_loss or '$0.00' }} - {{ schwab_accounts.current_profit_loss_percent or '0.00%' }}</span>
               </div>
             </div>
           </div>
@@ -71,7 +80,7 @@
                 <th>Total Value</th>
                 <th>Cash Balance</th>
                 <th>Buying Power</th>
-                <th>Today's P&L</th>
+                <th>Current P&L</th>
                 <th>P&L %</th>
               </tr>
             </thead>

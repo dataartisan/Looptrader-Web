@@ -173,16 +173,26 @@
       </div>
       <div class="card-body">
         <div class="row">
-          <div class="col-md-3">
+          <div class="col-md-2">
             <div class="description-block border-right">
               <h5 class="description-header">{{ bot.trailing_stop_state.activation_threshold }}%</h5>
               <span class="description-text">ACTIVATION THRESHOLD</span>
             </div>
           </div>
-          <div class="col-md-3">
+          <div class="col-md-2">
             <div class="description-block border-right">
-              <h5 class="description-header">{{ bot.trailing_stop_state.trailing_percentage }}%</h5>
-              <span class="description-text">TRAILING PERCENTAGE</span>
+              <h5 class="description-header">
+                <span class="badge badge-{{ 'primary' if bot.trailing_stop_state.trailing_mode == 'percentage' else 'warning' }}">
+                  {{ bot.trailing_stop_state.trailing_mode|upper if bot.trailing_stop_state.trailing_mode else 'PERCENTAGE' }}
+                </span>
+              </h5>
+              <span class="description-text">MODE</span>
+            </div>
+          </div>
+          <div class="col-md-2">
+            <div class="description-block border-right">
+              <h5 class="description-header">{{ bot.trailing_stop_state.trailing_display }}</h5>
+              <span class="description-text">TRAILING VALUE</span>
             </div>
           </div>
           <div class="col-md-3">
@@ -220,14 +230,25 @@
     <div class="card card-outline card-info">
       <div class="card-header"><h3 class="card-title"><i class="fas fa-sliders-h mr-2"></i>{% if bot.has_trailing_stop %}Update{% else %}Add{% endif %} Trailing Stop</h3></div>
       <div class="card-body">
-        <form method="post" action="{{ url_for('upsert_trailing_stop_route', bot_id=bot.id) }}">
+        <form method="post" action="{{ url_for('upsert_trailing_stop_route', bot_id=bot.id) }}" id="trailing-stop-form">
           <div class="form-group">
             <label>Activation Threshold (%)</label>
-            <input type="number" step="0.01" name="activation_threshold" class="form-control" value="{{ bot.trailing_stop_state.activation_threshold if bot.has_trailing_stop else '' }}" required>
+            <input type="number" step="0.01" name="activation_threshold" id="activation_threshold" class="form-control" value="{{ bot.trailing_stop_state.activation_threshold if bot.has_trailing_stop else '' }}" required>
           </div>
-            <div class="form-group">
+          <div class="form-group">
+            <label>Trailing Mode</label>
+            <select name="trailing_mode" id="trailing_mode" class="form-control">
+              <option value="percentage" {% if not bot.has_trailing_stop or bot.trailing_stop_state.trailing_mode == 'percentage' %}selected{% endif %}>Percentage</option>
+              <option value="dollar" {% if bot.has_trailing_stop and bot.trailing_stop_state.trailing_mode == 'dollar' %}selected{% endif %}>Dollar Amount</option>
+            </select>
+          </div>
+          <div class="form-group" id="percentage_field" {% if bot.has_trailing_stop and bot.trailing_stop_state.trailing_mode == 'dollar' %}style="display:none;"{% endif %}>
             <label>Trailing Percentage (%)</label>
-            <input type="number" step="0.01" name="trailing_percentage" class="form-control" value="{{ bot.trailing_stop_state.trailing_percentage if bot.has_trailing_stop else '' }}" required>
+            <input type="number" step="0.01" name="trailing_percentage" id="trailing_percentage" class="form-control" value="{{ bot.trailing_stop_state.trailing_percentage if bot.has_trailing_stop and bot.trailing_stop_state.trailing_percentage else '' }}">
+          </div>
+          <div class="form-group" id="dollar_field" {% if not bot.has_trailing_stop or bot.trailing_stop_state.trailing_mode == 'percentage' %}style="display:none;"{% endif %}>
+            <label>Trailing Dollar Amount ($)</label>
+            <input type="number" step="0.01" name="trailing_dollar_amount" id="trailing_dollar_amount" class="form-control" value="{{ bot.trailing_stop_state.trailing_dollar_amount if bot.has_trailing_stop and bot.trailing_stop_state.trailing_dollar_amount else '' }}">
           </div>
           <button type="submit" class="btn btn-info btn-block"><i class="fas fa-save"></i> Save Trailing Stop</button>
         </form>
@@ -401,5 +422,33 @@ function showToast(type, message) {
     $('.toast-container').append(toast);
     $('.toast').last().toast('show');
 }
+
+// Trailing stop mode toggle
+$(document).ready(function() {
+    $('#trailing_mode').on('change', function() {
+        const mode = $(this).val();
+        if (mode === 'percentage') {
+            $('#percentage_field').show();
+            $('#dollar_field').hide();
+            $('#trailing_percentage').prop('required', true);
+            $('#trailing_dollar_amount').prop('required', false);
+        } else {
+            $('#percentage_field').hide();
+            $('#dollar_field').show();
+            $('#trailing_percentage').prop('required', false);
+            $('#trailing_dollar_amount').prop('required', true);
+        }
+    });
+    
+    // Set initial required state based on current mode
+    const initialMode = $('#trailing_mode').val();
+    if (initialMode === 'percentage') {
+        $('#trailing_percentage').prop('required', true);
+        $('#trailing_dollar_amount').prop('required', false);
+    } else {
+        $('#trailing_percentage').prop('required', false);
+        $('#trailing_dollar_amount').prop('required', true);
+    }
+});
 </script>
 {% endblock %}

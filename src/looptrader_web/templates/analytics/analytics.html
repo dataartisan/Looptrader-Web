@@ -1,0 +1,675 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics - LoopTrader{% endblock %}
+
+{% block content %}
+<!-- Content Header -->
+<div class="content-header">
+    <div class="container-fluid">
+        <div class="row mb-2">
+            <div class="col-sm-6">
+                <h1 class="m-0">📊 Greeks Analytics</h1>
+            </div>
+            <div class="col-sm-6">
+                <ol class="breadcrumb float-sm-right">
+                    <li class="breadcrumb-item"><a href="/">Home</a></li>
+                    <li class="breadcrumb-item active">Analytics</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Main content -->
+<section class="content">
+    <div class="container-fluid">
+        
+        <!-- Info Card -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card card-info collapsed-card">
+                    <div class="card-header">
+                        <h3 class="card-title"><i class="fas fa-info-circle"></i> What are Greek Exposures?</h3>
+                        <div class="card-tools">
+                            <button type="button" class="btn btn-tool" data-card-widget="collapse">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h5><strong>GEX (Gamma Exposure)</strong></h5>
+                                <p>Shows where market makers have gamma exposure. Positive GEX (calls) suggests price stability/support. Negative GEX (puts) suggests volatility/resistance.</p>
+                                <p><small><code>Formula: Gamma × Volume × 100 × Spot²</code></small></p>
+                                
+                                <h5 class="mt-3"><strong>VEX (Vega Exposure)</strong></h5>
+                                <p>Measures sensitivity to volatility changes. High VEX indicates areas where implied volatility has the most impact.</p>
+                                <p><small><code>Formula: Vega × Volume × 100</code></small></p>
+                            </div>
+                            <div class="col-md-6">
+                                <h5><strong>DEX (Delta Exposure)</strong></h5>
+                                <p>Shows directional exposure. Positive DEX = bullish pressure, Negative DEX = bearish pressure.</p>
+                                <p><small><code>Formula: Delta × Volume × 100 × Spot</code></small></p>
+                                
+                                <h5 class="mt-3"><strong>CHEX (Charm Exposure)</strong></h5>
+                                <p>Measures time-based delta decay. Shows how dealer positioning changes as time passes.</p>
+                                <p><small><code>Formula: (Delta × Volume × 100 × Spot) / DTE</code></small></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analytics Tabs -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card card-primary card-outline card-tabs">
+                    <div class="card-header p-0 pt-1 border-bottom-0">
+                        <ul class="nav nav-tabs" id="analyticsTab" role="tablist">
+                            <li class="nav-item">
+                                <a class="nav-link active" id="gex-tab" data-toggle="pill" href="#gex" role="tab">
+                                    <i class="fas fa-chart-bar"></i> GEX
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" id="vex-tab" data-toggle="pill" href="#vex" role="tab">
+                                    <i class="fas fa-wave-square"></i> VEX
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" id="dex-tab" data-toggle="pill" href="#dex" role="tab">
+                                    <i class="fas fa-arrows-alt-h"></i> DEX
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" id="chex-tab" data-toggle="pill" href="#chex" role="tab">
+                                    <i class="fas fa-clock"></i> CHEX
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" id="analyze-tab" data-toggle="pill" href="#analyze" role="tab">
+                                    <i class="fas fa-th"></i> ANALYZE
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="card-body">
+                        <div class="tab-content" id="analyticsTabContent">
+                            
+                            <!-- GEX Tab -->
+                            <div class="tab-pane fade show active" id="gex" role="tabpanel">
+                                <h4>Gamma Exposure Analysis</h4>
+                                <form id="gexForm" class="mt-3">
+                                    <div class="row">
+                                        <div class="col-md-3">
+                                            <div class="form-group">
+                                                <label>Ticker</label>
+                                                <input type="text" class="form-control" name="ticker" value="SPX" placeholder="SPX">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="form-group">
+                                                <label>Strike Range (pts)</label>
+                                                <input type="number" class="form-control" name="strike_range" placeholder="Leave blank for default">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="form-group">
+                                                <label>&nbsp;</label>
+                                                <div class="custom-control custom-checkbox">
+                                                    <input type="checkbox" class="custom-control-input" id="gexDetail" name="detail">
+                                                    <label class="custom-control-label" for="gexDetail">Detail View (±15%)</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="form-group">
+                                                <label>&nbsp;</label>
+                                                <div class="custom-control custom-checkbox">
+                                                    <input type="checkbox" class="custom-control-input" id="gexShowAll" name="show_all">
+                                                    <label class="custom-control-label" for="gexShowAll">Show All Expirations</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="button" id="gexButton" class="btn btn-primary">
+                                        <i class="fas fa-chart-bar"></i> Calculate GEX
+                                    </button>
+                                </form>
+                                <div id="gexResults" class="mt-4"></div>
+                            </div>
+
+                            <!-- VEX Tab -->
+                            <div class="tab-pane fade" id="vex" role="tabpanel">
+                                <h4>Vega Exposure Analysis</h4>
+                                <form id="vexForm" class="mt-3">
+                                    <div class="row">
+                                        <div class="col-md-3">
+                                            <div class="form-group">
+                                                <label>Ticker</label>
+                                                <input type="text" class="form-control" name="ticker" value="SPX" placeholder="SPX">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="form-group">
+                                                <label>Strike Range (pts)</label>
+                                                <input type="number" class="form-control" name="strike_range" placeholder="Leave blank for default">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="form-group">
+                                                <label>&nbsp;</label>
+                                                <div class="custom-control custom-checkbox">
+                                                    <input type="checkbox" class="custom-control-input" id="vexDetail" name="detail">
+                                                    <label class="custom-control-label" for="vexDetail">Detail View (±15%)</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="form-group">
+                                                <label>&nbsp;</label>
+                                                <div class="custom-control custom-checkbox">
+                                                    <input type="checkbox" class="custom-control-input" id="vexShowAll" name="show_all">
+                                                    <label class="custom-control-label" for="vexShowAll">Show All Expirations</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="button" id="vexButton" class="btn btn-primary">
+                                        <i class="fas fa-wave-square"></i> Calculate VEX
+                                    </button>
+                                </form>
+                                <div id="vexResults" class="mt-4"></div>
+                            </div>
+
+                            <!-- DEX Tab -->
+                            <div class="tab-pane fade" id="dex" role="tabpanel">
+                                <h4>Delta Exposure Analysis</h4>
+                                <form id="dexForm" class="mt-3">
+                                    <div class="row">
+                                        <div class="col-md-3">
+                                            <div class="form-group">
+                                                <label>Ticker</label>
+                                                <input type="text" class="form-control" name="ticker" value="SPX" placeholder="SPX">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="form-group">
+                                                <label>Strike Range (pts)</label>
+                                                <input type="number" class="form-control" name="strike_range" placeholder="Leave blank for default">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="form-group">
+                                                <label>&nbsp;</label>
+                                                <div class="custom-control custom-checkbox">
+                                                    <input type="checkbox" class="custom-control-input" id="dexDetail" name="detail">
+                                                    <label class="custom-control-label" for="dexDetail">Detail View (±15%)</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="form-group">
+                                                <label>&nbsp;</label>
+                                                <div class="custom-control custom-checkbox">
+                                                    <input type="checkbox" class="custom-control-input" id="dexShowAll" name="show_all">
+                                                    <label class="custom-control-label" for="dexShowAll">Show All Expirations</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="button" id="dexButton" class="btn btn-primary">
+                                        <i class="fas fa-arrows-alt-h"></i> Calculate DEX
+                                    </button>
+                                </form>
+                                <div id="dexResults" class="mt-4"></div>
+                            </div>
+
+                            <!-- CHEX Tab -->
+                            <div class="tab-pane fade" id="chex" role="tabpanel">
+                                <h4>Charm Exposure Analysis</h4>
+                                <form id="chexForm" class="mt-3">
+                                    <div class="row">
+                                        <div class="col-md-3">
+                                            <div class="form-group">
+                                                <label>Ticker</label>
+                                                <input type="text" class="form-control" name="ticker" value="SPX" placeholder="SPX">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="form-group">
+                                                <label>Strike Range (pts)</label>
+                                                <input type="number" class="form-control" name="strike_range" placeholder="Leave blank for default">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="form-group">
+                                                <label>&nbsp;</label>
+                                                <div class="custom-control custom-checkbox">
+                                                    <input type="checkbox" class="custom-control-input" id="chexDetail" name="detail">
+                                                    <label class="custom-control-label" for="chexDetail">Detail View (±15%)</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="form-group">
+                                                <label>&nbsp;</label>
+                                                <div class="custom-control custom-checkbox">
+                                                    <input type="checkbox" class="custom-control-input" id="chexShowAll" name="show_all">
+                                                    <label class="custom-control-label" for="chexShowAll">Show All Expirations</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="button" id="chexButton" class="btn btn-primary">
+                                        <i class="fas fa-clock"></i> Calculate CHEX
+                                    </button>
+                                </form>
+                                <div id="chexResults" class="mt-4"></div>
+                            </div>
+
+                            <!-- ANALYZE Tab -->
+                            <div class="tab-pane fade" id="analyze" role="tabpanel">
+                                <h4>Comprehensive Greek Analysis</h4>
+                                <p class="text-muted">View all Greeks (GEX, VEX, DEX, CHEX) in one comprehensive summary</p>
+                                <form id="analyzeForm" class="mt-3">
+                                    <div class="row">
+                                        <div class="col-md-4">
+                                            <div class="form-group">
+                                                <label>Ticker</label>
+                                                <input type="text" class="form-control" name="ticker" value="SPX" placeholder="SPX">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="form-group">
+                                                <label>&nbsp;</label>
+                                                <button type="button" id="analyzeButton" class="btn btn-primary btn-block">
+                                                    <i class="fas fa-th"></i> Run Comprehensive Analysis
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </form>
+                                <div id="analyzeResults" class="mt-4"></div>
+                            </div>
+                            
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<script>
+$(document).ready(function() {
+    console.log('Analytics page ready');
+    
+    // Prevent form submissions
+    $('form').on('submit', function(e) {
+        e.preventDefault();
+        return false;
+    });
+    
+    // GEX Button
+    $('#gexButton').click(function() {
+        fetchGEXData();
+    });
+    
+    // VEX Button
+    $('#vexButton').click(function() {
+        fetchVEXData();
+    });
+    
+    // DEX Button
+    $('#dexButton').click(function() {
+        fetchDEXData();
+    });
+    
+    // CHEX Button
+    $('#chexButton').click(function() {
+        fetchCHEXData();
+    });
+    
+    // ANALYZE Button
+    $('#analyzeButton').click(function() {
+        fetchAnalyzeData();
+    });
+});
+
+// GEX Functions
+function fetchGEXData() {
+    const formData = {
+        ticker: $('#gexForm [name="ticker"]').val().toUpperCase() || 'SPX',
+        strike_range: $('#gexForm [name="strike_range"]').val() || null,
+        detail: $('#gexForm [name="detail"]').is(':checked'),
+        show_all: $('#gexForm [name="show_all"]').is(':checked')
+    };
+    
+    console.log('Fetching GEX with data:', formData);
+    $('#gexResults').html('<div class="text-center"><i class="fas fa-spinner fa-spin fa-3x"></i><p class="mt-2">Calculating GEX...</p></div>');
+    $('#gexButton').prop('disabled', true);
+    
+    $.ajax({
+        url: '/analytics/gex',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(formData),
+        success: function(response) {
+            console.log('GEX Response:', response);
+            displayResults('#gexResults', response, 'GEX');
+        },
+        error: function(xhr, status, error) {
+            console.error('GEX Error:', xhr, status, error);
+            let errorMsg = 'Failed to calculate GEX';
+            if (xhr.responseJSON && xhr.responseJSON.error) {
+                errorMsg = xhr.responseJSON.error;
+            }
+            $('#gexResults').html('<div class="alert alert-danger">Error: ' + errorMsg + '</div>');
+        },
+        complete: function() {
+            $('#gexButton').prop('disabled', false);
+        }
+    });
+}
+
+// VEX Functions
+function fetchVEXData() {
+    const formData = {
+        ticker: $('#vexForm [name="ticker"]').val().toUpperCase() || 'SPX',
+        strike_range: $('#vexForm [name="strike_range"]').val() || null,
+        detail: $('#vexForm [name="detail"]').is(':checked'),
+        show_all: $('#vexForm [name="show_all"]').is(':checked')
+    };
+    
+    console.log('Fetching VEX with data:', formData);
+    $('#vexResults').html('<div class="text-center"><i class="fas fa-spinner fa-spin fa-3x"></i><p class="mt-2">Calculating VEX...</p></div>');
+    $('#vexButton').prop('disabled', true);
+    
+    $.ajax({
+        url: '/analytics/vex',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(formData),
+        success: function(response) {
+            console.log('VEX Response:', response);
+            displayResults('#vexResults', response, 'VEX');
+        },
+        error: function(xhr, status, error) {
+            console.error('VEX Error:', xhr, status, error);
+            let errorMsg = 'Failed to calculate VEX';
+            if (xhr.responseJSON && xhr.responseJSON.error) {
+                errorMsg = xhr.responseJSON.error;
+            }
+            $('#vexResults').html('<div class="alert alert-danger">Error: ' + errorMsg + '</div>');
+        },
+        complete: function() {
+            $('#vexButton').prop('disabled', false);
+        }
+    });
+}
+
+// DEX Functions
+function fetchDEXData() {
+    const formData = {
+        ticker: $('#dexForm [name="ticker"]').val().toUpperCase() || 'SPX',
+        strike_range: $('#dexForm [name="strike_range"]').val() || null,
+        detail: $('#dexForm [name="detail"]').is(':checked'),
+        show_all: $('#dexForm [name="show_all"]').is(':checked')
+    };
+    
+    console.log('Fetching DEX with data:', formData);
+    $('#dexResults').html('<div class="text-center"><i class="fas fa-spinner fa-spin fa-3x"></i><p class="mt-2">Calculating DEX...</p></div>');
+    $('#dexButton').prop('disabled', true);
+    
+    $.ajax({
+        url: '/analytics/dex',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(formData),
+        success: function(response) {
+            console.log('DEX Response:', response);
+            displayResults('#dexResults', response, 'DEX');
+        },
+        error: function(xhr, status, error) {
+            console.error('DEX Error:', xhr, status, error);
+            let errorMsg = 'Failed to calculate DEX';
+            if (xhr.responseJSON && xhr.responseJSON.error) {
+                errorMsg = xhr.responseJSON.error;
+            }
+            $('#dexResults').html('<div class="alert alert-danger">Error: ' + errorMsg + '</div>');
+        },
+        complete: function() {
+            $('#dexButton').prop('disabled', false);
+        }
+    });
+}
+
+// CHEX Functions
+function fetchCHEXData() {
+    const formData = {
+        ticker: $('#chexForm [name="ticker"]').val().toUpperCase() || 'SPX',
+        strike_range: $('#chexForm [name="strike_range"]').val() || null,
+        detail: $('#chexForm [name="detail"]').is(':checked'),
+        show_all: $('#chexForm [name="show_all"]').is(':checked')
+    };
+    
+    console.log('Fetching CHEX with data:', formData);
+    $('#chexResults').html('<div class="text-center"><i class="fas fa-spinner fa-spin fa-3x"></i><p class="mt-2">Calculating CHEX...</p></div>');
+    $('#chexButton').prop('disabled', true);
+    
+    $.ajax({
+        url: '/analytics/chex',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(formData),
+        success: function(response) {
+            console.log('CHEX Response:', response);
+            displayResults('#chexResults', response, 'CHEX');
+        },
+        error: function(xhr, status, error) {
+            console.error('CHEX Error:', xhr, status, error);
+            let errorMsg = 'Failed to calculate CHEX';
+            if (xhr.responseJSON && xhr.responseJSON.error) {
+                errorMsg = xhr.responseJSON.error;
+            }
+            $('#chexResults').html('<div class="alert alert-danger">Error: ' + errorMsg + '</div>');
+        },
+        complete: function() {
+            $('#chexButton').prop('disabled', false);
+        }
+    });
+}
+
+// ANALYZE Functions
+function fetchAnalyzeData() {
+    const formData = {
+        ticker: $('#analyzeForm [name="ticker"]').val().toUpperCase() || 'SPX'
+    };
+    
+    console.log('Fetching ANALYZE with data:', formData);
+    $('#analyzeResults').html('<div class="text-center"><i class="fas fa-spinner fa-spin fa-3x"></i><p class="mt-2">Running comprehensive analysis...</p></div>');
+    $('#analyzeButton').prop('disabled', true);
+    
+    $.ajax({
+        url: '/analytics/analyze',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(formData),
+        success: function(response) {
+            console.log('ANALYZE Response:', response);
+            displayComprehensiveResults('#analyzeResults', response);
+        },
+        error: function(xhr, status, error) {
+            console.error('ANALYZE Error:', xhr, status, error);
+            let errorMsg = 'Failed to run analysis';
+            if (xhr.responseJSON && xhr.responseJSON.error) {
+                errorMsg = xhr.responseJSON.error;
+            }
+            $('#analyzeResults').html('<div class="alert alert-danger">Error: ' + errorMsg + '</div>');
+        },
+        complete: function() {
+            $('#analyzeButton').prop('disabled', false);
+        }
+    });
+}
+
+// Display Results Function
+function displayResults(container, data, greekType) {
+    let html = '';
+    
+    // Summary Card
+    html += '<div class="card card-primary">';
+    html += '<div class="card-header"><h3 class="card-title">' + greekType + ' Summary - ' + data.ticker + '</h3></div>';
+    html += '<div class="card-body">';
+    html += '<div class="row">';
+    html += '<div class="col-md-3"><strong>Expiration:</strong> ' + data.expiration + '</div>';
+    html += '<div class="col-md-3"><strong>DTE:</strong> ' + data.dte + '</div>';
+    html += '<div class="col-md-3"><strong>Spot Price:</strong> $' + data.spot_price.toFixed(2) + '</div>';
+    html += '<div class="col-md-3"><strong>Total ' + greekType + ':</strong> $' + (data.total_exposure / 1e6).toFixed(2) + 'M</div>';
+    html += '</div>';
+    html += '</div></div>';
+    
+    // Chart
+    if (data.chart_data && data.chart_data.length > 0) {
+        html += '<div class="card">';
+        html += '<div class="card-header"><h3 class="card-title">' + greekType + ' Chart</h3></div>';
+        html += '<div class="card-body">';
+        html += '<canvas id="' + greekType.toLowerCase() + 'Chart"></canvas>';
+        html += '</div></div>';
+    }
+    
+    // Key Levels
+    if (data.key_levels && data.key_levels.length > 0) {
+        html += '<div class="card">';
+        html += '<div class="card-header"><h3 class="card-title">Key Levels</h3></div>';
+        html += '<div class="card-body">';
+        html += '<table class="table table-sm">';
+        html += '<thead><tr><th>Strike</th><th>' + greekType + '</th><th>Type</th></tr></thead>';
+        html += '<tbody>';
+        data.key_levels.forEach(function(level) {
+            html += '<tr>';
+            html += '<td>$' + level.strike.toFixed(0) + '</td>';
+            html += '<td>$' + (level.exposure / 1e9).toFixed(2) + 'B</td>';
+            html += '<td>' + (level.exposure > 0 ? '<span class="badge badge-danger">Resistance</span>' : '<span class="badge badge-success">Support</span>') + '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        html += '</div></div>';
+    }
+    
+    // Market Interpretation
+    if (data.interpretation && data.interpretation.length > 0) {
+        html += '<div class="card card-info">';
+        html += '<div class="card-header"><h3 class="card-title">Market Interpretation</h3></div>';
+        html += '<div class="card-body">';
+        html += '<ul>';
+        data.interpretation.forEach(function(line) {
+            html += '<li>' + line + '</li>';
+        });
+        html += '</ul>';
+        html += '</div></div>';
+    }
+    
+    $(container).html(html);
+    
+    // Render Chart with a slight delay to ensure DOM is updated
+    if (data.chart_data && data.chart_data.length > 0) {
+        setTimeout(function() {
+            renderChart(greekType.toLowerCase() + 'Chart', data, greekType);
+        }, 100);
+    }
+}
+
+// Display Comprehensive Results
+function displayComprehensiveResults(container, data) {
+    let html = '';
+    
+    // Summary Cards
+    html += '<div class="row">';
+    html += '<div class="col-md-6"><div class="card card-primary"><div class="card-header"><h3 class="card-title">🎯 GEX Summary</h3></div><div class="card-body">' + data.gex_summary + '</div></div></div>';
+    html += '<div class="col-md-6"><div class="card card-info"><div class="card-header"><h3 class="card-title">📈 VEX Summary</h3></div><div class="card-body">' + data.vex_summary + '</div></div></div>';
+    html += '</div>';
+    
+    html += '<div class="row">';
+    html += '<div class="col-md-6"><div class="card card-warning"><div class="card-header"><h3 class="card-title">⚡ DEX Summary</h3></div><div class="card-body">' + data.dex_summary + '</div></div></div>';
+    html += '<div class="col-md-6"><div class="card card-success"><div class="card-header"><h3 class="card-title">⏰ CHEX Summary</h3></div><div class="card-body">' + data.chex_summary + '</div></div></div>';
+    html += '</div>';
+    
+    // Market Interpretation
+    if (data.interpretation && data.interpretation.length > 0) {
+        html += '<div class="card card-danger">';
+        html += '<div class="card-header"><h3 class="card-title">📋 Market Interpretation</h3></div>';
+        html += '<div class="card-body">';
+        html += '<ul>';
+        data.interpretation.forEach(function(line) {
+            html += '<li>' + line + '</li>';
+        });
+        html += '</ul>';
+        html += '</div></div>';
+    }
+    
+    $(container).html(html);
+}
+
+// Render Chart Function
+function renderChart(canvasId, data, greekType) {
+    const ctx = document.getElementById(canvasId).getContext('2d');
+    
+    const labels = data.chart_data.map(d => '$' + d.strike.toFixed(0));
+    const values = data.chart_data.map(d => d.exposure);
+    const colors = values.map(v => v >= 0 ? 'rgba(75, 192, 192, 0.6)' : 'rgba(255, 99, 132, 0.6)');
+    
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: greekType + ' Exposure',
+                data: values,
+                backgroundColor: colors,
+                borderColor: colors.map(c => c.replace('0.6', '1')),
+                borderWidth: 1
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            label += '$' + (context.parsed.x / 1e9).toFixed(2) + 'B';
+                            return label;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + (value / 1e9).toFixed(1) + 'B';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+</script>
+{% endblock %}

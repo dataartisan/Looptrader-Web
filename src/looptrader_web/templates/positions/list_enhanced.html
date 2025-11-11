@@ -1,0 +1,335 @@
+{% extends "base.html" %}
+
+{% block title %}Positions - {{ app_name }}{% endblock %}
+
+{% block page_title %}Open Positions{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Home</a></li>
+<li class="breadcrumb-item active">Positions</li>
+{% endblock %}
+
+{% block content %}
+
+<!-- Summary Statistics Row -->
+<div class="row mb-3">
+  <div class="col-lg-3 col-6">
+    <div class="small-box bg-info">
+      <div class="inner">
+        <h3>{{ position_summary.total_count }}</h3>
+        <p>Total Positions</p>
+      </div>
+      <div class="icon">
+        <i class="fas fa-chart-line"></i>
+      </div>
+    </div>
+  </div>
+  
+  <div class="col-lg-3 col-6">
+    <div class="small-box {% if position_summary.total_pnl >= 0 %}bg-success{% else %}bg-danger{% endif %}">
+      <div class="inner">
+        <h3>{{ '%+.2f'|format(position_summary.total_pnl) }}</h3>
+        <p>Total P&L ($)</p>
+      </div>
+      <div class="icon">
+        <i class="fas fa-dollar-sign"></i>
+      </div>
+    </div>
+  </div>
+  
+  <div class="col-lg-3 col-6">
+    <div class="small-box bg-success">
+      <div class="inner">
+        <h3>{{ position_summary.winning_count }}</h3>
+        <p>Winning Positions</p>
+      </div>
+      <div class="icon">
+        <i class="fas fa-arrow-up"></i>
+      </div>
+    </div>
+  </div>
+  
+  <div class="col-lg-3 col-6">
+    <div class="small-box bg-warning">
+      <div class="inner">
+        <h3>{{ position_summary.losing_count }}</h3>
+        <p>Losing Positions</p>
+      </div>
+      <div class="icon">
+        <i class="fas fa-arrow-down"></i>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Filters Row -->
+<div class="row mb-3">
+  <div class="col-12">
+    <div class="card card-outline card-primary collapsed-card">
+      <div class="card-header">
+        <h3 class="card-title">
+          <i class="fas fa-filter mr-2"></i>Filters
+        </h3>
+        <div class="card-tools">
+          <button type="button" class="btn btn-tool" data-card-widget="collapse">
+            <i class="fas fa-plus"></i>
+          </button>
+        </div>
+      </div>
+      <div class="card-body">
+        <form method="GET" action="{{ url_for('positions') }}" class="form-inline">
+          <div class="form-group mr-3">
+            <label for="bot_id" class="mr-2">Bot:</label>
+            <select name="bot_id" id="bot_id" class="form-control">
+              <option value="">All Bots</option>
+              {% for bot in all_bots %}
+              <option value="{{ bot.id }}" {% if bot.id|string == request.args.get('bot_id') %}selected{% endif %}>
+                Bot {{ bot.id }}: {{ bot.name }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          
+          <div class="form-group mr-3">
+            <label for="account" class="mr-2">Account:</label>
+            <select name="account" id="account" class="form-control">
+              <option value="">All Accounts</option>
+              {% for account in all_accounts %}
+              <option value="{{ account.account_id }}" {% if account.account_id|string == request.args.get('account') %}selected{% endif %}>
+                {{ account.name }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          
+          <div class="form-group mr-3">
+            <label class="mr-2">
+              <input type="checkbox" name="profitable" value="true" {% if request.args.get('profitable') %}checked{% endif %}>
+              Profitable Only
+            </label>
+          </div>
+          
+          <div class="form-group mr-3">
+            <label class="mr-2">
+              <input type="checkbox" name="losing" value="true" {% if request.args.get('losing') %}checked{% endif %}>
+              Losing Only
+            </label>
+          </div>
+          
+          <div class="form-group mr-3">
+            <label class="mr-2">
+              <input type="checkbox" name="show_greeks" value="true" {% if request.args.get('show_greeks') %}checked{% endif %}>
+              Show Greeks
+            </label>
+          </div>
+          
+          <button type="submit" class="btn btn-primary mr-2">
+            <i class="fas fa-search"></i> Apply Filters
+          </button>
+          <a href="{{ url_for('positions') }}" class="btn btn-secondary">
+            <i class="fas fa-times"></i> Clear
+          </a>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Positions by Account -->
+{% if account_groups %}
+  {% for account_name, account_data in account_groups.items() %}
+  <div class="row mb-3">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header bg-primary">
+          <h3 class="card-title">
+            <i class="fas fa-university mr-2"></i>{{ account_name }}
+          </h3>
+          <div class="card-tools">
+            <span class="badge badge-light">
+              {{ account_data.positions|length }} position{{ 's' if account_data.positions|length != 1 }}
+            </span>
+            <span class="badge {% if account_data.pnl >= 0 %}badge-success{% else %}badge-danger{% endif %} ml-2">
+              P&L: {{ '%+.2f'|format(account_data.pnl) }} ({{ '%+.1f%%'|format(account_data.avg_pct) }})
+            </span>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+              <thead class="thead-light">
+                <tr>
+                  <th>Bot</th>
+                  <th>Strikes</th>
+                  <th>P&L</th>
+                  <th>Entry</th>
+                  <th>Current</th>
+                  <th>Duration</th>
+                  {% if request.args.get('show_greeks') %}
+                  <th>Greeks</th>
+                  {% endif %}
+                  <th>Stop Loss</th>
+                  <th>Trailing</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for position_data in account_data.positions %}
+                <tr>
+                  <td>
+                    <strong>Bot #{{ position_data.bot_id }}</strong><br>
+                    <small class="text-muted">{{ position_data.bot_name }}</small>
+                  </td>
+                  <td>
+                    <span class="font-monospace">{{ position_data.strikes }}</span>
+                  </td>
+                  <td>
+                    <span class="{% if position_data.pnl >= 0 %}text-success{% else %}text-danger{% endif %} font-weight-bold">
+                      {{ position_data.pnl_indicator }} {{ '%+.2f'|format(position_data.pnl) }}<br>
+                      <small>({{ '%+.1f%%'|format(position_data.pnl_pct) }})</small>
+                    </span>
+                  </td>
+                  <td>
+                    <small>{{ position_data.entry_time }}<br>
+                    ({{ position_data.duration }} ago)<br>
+                    @ ${{ '%.2f'|format(position_data.entry_price) }}</small>
+                  </td>
+                  <td>
+                    <small>${{ '%.2f'|format(position_data.current_price) }}</small>
+                  </td>
+                  <td>
+                    <small>{{ position_data.duration }}</small>
+                  </td>
+                  {% if request.args.get('show_greeks') %}
+                  <td>
+                    {% if position_data.greeks %}
+                    <small class="font-monospace">
+                      Δ{{ '%.1f'|format(position_data.greeks.delta) }}<br>
+                      Γ{{ '%.2f'|format(position_data.greeks.gamma) }}<br>
+                      Θ${{ '%.2f'|format(position_data.greeks.theta) }}<br>
+                      V{{ '%.1f'|format(position_data.greeks.vega) }}
+                    </small>
+                    {% else %}
+                    <small class="text-muted">-</small>
+                    {% endif %}
+                  </td>
+                  {% endif %}
+                  <td>
+                    {% if position_data.stop_loss_text %}
+                    <small class="text-info">{{ position_data.stop_loss_text }}</small>
+                    {% else %}
+                    <small class="text-muted">-</small>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if position_data.trailing_text %}
+                    <small class="text-success">{{ position_data.trailing_text }}</small>
+                    {% else %}
+                    <small class="text-muted">-</small>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card-footer">
+          <small class="text-muted">
+            <strong>Account Summary:</strong>
+            {{ account_data.winning }} winning, {{ account_data.losing }} losing |
+            Avg P&L: {{ '%+.1f%%'|format(account_data.avg_pct) }}
+          </small>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="row">
+    <div class="col-12">
+      <div class="alert alert-info">
+        <h5><i class="icon fas fa-info"></i> No Positions Found!</h5>
+        {% if request.args.get('bot_id') or request.args.get('account') or request.args.get('profitable') or request.args.get('losing') %}
+          No positions match the current filter criteria. Try adjusting your filters.
+        {% else %}
+          There are currently no open positions.
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+<!-- Overall Summary Footer -->
+{% if position_summary.total_count > 0 and account_groups|length > 1 %}
+<div class="row">
+  <div class="col-12">
+    <div class="card card-outline card-secondary">
+      <div class="card-header">
+        <h3 class="card-title">
+          <i class="fas fa-chart-bar mr-2"></i>Overall Portfolio Summary
+        </h3>
+      </div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-3">
+            <div class="info-box">
+              <span class="info-box-icon bg-info"><i class="fas fa-briefcase"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Total Positions</span>
+                <span class="info-box-number">{{ position_summary.total_count }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="info-box">
+              <span class="info-box-icon {% if position_summary.total_pnl >= 0 %}bg-success{% else %}bg-danger{% endif %}">
+                <i class="fas fa-dollar-sign"></i>
+              </span>
+              <div class="info-box-content">
+                <span class="info-box-text">Total P&L</span>
+                <span class="info-box-number">{{ '%+.2f'|format(position_summary.total_pnl) }}</span>
+                <span class="progress-description">{{ '%+.1f%%'|format(position_summary.avg_pnl_pct) }} avg</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="info-box">
+              <span class="info-box-icon bg-success"><i class="fas fa-thumbs-up"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Winning</span>
+                <span class="info-box-number">{{ position_summary.winning_count }}</span>
+                <span class="progress-description">
+                  {{ '%.1f%%'|format((position_summary.winning_count / position_summary.total_count * 100) if position_summary.total_count > 0 else 0) }} win rate
+                </span>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="info-box">
+              <span class="info-box-icon bg-warning"><i class="fas fa-thumbs-down"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Losing</span>
+                <span class="info-box-number">{{ position_summary.losing_count }}</span>
+                <span class="progress-description">
+                  {{ '%.1f%%'|format((position_summary.losing_count / position_summary.total_count * 100) if position_summary.total_count > 0 else 0) }} of total
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  // Auto-refresh every 30 seconds
+  setTimeout(function() {
+    location.reload();
+  }, 30000);
+</script>
+{% endblock %}
