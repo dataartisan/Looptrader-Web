@@ -603,21 +603,70 @@ class Position(Base):
     
     @property
     def current_pnl(self):
-        """Calculate current profit/loss
+        """Calculate current profit/loss matching looptrader-pro /positions command logic
         
-        Formula: Initial Premium (net credit/debit) - Current Cost to Close
+        Matches the exact calculation from looptrader-pro __main__.py position_command():
+        
+        For credit spreads (entry_price > 0):
+            entry_credit = entry_price * quantity * 100
+            cost_to_close = abs(current_value)
+            pnl = entry_credit - cost_to_close
+        
+        For debit spreads (entry_price < 0):
+            entry_debit = abs(entry_price) * quantity * 100
+            pnl = current_value - entry_debit
         
         Example for a credit spread:
-        - Sold options for $1000, bought options for $300 = $700 net credit (initial_premium_sold)
-        - Current cost to close is $200 (current_open_premium)
+        - Opening order: entry_price = 0.70, quantity = 10
+        - Entry credit = 0.70 * 10 * 100 = $700
+        - Current market value = -200 (short position)
+        - Cost to close = abs(-200) = $200
         - P&L = $700 - $200 = $500 profit
         
         Example for a debit spread:
-        - Sold options for $300, bought options for $1000 = -$700 net debit (initial_premium_sold is negative)
-        - Current value to sell is $500 (current_open_premium)
-        - P&L = -$700 - $500 = -$1200 loss (or $500 - $700 = -$200 if position reversed)
+        - Opening order: entry_price = -0.30, quantity = 10
+        - Entry debit = abs(-0.30) * 10 * 100 = $300
+        - Current market value = 500 (long position)
+        - P&L = $500 - $300 = $200 profit
         """
-        return self.initial_premium_sold - self.current_open_premium
+        try:
+            # Get the opening order
+            opening_order = None
+            for order in self.orders:
+                if hasattr(order, 'isOpenPosition') and order.isOpenPosition:
+                    opening_order = order
+                    break
+            
+            if not opening_order or not opening_order.price or not opening_order.quantity:
+                # Fallback to old calculation
+                return self.initial_premium_sold - self.current_open_premium
+            
+            entry_price = opening_order.price
+            quantity = opening_order.quantity
+            
+            # Get current market value from Schwab cache (already calculated as sum of legs)
+            schwab_cache = getattr(self, '_schwab_cache', None)
+            current_value = self.get_current_market_value(schwab_cache=schwab_cache)
+            
+            # If no real market value, fallback to old calculation
+            if current_value is None:
+                return self.initial_premium_sold - self.current_open_premium
+            
+            # Match looptrader-pro logic exactly
+            if entry_price > 0:  # Credit spread
+                entry_credit = entry_price * quantity * 100
+                cost_to_close = abs(current_value)
+                pnl = entry_credit - cost_to_close
+            else:  # Debit spread
+                entry_debit = abs(entry_price) * quantity * 100
+                pnl = current_value - entry_debit
+            
+            return pnl
+            
+        except Exception as e:
+            print(f"Error calculating current P&L for position {self.id}: {e}")
+            # Fallback to old calculation
+            return self.initial_premium_sold - self.current_open_premium
     
     @property
     def current_pnl_percent(self):
@@ -1007,15 +1056,18 @@ def build_schwab_cache_for_positions(positions):
                 schwab_positions = securities_account.get('positions', [])
                 
                 # Build a list of option positions with details
+                # CRITICAL: Keep market_value signed (negative for shorts, positive for longs)
+                # This allows proper spread calculation where net = short + long
                 option_positions = []
                 for schwab_pos in schwab_positions:
                     instrument = schwab_pos.get('instrument', {})
                     if instrument.get('assetType') == 'OPTION':
+                        market_value = float(schwab_pos.get('marketValue', 0))
                         option_positions.append({
                             'symbol': instrument.get('symbol', ''),
                             'underlying': instrument.get('underlyingSymbol', ''),
                             'description': instrument.get('description', ''),
-                            'market_value': abs(float(schwab_pos.get('marketValue', 0))),
+                            'market_value': market_value,  # Keep sign: negative = short, positive = long
                             'quantity': schwab_pos.get('longQuantity', 0) - schwab_pos.get('shortQuantity', 0),
                             'short_quantity': schwab_pos.get('shortQuantity', 0),
                             'long_quantity': schwab_pos.get('longQuantity', 0)

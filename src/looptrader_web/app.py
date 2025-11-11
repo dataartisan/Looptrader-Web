@@ -608,7 +608,7 @@ def accounts():
 @app.route('/positions')
 @login_required
 def positions():
-    """Display all positions with basic information"""
+    """Display all positions with P&L calculations matching looptrader-pro /positions command"""
     try:
         db = SessionLocal()
         try:
@@ -617,7 +617,11 @@ def positions():
             status_filter = request.args.get('status')
             active_only = request.args.get('active_only')
             
-            query = db.query(Position).order_by(Position.opened_datetime.desc())
+            # Eager load orders with legs and instruments for P&L calculation
+            query = db.query(Position).options(
+                joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument),
+                joinedload(Position.bot)
+            ).order_by(Position.opened_datetime.desc())
             
             if account_filter:
                 query = query.filter(Position.account_id == account_filter)
@@ -628,6 +632,18 @@ def positions():
                 query = query.filter(Position.active == False)
             
             positions = query.all()
+            
+            # Build Schwab cache for active positions to get real-time market values
+            # This matches looptrader-pro /positions command approach
+            active_positions = [p for p in positions if p.active]
+            if active_positions:
+                from models.database import build_schwab_cache_for_positions
+                schwab_cache = build_schwab_cache_for_positions(active_positions)
+                
+                # Inject cache into each position for P&L calculation
+                for position in positions:
+                    position._schwab_cache = schwab_cache
+            
             accounts = db.query(BrokerageAccount).all()
             bots = db.query(Bot).all()
             
