@@ -3434,7 +3434,7 @@ def get_schwab_accounts_detail():
         
         # Calculate current P&L using position.current_pnl (matches looptrader-pro)
         db = SessionLocal()
-        active_positions = db.query(Position).filter(Position.status == 'OPEN').all()
+        active_positions = db.query(Position).filter_by(active=True).all()
         
         # Build Schwab cache for accurate P&L calculation
         schwab_cache = build_schwab_cache_for_positions(active_positions)
