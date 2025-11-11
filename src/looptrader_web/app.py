@@ -3432,12 +3432,12 @@ def get_schwab_accounts_detail():
         # Calculate the new premium metrics using corrected looptrader-pro logic
         total_premium_opened = calculate_total_premium_opened()
         
-        # Build Schwab cache for accurate P&L calculation
-        schwab_cache = build_schwab_cache_for_positions()
-        
         # Calculate current P&L using position.current_pnl (matches looptrader-pro)
         db = SessionLocal()
         active_positions = db.query(Position).filter(Position.status == 'OPEN').all()
+        
+        # Build Schwab cache for accurate P&L calculation
+        schwab_cache = build_schwab_cache_for_positions(active_positions)
         
         # Inject Schwab cache into positions
         for pos in active_positions:
