@@ -296,10 +296,15 @@ $(document).ready(function() {
     function saveTrailingStop(botId) {
         const row = $(`tr[data-bot-id="${botId}"]`);
         const activationThreshold = row.find('input[data-field="activation_threshold"]').val();
-        const trailingPercentage = row.find('input[data-field="trailing_percentage"]').val();
-        const trailingDollarAmount = row.find('input[data-field="trailing_dollar_amount"]').val();
         
-        // Determine mode based on which field has a value
+        // Safely get values - fields may not exist based on current mode
+        const percentageInput = row.find('input[data-field="trailing_percentage"]');
+        const dollarInput = row.find('input[data-field="trailing_dollar_amount"]');
+        
+        const trailingPercentage = percentageInput.length ? percentageInput.val() : null;
+        const trailingDollarAmount = dollarInput.length ? dollarInput.val() : null;
+        
+        // Determine mode based on which field exists and has a value
         let trailingMode = 'percentage';
         let hasPercentage = trailingPercentage && parseFloat(trailingPercentage) > 0;
         let hasDollar = trailingDollarAmount && parseFloat(trailingDollarAmount) > 0;

@@ -709,6 +709,9 @@ def risk():
             
             underlying_concentration = {}
             
+            # Cache Greeks to avoid duplicate broker calls
+            greeks_cache = {}
+            
             for pos in active_positions:
                 try:
                     # Premium
@@ -716,8 +719,9 @@ def risk():
                     print(f"Position {pos.id}: Premium = ${premium:.2f}")
                     total_premium += premium
                     
-                    # Greeks from live broker quotes
+                    # Greeks from live broker quotes (cache for reuse)
                     greeks = pos.get_greeks_from_broker(schwab_client)
+                    greeks_cache[pos.id] = greeks
                     print(f"Position {pos.id}: Greeks = Δ{greeks['delta']:.2f}, Γ{greeks['gamma']:.3f}, Θ{greeks['theta']:.2f}, V{greeks['vega']:.2f}")
                     
                     total_delta += greeks['delta']
@@ -778,7 +782,8 @@ def risk():
                         prem = p.initial_premium_sold
                         account_premium += prem
                         
-                        greeks = p.get_greeks_from_broker(schwab_client)
+                        # Use cached Greeks to avoid duplicate broker calls
+                        greeks = greeks_cache.get(p.id, {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0})
                         account_delta += greeks['delta']
                         account_gamma += greeks['gamma']
                         account_theta += greeks['theta']
@@ -800,7 +805,8 @@ def risk():
                                 underlying = leg.instrument.underlyingSymbol
                                 if underlying not in account_underlyings:
                                     account_underlyings[underlying] = {'delta': 0.0, 'positions': 0}
-                                p_greeks = p.get_greeks_from_broker(schwab_client)
+                                # Use cached Greeks
+                                p_greeks = greeks_cache.get(p.id, {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0})
                                 account_underlyings[underlying]['delta'] += p_greeks['delta']
                                 account_underlyings[underlying]['positions'] += 1
                 
