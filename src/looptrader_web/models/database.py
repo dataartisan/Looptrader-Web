@@ -784,6 +784,17 @@ class TrailingStopState(Base):
         mode = f"{self.trailing_mode.upper()}" if self.trailing_mode else "PERCENTAGE"
         return f"<TrailingStop Bot:{self.bot_id} ({status}, {mode})>"
     
+    def validate(self):
+        """Validate that the appropriate trailing value is set based on mode"""
+        if self.trailing_mode == 'dollar':
+            if self.trailing_dollar_amount is None or self.trailing_dollar_amount <= 0:
+                raise ValueError("trailing_dollar_amount must be set and positive when trailing_mode is 'dollar'")
+        elif self.trailing_mode == 'percentage':
+            if self.trailing_percentage is None or self.trailing_percentage <= 0:
+                raise ValueError("trailing_percentage must be set and positive when trailing_mode is 'percentage'")
+        else:
+            raise ValueError(f"Invalid trailing_mode: {self.trailing_mode}. Must be 'percentage' or 'dollar'")
+    
     @property
     def status_badge_class(self):
         return "success" if self.is_active else "secondary"
@@ -1289,6 +1300,11 @@ def upsert_trailing_stop(bot_id: int, activation_threshold: float, trailing_perc
                 trailing_mode=trailing_mode,
                 is_active=is_active if is_active is not None else False
             )
+            # Validate before adding
+            try:
+                ts.validate()
+            except ValueError as e:
+                return False, str(e)
             db.add(ts)
         else:
             ts.activation_threshold = activation_threshold
@@ -1298,6 +1314,11 @@ def upsert_trailing_stop(bot_id: int, activation_threshold: float, trailing_perc
             # Only set is_active if explicitly provided (preserve existing state when just updating config)
             if is_active is not None:
                 ts.is_active = bool(is_active)
+            # Validate before committing
+            try:
+                ts.validate()
+            except ValueError as e:
+                return False, str(e)
         db.commit()
         return True, "Trailing stop saved"
     except Exception as e:
