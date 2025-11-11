@@ -1084,9 +1084,59 @@ def build_schwab_cache_for_positions(positions):
     return cache
 
 def get_dashboard_stats():
-    """Get dashboard statistics"""
+    """Get dashboard statistics with P&L calculation matching looptrader-pro logic"""
     db = SessionLocal()
     try:
+        # Get all active positions with schwab cache for P&L calculation
+        active_positions = db.query(Position).options(
+            joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument)
+        ).filter(Position.active == True).all()
+        
+        # Build schwab cache for all active positions
+        schwab_cache = build_schwab_cache_for_positions(active_positions)
+        
+        # Calculate total P&L
+        total_pnl = 0.0
+        total_cost_basis = 0.0
+        
+        for position in active_positions:
+            # Inject cache into position
+            position._schwab_cache = schwab_cache
+            
+            # Get opening order
+            opening_order = None
+            for order in position.orders:
+                if order.isOpenPosition:
+                    opening_order = order
+                    break
+            
+            if not opening_order or not opening_order.price or not opening_order.quantity:
+                continue
+            
+            # Calculate current market value using the cached value
+            market_value = schwab_cache.get(position.id, 0)
+            
+            # Calculate position P&L based on order type (matches looptrader-pro /risk command)
+            entry_price = opening_order.price
+            quantity = opening_order.quantity
+            
+            # Position cost basis
+            position_cost = abs(entry_price) * quantity * 100
+            
+            # Calculate P&L
+            if entry_price > 0:  # Credit spread (we received credit)
+                # P&L = credit received - current cost to close
+                position_pnl = entry_price * quantity * 100 - abs(market_value)
+            else:  # Debit spread (we paid debit)
+                # P&L = current value - debit paid
+                position_pnl = market_value - abs(entry_price) * quantity * 100
+            
+            total_pnl += position_pnl
+            total_cost_basis += position_cost
+        
+        # Calculate P&L percentage
+        total_pnl_pct = (total_pnl / total_cost_basis * 100) if total_cost_basis > 0 else 0
+        
         stats = {
             'total_bots': db.query(Bot).count(),
             'active_bots': db.query(Bot).filter(Bot.enabled == True, Bot.paused == False).count(),
@@ -1095,6 +1145,9 @@ def get_dashboard_stats():
             'total_accounts': db.query(BrokerageAccount).count(),
             'trailing_stops': db.query(TrailingStopState).count(),
             'active_trailing_stops': db.query(TrailingStopState).filter(TrailingStopState.is_active == True).count(),
+            'total_pnl': total_pnl,
+            'total_pnl_pct': total_pnl_pct,
+            'total_cost_basis': total_cost_basis,
         }
         return stats
     finally:
