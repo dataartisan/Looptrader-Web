@@ -557,7 +557,7 @@ function displayResults(container, data, greekType) {
             html += '<tr>';
             html += '<td>$' + level.strike.toFixed(0) + '</td>';
             html += '<td>$' + (level.exposure / 1e9).toFixed(2) + 'B</td>';
-            html += '<td>' + (level.exposure > 0 ? '<span class="badge badge-success">Support</span>' : '<span class="badge badge-danger">Resistance</span>') + '</td>';
+            html += '<td>' + (level.exposure > 0 ? '<span class="badge badge-danger">Resistance</span>' : '<span class="badge badge-success">Support</span>') + '</td>';
             html += '</tr>';
         });
         html += '</tbody></table>';

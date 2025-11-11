@@ -19,7 +19,7 @@ load_dotenv()
 
 # Import our database models
 from models.database import (
-    get_db, Bot, Position, TrailingStopState, Order, BrokerageAccount,
+    get_db, Bot, Position, TrailingStopState, Order, OrderLeg, Instrument, BrokerageAccount,
     get_dashboard_stats, get_recent_positions, get_bots_by_account,
     pause_all_bots, resume_all_bots, close_all_positions, close_position_by_bot,
     SessionLocal, test_connection, update_bot, upsert_trailing_stop, delete_trailing_stop
@@ -653,8 +653,13 @@ def risk():
     try:
         db = SessionLocal()
         try:
-            # Get basic statistics from positions
-            active_positions = db.query(Position).filter_by(active=True).all()
+            from sqlalchemy.orm import joinedload
+            
+            # Eagerly load orders with their legs and instruments
+            active_positions = db.query(Position).options(
+                joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument)
+            ).filter_by(active=True).all()
+            
             all_positions = db.query(Position).all()
             bots = db.query(Bot).all()
             accounts = db.query(BrokerageAccount).all()
@@ -663,71 +668,192 @@ def risk():
             
             print(f"Risk page: Found {position_count} active positions out of {len(all_positions)} total")
             
-            # Calculate totals using the Position model's initial_premium_sold property
+            # Initialize Schwab client once for all positions
+            schwab_client = None
+            try:
+                import os
+                import schwab
+                from schwab.auth import client_from_token_file
+                
+                token_path = os.path.join('/app', 'token.json')
+                if not os.path.exists(token_path):
+                    app_root = os.path.dirname(os.path.dirname(__file__))
+                    token_path = os.path.join(app_root, 'token.json')
+                
+                if os.path.exists(token_path):
+                    api_key = os.getenv('SCHWAB_API_KEY')
+                    app_secret = os.getenv('SCHWAB_APP_SECRET')
+                    
+                    if api_key and app_secret:
+                        schwab_client = client_from_token_file(token_path, api_key, app_secret)
+                        print("Risk page: Schwab client initialized for live Greeks")
+                    else:
+                        print("Risk page: Missing SCHWAB credentials")
+                else:
+                    print(f"Risk page: No token.json found at {token_path}")
+            except Exception as e:
+                print(f"Risk page: Failed to initialize Schwab client: {e}")
+            
+            # Calculate totals using live broker Greeks
             total_premium = 0.0
+            total_delta = 0.0
+            total_gamma = 0.0
+            total_theta = 0.0
+            total_vega = 0.0
+            total_pnl = 0.0
+            
+            best_position = None
+            worst_position = None
+            best_pnl_pct = float('-inf')
+            worst_pnl_pct = float('inf')
+            
+            underlying_concentration = {}
             
             for pos in active_positions:
                 try:
+                    # Premium
                     premium = pos.initial_premium_sold
-                    print(f"Position {pos.id}: Premium = ${premium}")
-                    if premium:
-                        total_premium += premium
+                    print(f"Position {pos.id}: Premium = ${premium:.2f}")
+                    total_premium += premium
+                    
+                    # Greeks from live broker quotes
+                    greeks = pos.get_greeks_from_broker(schwab_client)
+                    print(f"Position {pos.id}: Greeks = Δ{greeks['delta']:.2f}, Γ{greeks['gamma']:.3f}, Θ{greeks['theta']:.2f}, V{greeks['vega']:.2f}")
+                    
+                    total_delta += greeks['delta']
+                    total_gamma += greeks['gamma']
+                    total_theta += greeks['theta']
+                    total_vega += greeks['vega']
+                    
+                    # P&L
+                    pnl = pos.current_pnl
+                    pnl_pct = pos.current_pnl_percent
+                    total_pnl += pnl
+                    
+                    # Track best/worst
+                    if pnl_pct > best_pnl_pct:
+                        best_pnl_pct = pnl_pct
+                        best_position = (pos.bot.name if pos.bot else f"Position {pos.id}", pnl, pnl_pct)
+                    
+                    if pnl_pct < worst_pnl_pct:
+                        worst_pnl_pct = pnl_pct
+                        worst_position = (pos.bot.name if pos.bot else f"Position {pos.id}", pnl, pnl_pct)
+                    
+                    # Underlying concentration
+                    opening_order = next((o for o in pos.orders if hasattr(o, 'isOpenPosition') and o.isOpenPosition), None)
+                    if opening_order and hasattr(opening_order, 'orderLegCollection'):
+                        for leg in opening_order.orderLegCollection:
+                            if leg.instrument and leg.instrument.underlyingSymbol:
+                                underlying = leg.instrument.underlyingSymbol
+                                if underlying not in underlying_concentration:
+                                    underlying_concentration[underlying] = {
+                                        'delta': 0.0,
+                                        'premium': 0.0,
+                                        'positions': 0
+                                    }
+                                underlying_concentration[underlying]['delta'] += greeks['delta']
+                                underlying_concentration[underlying]['premium'] += premium
+                                underlying_concentration[underlying]['positions'] += 1
+                    
                 except Exception as e:
-                    print(f"Error calculating premium for position {pos.id}: {e}")
+                    print(f"Error calculating metrics for position {pos.id}: {e}")
+                    import traceback
+                    traceback.print_exc()
             
-            print(f"Risk page: Total premium = ${total_premium}")
+            print(f"Risk page: Total premium = ${total_premium:.2f}, Total Greeks: Δ{total_delta:.2f}, Γ{total_gamma:.3f}, Θ{total_theta:.2f}, V{total_vega:.2f}")
             
             # Group by account
             account_metrics = {}
             for account in accounts:
                 account_positions = [p for p in active_positions if p.account_id == account.account_id]
                 account_premium = 0.0
+                account_delta = 0.0
+                account_gamma = 0.0
+                account_theta = 0.0
+                account_vega = 0.0
+                account_pnl = 0.0
                 
                 for p in account_positions:
                     try:
                         prem = p.initial_premium_sold
-                        if prem:
-                            account_premium += prem
-                    except:
-                        pass
+                        account_premium += prem
+                        
+                        greeks = p.get_greeks_from_broker(schwab_client)
+                        account_delta += greeks['delta']
+                        account_gamma += greeks['gamma']
+                        account_theta += greeks['theta']
+                        account_vega += greeks['vega']
+                        
+                        account_pnl += p.current_pnl
+                    except Exception as e:
+                        print(f"Error calculating account metrics for position {p.id}: {e}")
                 
-                print(f"Account {account.name}: {len(account_positions)} positions, ${account_premium} premium")
+                print(f"Account {account.name}: {len(account_positions)} positions, ${account_premium:.2f} premium, Δ{account_delta:.2f}")
+                
+                # Get underlying concentration for this account
+                account_underlyings = {}
+                for p in account_positions:
+                    opening_order = next((o for o in p.orders if hasattr(o, 'isOpenPosition') and o.isOpenPosition), None)
+                    if opening_order and hasattr(opening_order, 'orderLegCollection'):
+                        for leg in opening_order.orderLegCollection:
+                            if leg.instrument and leg.instrument.underlyingSymbol:
+                                underlying = leg.instrument.underlyingSymbol
+                                if underlying not in account_underlyings:
+                                    account_underlyings[underlying] = {'delta': 0.0, 'positions': 0}
+                                p_greeks = p.get_greeks_from_broker(schwab_client)
+                                account_underlyings[underlying]['delta'] += p_greeks['delta']
+                                account_underlyings[underlying]['positions'] += 1
                 
                 account_metrics[account.account_id] = {
                     'name': account.name,
                     'position_count': len(account_positions),
                     'premium': account_premium,
-                    # Set Greeks to 0 since we don't have this data
-                    'delta': 0.0,
-                    'gamma': 0.0,
-                    'theta': 0.0,
-                    'vega': 0.0,
-                    'notional_risk': 0.0,
-                    'pnl': 0.0,
+                    'delta': account_delta,
+                    'gamma': account_gamma,
+                    'theta': account_theta,
+                    'vega': account_vega,
+                    'notional_risk': abs(account_premium),  # Simplified: use premium as notional
+                    'pnl': account_pnl,
                     'cost_basis': account_premium,
-                    'underlying_concentration': {}
+                    'underlying_concentration': account_underlyings
                 }
+            
+            # Calculate total P&L percentage
+            total_pnl_pct = (total_pnl / abs(total_premium)) * 100 if abs(total_premium) > 0.01 else 0.0
+            
+            # Format underlying concentration
+            underlying_list = [
+                {
+                    'symbol': symbol,
+                    'delta': data['delta'],
+                    'premium': data['premium'],
+                    'positions': data['positions']
+                }
+                for symbol, data in underlying_concentration.items()
+            ]
+            underlying_list.sort(key=lambda x: abs(x['delta']), reverse=True)
             
             warnings = []
             if position_count > 0 and total_premium == 0:
                 warnings.append('Warning: Positions found but premium is $0 - check order data')
-            warnings.append('Greeks data not available - order leg collection missing from database')
+            if schwab_client is None:
+                warnings.append('Warning: Greeks fetched from broker API may be unavailable - check Schwab credentials')
             
             return render_template(
                 'risk/risk.html',
                 aggregate=False,
                 position_count=position_count,
-                total_delta=0.0,
-                total_gamma=0.0,
-                total_theta=0.0,
-                total_vega=0.0,
-                total_notional_risk=0.0,
+                total_delta=total_delta,
+                total_gamma=total_gamma,
+                total_theta=total_theta,
+                total_vega=total_vega,
+                total_notional_risk=abs(total_premium),
                 total_premium=total_premium,
-                total_pnl=0.0,
-                total_pnl_pct=0.0,
-                best_position=None,
-                worst_position=None,
-                underlying_concentration=[],
+                total_pnl=total_pnl,
+                total_pnl_pct=total_pnl_pct,
+                best_position=best_position,
+                worst_position=worst_position,
+                underlying_concentration=underlying_list,
                 warnings=warnings,
                 account_metrics=account_metrics
             )
