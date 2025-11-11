@@ -3110,7 +3110,7 @@ def calculate_total_premium_opened():
         db.close()
 
 def calculate_account_premium_metrics(account_number):
-    """Calculate premium metrics for a specific account"""
+    """Calculate premium metrics for a specific account matching looptrader-pro logic"""
     try:
         db = SessionLocal()
         
@@ -3124,34 +3124,45 @@ def calculate_account_premium_metrics(account_number):
                 'profit_loss_percent': 0.0
             }
         
-        # Get active positions for this account
+        # Get active positions for this account with eager loading
         from sqlalchemy.orm import joinedload
         active_positions = db.query(Position).options(
-            joinedload(Position.orders)
+            joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument),
+            joinedload(Position.bot)
         ).filter(
             Position.active == True,
             Position.account_id == account.account_id
         ).all()
         
-        premium_opened = 0.0
-        current_open_premium = 0.0
+        # Build Schwab cache for accurate P&L calculation (matches looptrader-pro)
+        from models.database import build_schwab_cache_for_positions
+        schwab_cache = build_schwab_cache_for_positions(active_positions)
         
+        # Inject cache into positions
+        for position in active_positions:
+            position._schwab_cache = schwab_cache
+        
+        premium_opened = 0.0
+        total_pnl = 0.0
+        
+        # Calculate using looptrader-pro logic (position.current_pnl uses cache)
         for position in active_positions:
             premium_opened += position.initial_premium_sold
-            current_open_premium += position.current_open_premium
+            total_pnl += position.current_pnl  # Uses looptrader-pro calculation
         
-        profit_loss = premium_opened - current_open_premium
-        profit_loss_percent = (profit_loss / premium_opened * 100) if premium_opened > 0 else 0
+        profit_loss_percent = (total_pnl / abs(premium_opened) * 100) if abs(premium_opened) > 0 else 0
         
         return {
             'premium_opened': premium_opened,
-            'current_open_premium': current_open_premium,
-            'profit_loss': profit_loss,
+            'current_open_premium': abs(premium_opened - total_pnl),  # Derived from P&L
+            'profit_loss': total_pnl,
             'profit_loss_percent': profit_loss_percent
         }
         
     except Exception as e:
         print(f"Error calculating account premium metrics for {account_number}: {e}")
+        import traceback
+        traceback.print_exc()
         return {
             'premium_opened': 0.0,
             'current_open_premium': 0.0,
@@ -3220,7 +3231,14 @@ def get_schwab_account_positions(account_hash):
         return None
 
 def calculate_current_open_premium_from_schwab():
-    """Calculate current open premium using real Schwab API market values"""
+    """Calculate current open premium using real Schwab API market values
+    
+    IMPORTANT: Matches looptrader-pro spread calculation logic by keeping signed values.
+    For spreads, Schwab reports:
+    - Short legs: negative market value (liability)
+    - Long legs: positive market value (asset)
+    - Net spread value = sum of both legs (preserves spread mechanics)
+    """
     try:
         # Load Schwab token
         token_data = load_schwab_token()
@@ -3262,16 +3280,21 @@ def calculate_current_open_premium_from_schwab():
                     securities_account = account_data.get('securitiesAccount', {})
                     positions = securities_account.get('positions', [])
                     
+                    # Sum all option market values (keeping signs for spread calculation)
+                    account_net_value = 0.0
                     for position in positions:
                         instrument = position.get('instrument', {})
                         
                         # Check if this is an option position
                         if instrument.get('assetType') == 'OPTION':
                             market_value = float(position.get('marketValue', 0))
-                            # For short positions, market value is negative (cost to close)
-                            # For long positions, market value is positive (current value)
-                            # We want the absolute value as the cost to close
-                            total_option_market_value += abs(market_value)
+                            # Keep sign: negative for shorts, positive for longs
+                            # This allows spreads to net properly
+                            account_net_value += market_value
+                    
+                    # After netting all positions (spreads properly calculated),
+                    # take absolute value for "cost to close"
+                    total_option_market_value += abs(account_net_value)
         
         return total_option_market_value
         
@@ -3405,10 +3428,25 @@ def get_schwab_accounts_detail():
         # Calculate totals
         total_value = sum(acc['liquidation_value'] for acc in detailed_accounts)
         
-        # Calculate the new premium metrics
+        # Calculate the new premium metrics using corrected looptrader-pro logic
         total_premium_opened = calculate_total_premium_opened()
-        current_open_premium = calculate_current_open_premium()
-        current_profit_loss = total_premium_opened - current_open_premium
+        
+        # Build Schwab cache for accurate P&L calculation
+        schwab_cache = build_schwab_cache_for_positions()
+        
+        # Calculate current P&L using position.current_pnl (matches looptrader-pro)
+        db = SessionLocal()
+        active_positions = db.query(Position).filter(Position.status == 'OPEN').all()
+        
+        # Inject Schwab cache into positions
+        for pos in active_positions:
+            pos._schwab_cache = schwab_cache
+        
+        current_profit_loss = sum(pos.current_pnl for pos in active_positions)
+        db.close()
+        
+        # Calculate current open premium as total_premium_opened - current_profit_loss
+        current_open_premium = total_premium_opened - current_profit_loss
         current_profit_loss_percent = (current_profit_loss / total_premium_opened * 100) if total_premium_opened > 0 else 0
         
         return {
