@@ -22,7 +22,8 @@ from models.database import (
     get_db, Bot, Position, TrailingStopState, Order, OrderLeg, Instrument, BrokerageAccount,
     get_dashboard_stats, get_recent_positions, get_bots_by_account,
     pause_all_bots, resume_all_bots, close_all_positions, close_position_by_bot,
-    SessionLocal, test_connection, update_bot, upsert_trailing_stop, delete_trailing_stop
+    SessionLocal, test_connection, update_bot, upsert_trailing_stop, delete_trailing_stop,
+    build_schwab_cache_for_positions
 )
 from sqlalchemy.orm import joinedload
 from sqlalchemy import text
