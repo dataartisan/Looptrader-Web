@@ -603,70 +603,29 @@ class Position(Base):
     
     @property
     def current_pnl(self):
-        """Calculate current profit/loss matching looptrader-pro /positions command logic
+        """Calculate current profit/loss
         
-        Matches the exact calculation from looptrader-pro __main__.py position_command():
+        For credit spreads (most common for PCS):
+        - initial_premium_sold = credit received (e.g., $285 for $2.85 credit)
+        - current_open_premium = cost to buy back and close (e.g., $250 for $2.50)
+        - P&L = credit received - cost to close = $285 - $250 = $35 profit
         
-        For credit spreads (entry_price > 0):
-            entry_credit = entry_price * quantity * 100
-            cost_to_close = abs(current_value)
-            pnl = entry_credit - cost_to_close
-        
-        For debit spreads (entry_price < 0):
-            entry_debit = abs(entry_price) * quantity * 100
-            pnl = current_value - entry_debit
-        
-        Example for a credit spread:
-        - Opening order: entry_price = 0.70, quantity = 10
-        - Entry credit = 0.70 * 10 * 100 = $700
-        - Current market value = -200 (short position)
-        - Cost to close = abs(-200) = $200
-        - P&L = $700 - $200 = $500 profit
-        
-        Example for a debit spread:
-        - Opening order: entry_price = -0.30, quantity = 10
-        - Entry debit = abs(-0.30) * 10 * 100 = $300
-        - Current market value = 500 (long position)
-        - P&L = $500 - $300 = $200 profit
+        Example:
+        - Sold PCS for $2.85 credit: initial_premium_sold = $285
+        - Current market to close is $2.50: current_open_premium = $250
+        - P&L = $285 - $250 = $35 profit
         """
-        try:
-            # Get the opening order
-            opening_order = None
-            for order in self.orders:
-                if hasattr(order, 'isOpenPosition') and order.isOpenPosition:
-                    opening_order = order
-                    break
-            
-            if not opening_order or not opening_order.price or not opening_order.quantity:
-                # Fallback to old calculation
-                return self.initial_premium_sold - self.current_open_premium
-            
-            entry_price = opening_order.price
-            quantity = opening_order.quantity
-            
-            # Get current market value from Schwab cache (already calculated as sum of legs)
-            schwab_cache = getattr(self, '_schwab_cache', None)
-            current_value = self.get_current_market_value(schwab_cache=schwab_cache)
-            
-            # If no real market value, fallback to old calculation
-            if current_value is None:
-                return self.initial_premium_sold - self.current_open_premium
-            
-            # Match looptrader-pro logic exactly
-            if entry_price > 0:  # Credit spread
-                entry_credit = entry_price * quantity * 100
-                cost_to_close = abs(current_value)
-                pnl = entry_credit - cost_to_close
-            else:  # Debit spread
-                entry_debit = abs(entry_price) * quantity * 100
-                pnl = current_value - entry_debit
-            
-            return pnl
-            
-        except Exception as e:
-            print(f"Error calculating current P&L for position {self.id}: {e}")
-            # Fallback to old calculation
-            return self.initial_premium_sold - self.current_open_premium
+        initial = self.initial_premium_sold
+        current = self.current_open_premium
+        
+        # For credit positions (sold for credit), P&L = credit - cost_to_close
+        # For debit positions (paid debit), P&L = current_value - debit_paid
+        # Since initial_premium_sold is positive for credits and negative for debits,
+        # this formula works for both:
+        pnl = initial - current
+        
+        print(f"Position {self.id}: P&L = ${initial:.2f} (initial) - ${current:.2f} (current) = ${pnl:.2f}")
+        return pnl
     
     @property
     def current_pnl_percent(self):

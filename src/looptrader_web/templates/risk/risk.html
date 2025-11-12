@@ -150,7 +150,7 @@
                         <h3 class="card-title"><strong>Per-Account Breakdown</strong></h3>
                     </div>
                     <div class="card-body">
-                        {% for account_id, metrics in account_metrics.items()|sort(attribute='1.name') %}
+                        {% for account_id, metrics in account_metrics.items() %}
                         <div class="account-section mb-4">
                             <h5><strong>📊 {{ metrics.name }}</strong></h5>
                             <div class="row">
