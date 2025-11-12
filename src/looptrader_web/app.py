@@ -1128,11 +1128,11 @@ def analytics_gex():
         # Sort and limit to top 50 strikes
         sorted_strikes = sorted(gex_data.items(), key=lambda x: abs(x[1]['call'] + x[1]['put']), reverse=True)[:50]
         
-        # Build chart data
+        # Build chart data and identify key strikes
         chart_data = []
         total_gex = 0
-        max_call_wall = {'strike': 0, 'exposure': 0}
-        max_put_wall = {'strike': 0, 'exposure': 0}
+        strikes_above_spot = []  # Strikes above current price
+        strikes_below_spot = []  # Strikes below current price
         
         for strike, exposure in sorted_strikes:
             net_gex = exposure['call'] + exposure['put']
@@ -1142,10 +1142,21 @@ def analytics_gex():
                 'exposure': net_gex
             })
             
-            if exposure['call'] > max_call_wall['exposure']:
-                max_call_wall = {'strike': strike, 'exposure': exposure['call']}
-            if abs(exposure['put']) > abs(max_put_wall['exposure']):
-                max_put_wall = {'strike': strike, 'exposure': exposure['put']}
+            # Separate strikes above and below spot for proper identification
+            if strike > spot_price:
+                strikes_above_spot.append({'strike': strike, 'exposure': net_gex})
+            elif strike < spot_price:
+                strikes_below_spot.append({'strike': strike, 'exposure': net_gex})
+        
+        # Find resistance: Strike ABOVE spot with highest absolute GEX (typically positive)
+        max_resistance_strike = {'strike': 0, 'exposure': 0}
+        if strikes_above_spot:
+            max_resistance_strike = max(strikes_above_spot, key=lambda x: abs(x['exposure']))
+        
+        # Find support: Strike BELOW spot with highest absolute GEX (typically negative)
+        max_support_strike = {'strike': 0, 'exposure': 0}
+        if strikes_below_spot:
+            max_support_strike = max(strikes_below_spot, key=lambda x: abs(x['exposure']))
         
         # Sort chart data by strike
         chart_data.sort(key=lambda x: x['strike'])
@@ -1175,12 +1186,13 @@ def analytics_gex():
         if zero_gex_strike:
             interpretation.append(f"🎯 Zero GEX flip point at ${zero_gex_strike:.0f}")
         
-        if max_call_wall['exposure'] > 0:
-            interpretation.append(f"📞 Strongest call wall at ${max_call_wall['strike']:.0f} (${max_call_wall['exposure']/1e9:.2f}B GEX)")
+        if max_resistance_strike['strike'] > 0:
+            gex_sign = "positive" if max_resistance_strike['exposure'] > 0 else "negative"
+            interpretation.append(f"📈 Key resistance level at ${max_resistance_strike['strike']:.0f} (${abs(max_resistance_strike['exposure'])/1e9:.2f}B {gex_sign} GEX)")
         
-        if max_put_wall['exposure'] < 0:
-            interpretation.append(f"📉 Strongest put wall at ${max_put_wall['strike']:.0f} (${abs(max_put_wall['exposure'])/1e9:.2f}B GEX)")
-        
+        if max_support_strike['strike'] > 0:
+            gex_sign = "positive" if max_support_strike['exposure'] > 0 else "negative"
+            interpretation.append(f"📉 Key support level at ${max_support_strike['strike']:.0f} (${abs(max_support_strike['exposure'])/1e9:.2f}B {gex_sign} GEX)")
         # 2. Market Regime Context
         if zero_gex_strike:
             if spot_price > zero_gex_strike:
@@ -1193,10 +1205,10 @@ def analytics_gex():
                 interpretation.append(f"📈 If spot breaks above ${zero_gex_strike:.0f}, volatility may compress in positive gamma zone")
         
         # 3. Expected Volatility and Range
-        if max_call_wall['strike'] > 0 and max_put_wall['strike'] > 0:
-            range_width = abs(max_call_wall['strike'] - max_put_wall['strike'])
-            upper_bound = max(max_call_wall['strike'], max_put_wall['strike'])
-            lower_bound = min(max_call_wall['strike'], max_put_wall['strike'])
+        if max_resistance_strike['strike'] > 0 and max_support_strike['strike'] > 0:
+            range_width = abs(max_resistance_strike['strike'] - max_support_strike['strike'])
+            upper_bound = max(max_resistance_strike['strike'], max_support_strike['strike'])
+            lower_bound = min(max_resistance_strike['strike'], max_support_strike['strike'])
             
             interpretation.append(f"📊 Expected intraday range: ${lower_bound:.0f}–${upper_bound:.0f} ({range_width:.0f} pts)")
             
@@ -1206,21 +1218,21 @@ def analytics_gex():
                 interpretation.append(f"📏 Wide range ({range_width:.0f} pts) allows for directional movement")
         
         # 4. Liquidity and Pinning Zones
-        if max_call_wall['strike'] > 0 and max_put_wall['strike'] > 0:
-            if abs(spot_price - max_call_wall['strike']) < 30:
-                interpretation.append(f"📍 Price near call wall (${max_call_wall['strike']:.0f}) — watch for pinning effects and resistance")
-            elif abs(spot_price - max_put_wall['strike']) < 30:
-                interpretation.append(f"📍 Price near put wall (${max_put_wall['strike']:.0f}) — watch for pinning effects and support")
+        if max_resistance_strike['strike'] > 0 and max_support_strike['strike'] > 0:
+            if abs(spot_price - max_resistance_strike['strike']) < 30:
+                interpretation.append(f"📍 Price near resistance (${max_resistance_strike['strike']:.0f}) — watch for pinning effects and upside caps")
+            elif abs(spot_price - max_support_strike['strike']) < 30:
+                interpretation.append(f"📍 Price near support (${max_support_strike['strike']:.0f}) — watch for pinning effects and downside protection")
             else:
-                interpretation.append(f"🎯 Price between walls — high dealer gamma exposure creates liquidity magnets at extremes")
+                interpretation.append(f"🎯 Price between support/resistance — high dealer gamma exposure creates liquidity magnets at extremes")
         
         # 5. Trading Implications
         interpretation.append("💡 TRADING IMPLICATIONS:")
         
         if zero_gex_strike and spot_price > zero_gex_strike:
             # Positive gamma regime
-            if max_call_wall['strike'] > 0 and abs(spot_price - max_call_wall['strike']) < 50:
-                interpretation.append(f"• Directional Bias: Neutral-to-slightly bearish (capped by call wall at ${max_call_wall['strike']:.0f})")
+            if max_resistance_strike['strike'] > 0 and abs(spot_price - max_resistance_strike['strike']) < 50:
+                interpretation.append(f"• Directional Bias: Neutral-to-slightly bearish (capped by resistance at ${max_resistance_strike['strike']:.0f})")
             else:
                 interpretation.append("• Directional Bias: Neutral (positive gamma supports mean reversion)")
             
@@ -1235,14 +1247,14 @@ def analytics_gex():
             interpretation.append("• Risk Management: Wider stops to accommodate volatility expansion")
         
         # 6. Summary
-        if max_call_wall['strike'] > 0 and max_put_wall['strike'] > 0 and zero_gex_strike:
+        if max_resistance_strike['strike'] > 0 and max_support_strike['strike'] > 0 and zero_gex_strike:
             summary = f"📋 SUMMARY: "
             if spot_price > zero_gex_strike:
                 summary += f"Positive gamma regime with controlled volatility. "
             else:
                 summary += f"Negative gamma regime with elevated volatility. "
             
-            summary += f"Price expected to gravitate between ${min(max_call_wall['strike'], max_put_wall['strike']):.0f}–${max(max_call_wall['strike'], max_put_wall['strike']):.0f}. "
+            summary += f"Price expected to gravitate between ${min(max_resistance_strike['strike'], max_support_strike['strike']):.0f}–${max(max_resistance_strike['strike'], max_support_strike['strike']):.0f}. "
             
             if total_gex > 0:
                 summary += f"Net positive GEX (${total_gex/1e9:.2f}B) suggests downside support."
