@@ -600,6 +600,9 @@ def accounts():
         finally:
             db.close()
     except Exception as e:
+        print(f"Error loading accounts: {str(e)}")
+        import traceback
+        traceback.print_exc()
         flash(f'Error loading accounts: {str(e)}', 'danger')
         # Provide empty schwab_accounts in case of error
         schwab_accounts = {'accounts': [], 'error': 'Failed to load Schwab data'}
@@ -675,16 +678,25 @@ def risk():
             # Query active positions
             print("Risk page: Querying active positions...")
             try:
+                # First check all positions to debug
+                all_positions = db.query(Position).all()
+                print(f"Risk page: Total positions in database: {len(all_positions)}")
+                for p in all_positions[:5]:  # Show first 5
+                    print(f"  Position {p.id}: active={p.active}, bot={p.bot.name if p.bot else 'None'}")
+                
                 # Eagerly load orders with their legs and instruments
                 active_positions = db.query(Position).options(
                     joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument)
                 ).filter_by(active=True).all()
+                
+                print(f"Risk page: Active positions found: {len(active_positions)}")
             except Exception as e:
                 print(f"Risk page: Error with eager loading, falling back to lazy loading: {e}")
                 # Fallback to simple query without eager loading
+                all_positions = db.query(Position).all()
                 active_positions = db.query(Position).filter_by(active=True).all()
+                print(f"Risk page: Total positions: {len(all_positions)}, Active: {len(active_positions)}")
             
-            all_positions = db.query(Position).all()
             bots = db.query(Bot).all()
             accounts = db.query(BrokerageAccount).all()
             

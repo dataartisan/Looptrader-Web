@@ -348,7 +348,9 @@ class Position(Base):
             if schwab_cache and self.id in schwab_cache:
                 market_value = schwab_cache[self.id]
                 print(f"Position {self.id}: Using cached market value ${market_value:,.2f}")
-                return market_value if market_value > 0 else None
+                # Return absolute value (cost to close is always positive)
+                # Schwab returns negative market values for short positions
+                return abs(market_value) if market_value != 0 else None
             
             # No cache provided, fetch data directly (slower path)
             print(f"Position {self.id}: No cache provided, fetching from Schwab API")
@@ -520,8 +522,9 @@ class Position(Base):
             schwab_cache = getattr(self, '_schwab_cache', None)
             market_value = self.get_current_market_value(schwab_cache=schwab_cache)
             if market_value is not None:
+                # market_value is already absolute from get_current_market_value
                 print(f"Position {self.id}: Using real market value ${market_value:,.2f} for current open premium")
-                return market_value
+                return abs(market_value)  # Ensure it's positive (cost to close)
             else:
                 print(f"Position {self.id}: Real market value not available, using fallback calculation")
             
