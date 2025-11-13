@@ -744,7 +744,11 @@ def risk():
                 print(f"Risk page: Failed to initialize Schwab client: {e}")
             
             # Calculate totals using live broker Greeks
-            total_premium = 0.0
+            # NOTE: Following looptrader-pro pattern:
+            # - total_premium_open: current market value (cost to close)
+            # - total_cost_basis: abs(initial premium) for percentage calculation
+            total_premium_open = 0.0  # Current cost to close positions
+            total_cost_basis = 0.0     # Initial investment (for percentage)
             total_delta = 0.0
             total_gamma = 0.0
             total_theta = 0.0
@@ -763,10 +767,17 @@ def risk():
             
             for pos in active_positions:
                 try:
-                    # Premium
-                    premium = pos.initial_premium_sold
-                    print(f"Position {pos.id}: Premium = ${premium:.2f}")
-                    total_premium += premium
+                    # Initial premium (signed: positive for credit, negative for debit)
+                    initial_premium = pos.initial_premium_sold
+                    # Current market value (cost to close position)
+                    current_open_premium = pos.current_open_premium
+                    # Cost basis for percentage calculation (always positive)
+                    cost_basis = abs(initial_premium)
+                    
+                    print(f"Position {pos.id}: Initial=${initial_premium:.2f}, Current=${current_open_premium:.2f}, CostBasis=${cost_basis:.2f}")
+                    
+                    total_premium_open += current_open_premium
+                    total_cost_basis += cost_basis
                     
                     # Greeks from live broker quotes (cache for reuse)
                     greeks = pos.get_greeks_from_broker(schwab_client)
@@ -801,11 +812,11 @@ def risk():
                                 if underlying not in underlying_concentration:
                                     underlying_concentration[underlying] = {
                                         'delta': 0.0,
-                                        'premium': 0.0,
+                                        'cost_basis': 0.0,
                                         'positions': 0
                                     }
                                 underlying_concentration[underlying]['delta'] += greeks['delta']
-                                underlying_concentration[underlying]['premium'] += premium
+                                underlying_concentration[underlying]['cost_basis'] += cost_basis
                                 underlying_concentration[underlying]['positions'] += 1
                     
                 except Exception as e:
@@ -813,13 +824,14 @@ def risk():
                     import traceback
                     traceback.print_exc()
             
-            print(f"Risk page: Total premium = ${total_premium:.2f}, Total Greeks: Δ{total_delta:.2f}, Γ{total_gamma:.3f}, Θ{total_theta:.2f}, V{total_vega:.2f}")
+            print(f"Risk page: Total premium_open = ${total_premium_open:.2f}, Cost_basis = ${total_cost_basis:.2f}, Total Greeks: Δ{total_delta:.2f}, Γ{total_gamma:.3f}, Θ{total_theta:.2f}, V{total_vega:.2f}")
             
             # Group by account
             account_metrics = {}
             for account in accounts:
                 account_positions = [p for p in active_positions if p.account_id == account.account_id]
-                account_premium = 0.0
+                account_premium_open = 0.0
+                account_cost_basis = 0.0
                 account_delta = 0.0
                 account_gamma = 0.0
                 account_theta = 0.0
@@ -828,8 +840,11 @@ def risk():
                 
                 for p in account_positions:
                     try:
-                        prem = p.initial_premium_sold
-                        account_premium += prem
+                        # Use the same pattern as portfolio totals
+                        initial_prem = p.initial_premium_sold
+                        current_open = p.current_open_premium
+                        account_premium_open += current_open
+                        account_cost_basis += abs(initial_prem)
                         
                         # Use cached Greeks to avoid duplicate broker calls
                         greeks = greeks_cache.get(p.id, {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0})
@@ -842,7 +857,7 @@ def risk():
                     except Exception as e:
                         print(f"Error calculating account metrics for position {p.id}: {e}")
                 
-                print(f"Account {account.name}: {len(account_positions)} positions, ${account_premium:.2f} premium, Δ{account_delta:.2f}")
+                print(f"Account {account.name}: {len(account_positions)} positions, open=${account_premium_open:.2f}, cost_basis=${account_cost_basis:.2f}, Δ{account_delta:.2f}")
                 
                 # Get underlying concentration for this account
                 account_underlyings = {}
@@ -862,26 +877,26 @@ def risk():
                 account_metrics[account.account_id] = {
                     'name': account.name,
                     'position_count': len(account_positions),
-                    'premium': account_premium,
+                    'premium_open': account_premium_open,
+                    'cost_basis': account_cost_basis,
                     'delta': account_delta,
                     'gamma': account_gamma,
                     'theta': account_theta,
                     'vega': account_vega,
-                    'notional_risk': abs(account_premium),  # Simplified: use premium as notional
+                    'notional_risk': account_cost_basis,  # Use cost basis as notional risk
                     'pnl': account_pnl,
-                    'cost_basis': account_premium,
                     'underlying_concentration': account_underlyings
                 }
             
-            # Calculate total P&L percentage
-            total_pnl_pct = (total_pnl / abs(total_premium)) * 100 if abs(total_premium) > 0.01 else 0.0
+            # Calculate total P&L percentage using cost basis (following looptrader-pro pattern)
+            total_pnl_pct = (total_pnl / total_cost_basis) * 100 if total_cost_basis > 0.01 else 0.0
             
             # Format underlying concentration
             underlying_list = [
                 {
                     'symbol': symbol,
                     'delta': data['delta'],
-                    'premium': data['premium'],
+                    'cost_basis': data['cost_basis'],
                     'positions': data['positions']
                 }
                 for symbol, data in underlying_concentration.items()
@@ -889,8 +904,8 @@ def risk():
             underlying_list.sort(key=lambda x: abs(x['delta']), reverse=True)
             
             warnings = []
-            if position_count > 0 and total_premium == 0:
-                warnings.append('Warning: Positions found but premium is $0 - check order data')
+            if position_count > 0 and total_cost_basis == 0:
+                warnings.append('Warning: Positions found but cost basis is $0 - check order data')
             if schwab_client is None:
                 warnings.append('Warning: Greeks fetched from broker API may be unavailable - check Schwab credentials')
             
@@ -902,8 +917,9 @@ def risk():
                 total_gamma=total_gamma,
                 total_theta=total_theta,
                 total_vega=total_vega,
-                total_notional_risk=abs(total_premium),
-                total_premium=total_premium,
+                total_notional_risk=total_cost_basis,
+                total_premium=total_premium_open,
+                total_cost_basis=total_cost_basis,
                 total_pnl=total_pnl,
                 total_pnl_pct=total_pnl_pct,
                 best_position=best_position,
@@ -929,6 +945,7 @@ def risk():
             total_vega=0.0,
             total_notional_risk=0.0,
             total_premium=0.0,
+            total_cost_basis=0.0,
             total_pnl=0.0,
             total_pnl_pct=0.0,
             best_position=None,
@@ -3168,18 +3185,21 @@ def calculate_account_premium_metrics(account_number):
             position._schwab_cache = schwab_cache
         
         premium_opened = 0.0
+        current_open_premium = 0.0
         total_pnl = 0.0
         
         # Calculate using looptrader-pro logic (position.current_pnl uses cache)
+        # CRITICAL: Use direct summation, NOT derived calculation
         for position in active_positions:
             premium_opened += position.initial_premium_sold
+            current_open_premium += position.current_open_premium  # Direct summation
             total_pnl += position.current_pnl  # Uses looptrader-pro calculation
         
         profit_loss_percent = (total_pnl / abs(premium_opened) * 100) if abs(premium_opened) > 0 else 0
         
         return {
             'premium_opened': premium_opened,
-            'current_open_premium': abs(premium_opened - total_pnl),  # Derived from P&L
+            'current_open_premium': current_open_premium,  # Direct summation, not derived
             'profit_loss': total_pnl,
             'profit_loss_percent': profit_loss_percent
         }
@@ -3467,11 +3487,12 @@ def get_schwab_accounts_detail():
         for pos in active_positions:
             pos._schwab_cache = schwab_cache
         
+        # Correctly calculate totals by summing from each position
+        total_premium_opened = sum(pos.initial_premium_sold for pos in active_positions)
+        current_open_premium = sum(pos.current_open_premium for pos in active_positions)
         current_profit_loss = sum(pos.current_pnl for pos in active_positions)
         db.close()
         
-        # Calculate current open premium as total_premium_opened - current_profit_loss
-        current_open_premium = total_premium_opened - current_profit_loss
         current_profit_loss_percent = (current_profit_loss / total_premium_opened * 100) if total_premium_opened > 0 else 0
         
         return {

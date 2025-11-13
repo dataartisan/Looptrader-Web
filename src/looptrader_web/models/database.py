@@ -517,6 +517,15 @@ class Position(Base):
             if position_details['is_closed']:
                 return 0.0
             
+            # First, try precise quotes-based valuation per leg (mimics looptrader-pro /positions)
+            try:
+                quotes_value = self.get_current_value_from_quotes()
+                if quotes_value is not None:
+                    return abs(quotes_value)
+            except Exception as _:
+                # Fall through to Schwab cache method
+                pass
+            
             # Try to get real market value first
             # Check if a Schwab cache was injected into this object
             schwab_cache = getattr(self, '_schwab_cache', None)
@@ -603,6 +612,92 @@ class Position(Base):
         except Exception as e:
             print(f"Error calculating current open premium for position {self.id}: {e}")
             return 0.0
+
+    def get_current_value_from_quotes(self, schwab_client=None):
+        """Calculate current market value using live quotes per order leg.
+
+        This mirrors looptrader-pro's /positions command logic:
+        - For each leg, compute mid price
+        - Short legs (SELL*) subtract value; Long legs (BUY*) add value
+        - Multiply by leg.quantity and 100 options multiplier
+
+        Returns:
+            float | None: Signed current value (negative for net short, positive for net long) or None if unavailable
+        """
+        try:
+            # Find opening order with legs
+            opening_order = None
+            for order in self.orders:
+                if hasattr(order, 'isOpenPosition') and order.isOpenPosition:
+                    opening_order = order
+                    break
+            if not opening_order or not hasattr(opening_order, 'orderLegCollection') or not opening_order.orderLegCollection:
+                return None
+
+            # Extract symbols
+            symbols = [leg.instrument.symbol for leg in opening_order.orderLegCollection if leg.instrument and leg.instrument.symbol]
+            if not symbols:
+                return None
+
+            # Ensure Schwab client
+            if schwab_client is None:
+                import os
+                import schwab
+                from schwab.auth import client_from_token_file
+
+                token_path = os.path.join('/app', 'token.json')
+                if not os.path.exists(token_path):
+                    app_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                    token_path = os.path.join(app_root, 'token.json')
+                if not os.path.exists(token_path):
+                    return None
+
+                api_key = os.getenv('SCHWAB_API_KEY')
+                app_secret = os.getenv('SCHWAB_APP_SECRET')
+                if not api_key or not app_secret:
+                    return None
+
+                schwab_client = client_from_token_file(token_path, api_key, app_secret)
+
+            # Fetch quotes (sync client expected here)
+            quotes_resp = schwab_client.get_quotes(symbols)
+            if not quotes_resp or quotes_resp.status_code != 200:
+                return None
+
+            quotes_data = quotes_resp.json()
+
+            current_value = 0.0
+            for leg in opening_order.orderLegCollection:
+                if not leg.instrument or not leg.instrument.symbol:
+                    continue
+                symbol = leg.instrument.symbol
+                q = quotes_data.get(symbol, {}).get('quote', {})
+                if not q:
+                    continue
+
+                bid = q.get('bid')
+                ask = q.get('ask')
+                last = q.get('lastPrice')
+                # Choose a mid-like price
+                if bid is not None and ask is not None and bid > 0 and ask > 0:
+                    mid = (bid + ask) / 2
+                elif last is not None:
+                    mid = last
+                else:
+                    # As a fallback, skip this leg
+                    continue
+
+                qty = leg.quantity or 0
+                leg_value = mid * qty * 100
+                # SELL legs are liabilities (negative), BUY legs are assets (positive)
+                if leg.instruction and str(leg.instruction).upper().startswith('SELL'):
+                    current_value -= leg_value
+                else:
+                    current_value += leg_value
+
+            return current_value
+        except Exception:
+            return None
     
     @property
     def current_pnl(self):
@@ -1117,39 +1212,12 @@ def get_dashboard_stats():
             # Inject cache into position
             position._schwab_cache = schwab_cache
             
-            # Get opening order
-            opening_order = None
-            for order in position.orders:
-                if order.isOpenPosition:
-                    opening_order = order
-                    break
-            
-            if not opening_order or not opening_order.price or not opening_order.quantity:
-                continue
-            
-            # Calculate current market value using the cached value
-            market_value = schwab_cache.get(position.id, 0)
-            
-            # Calculate position P&L based on order type (matches looptrader-pro /risk command)
-            entry_price = opening_order.price
-            quantity = opening_order.quantity
-            
-            # Position cost basis
-            position_cost = abs(entry_price) * quantity * 100
-            
-            # Calculate P&L
-            if entry_price > 0:  # Credit spread (we received credit)
-                # P&L = credit received - current cost to close
-                position_pnl = entry_price * quantity * 100 - abs(market_value)
-            else:  # Debit spread (we paid debit)
-                # P&L = current value - debit paid
-                position_pnl = market_value - abs(entry_price) * quantity * 100
-            
-            total_pnl += position_pnl
-            total_cost_basis += position_cost
+            # Use the consistent P&L calculation from the Position model
+            total_pnl += position.current_pnl
+            total_cost_basis += position.initial_premium_sold
         
-        # Calculate P&L percentage
-        total_pnl_pct = (total_pnl / total_cost_basis * 100) if total_cost_basis > 0 else 0
+        # Calculate P&L percentage using absolute value (handles both credit and debit positions)
+        total_pnl_pct = (total_pnl / abs(total_cost_basis) * 100) if abs(total_cost_basis) > 0 else 0
         
         stats = {
             'total_bots': db.query(Bot).count(),
