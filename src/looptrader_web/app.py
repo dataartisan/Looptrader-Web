@@ -909,9 +909,12 @@ def risk():
             if schwab_client is None:
                 warnings.append('Warning: Greeks fetched from broker API may be unavailable - check Schwab credentials')
             
+            # Read aggregate parameter from request (for per-account breakdown toggle)
+            aggregate = request.args.get('aggregate') == 'true'
+            
             return render_template(
                 'risk/risk.html',
-                aggregate=False,
+                aggregate=aggregate,
                 position_count=position_count,
                 total_delta=total_delta,
                 total_gamma=total_gamma,
@@ -3156,9 +3159,30 @@ def calculate_account_premium_metrics(account_number):
     try:
         db = SessionLocal()
         
-        # Find the account_id for this account number
-        account = db.query(BrokerageAccount).filter(BrokerageAccount.name.contains(str(account_number))).first()
+        # Find the account_id for this account number using the same pattern as build_schwab_cache_for_positions
+        # Match by checking if account_id is contained in or at the end of account_number
+        account = None
+        all_accounts = db.query(BrokerageAccount).all()
+        account_number_str = str(account_number)
+        
+        # First try to find exact/endswith matches (more specific)
+        for broker_account in all_accounts:
+            account_id_str = str(broker_account.account_id)
+            # Prefer endswith matches (more specific) over contains matches
+            if account_number_str.endswith(account_id_str):
+                account = broker_account
+                break
+        
+        # If no endswith match, try contains match (less specific, but matches build_schwab_cache pattern)
         if not account:
+            for broker_account in all_accounts:
+                account_id_str = str(broker_account.account_id)
+                if account_id_str in account_number_str:
+                    account = broker_account
+                    break
+        
+        if not account:
+            print(f"calculate_account_premium_metrics: No BrokerageAccount found for account_number {account_number}")
             return {
                 'premium_opened': 0.0,
                 'current_open_premium': 0.0,
@@ -3190,12 +3214,14 @@ def calculate_account_premium_metrics(account_number):
         
         # Calculate using looptrader-pro logic (position.current_pnl uses cache)
         # CRITICAL: Use direct summation, NOT derived calculation
+        # Use abs() for premium_opened to get cost basis (always positive) - matches risk page pattern
         for position in active_positions:
-            premium_opened += position.initial_premium_sold
+            premium_opened += abs(position.initial_premium_sold)  # Cost basis (always positive)
             current_open_premium += position.current_open_premium  # Direct summation
             total_pnl += position.current_pnl  # Uses looptrader-pro calculation
         
-        profit_loss_percent = (total_pnl / abs(premium_opened) * 100) if abs(premium_opened) > 0 else 0
+        # Calculate percentage using cost basis (matches risk page pattern)
+        profit_loss_percent = (total_pnl / premium_opened * 100) if premium_opened > 0.01 else 0.0
         
         return {
             'premium_opened': premium_opened,
@@ -3473,9 +3499,6 @@ def get_schwab_accounts_detail():
         # Calculate totals
         total_value = sum(acc['liquidation_value'] for acc in detailed_accounts)
         
-        # Calculate the new premium metrics using corrected looptrader-pro logic
-        total_premium_opened = calculate_total_premium_opened()
-        
         # Calculate current P&L using position.current_pnl (matches looptrader-pro)
         db = SessionLocal()
         active_positions = db.query(Position).filter_by(active=True).all()
@@ -3487,13 +3510,15 @@ def get_schwab_accounts_detail():
         for pos in active_positions:
             pos._schwab_cache = schwab_cache
         
-        # Correctly calculate totals by summing from each position
-        total_premium_opened = sum(pos.initial_premium_sold for pos in active_positions)
+        # Correctly calculate totals by summing from each position (following risk page pattern)
+        # Total premium opened: use abs() for cost basis (always positive)
+        total_premium_opened = sum(abs(pos.initial_premium_sold) for pos in active_positions)
         current_open_premium = sum(pos.current_open_premium for pos in active_positions)
         current_profit_loss = sum(pos.current_pnl for pos in active_positions)
         db.close()
         
-        current_profit_loss_percent = (current_profit_loss / total_premium_opened * 100) if total_premium_opened > 0 else 0
+        # Calculate percentage using cost basis (matches risk page pattern)
+        current_profit_loss_percent = (current_profit_loss / total_premium_opened * 100) if total_premium_opened > 0.01 else 0.0
         
         return {
             'accounts': detailed_accounts,

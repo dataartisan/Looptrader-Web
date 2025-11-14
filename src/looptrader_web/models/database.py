@@ -350,7 +350,8 @@ class Position(Base):
                 print(f"Position {self.id}: Using cached market value ${market_value:,.2f}")
                 # Return absolute value (cost to close is always positive)
                 # Schwab returns negative market values for short positions
-                return abs(market_value) if market_value != 0 else None
+                # Note: 0 is a valid market value (position at break-even), so return it
+                return abs(market_value)
             
             # No cache provided, fetch data directly (slower path)
             print(f"Position {self.id}: No cache provided, fetching from Schwab API")
@@ -461,21 +462,26 @@ class Position(Base):
             
             print(f"Position {self.id}: Found {len(positions)} total positions in Schwab account")
             
-            # Sum up the absolute market value of all option positions
-            # This represents the cost to close all option positions in the account
-            total_option_market_value = 0.0
+            # Sum up the signed market values first (to properly net spreads), then take absolute
+            # For spreads: Short legs have negative market_value, long legs have positive
+            # Net market value = sum of signed values (e.g., -$800 + $100 = -$700 for spread)
+            # Cost to close = abs(net market value) = $700
+            net_option_market_value = 0.0
             option_count = 0
             for position in positions:
                 instrument = position.get('instrument', {})
                 
                 # Check if this is an option position
                 if instrument.get('assetType') == 'OPTION':
-                    market_value = position.get('marketValue', 0)
+                    market_value = float(position.get('marketValue', 0))
                     option_count += 1
                     print(f"Position {self.id}: Option {option_count} - Symbol: {instrument.get('symbol', 'N/A')}, Market Value: ${market_value:,.2f}")
-                    # Use absolute value because we want the cost to close
-                    # Negative market value means we owe money to close (short positions)
-                    total_option_market_value += abs(float(market_value))
+                    # Sum signed values first (negative for shorts, positive for longs)
+                    # This allows spreads to net correctly
+                    net_option_market_value += market_value
+            
+            # After netting all positions (spreads properly calculated), take absolute value
+            total_option_market_value = abs(net_option_market_value)
             
             print(f"Position {self.id}: Total option market value: ${total_option_market_value:,.2f} from {option_count} options")
             
@@ -529,6 +535,14 @@ class Position(Base):
             # Try to get real market value first
             # Check if a Schwab cache was injected into this object
             schwab_cache = getattr(self, '_schwab_cache', None)
+            if schwab_cache and self.id in schwab_cache:
+                # Cache has value for this position
+                # Note: If cache has this position ID, the value was matched from Schwab (even if 0)
+                market_value = schwab_cache[self.id]
+                print(f"Position {self.id}: Using cached market value ${market_value:,.2f} for current open premium")
+                return abs(market_value)  # Ensure it's positive (cost to close)
+            
+            # Try get_current_market_value for direct API call
             market_value = self.get_current_market_value(schwab_cache=schwab_cache)
             if market_value is not None:
                 # market_value is already absolute from get_current_market_value
@@ -1158,29 +1172,37 @@ def build_schwab_cache_for_positions(positions):
                     
                     # Match Schwab positions by underlying symbol
                     matched_value = 0.0
+                    matched_count = 0  # Track if we actually found matching positions
                     for opt_pos in option_positions:
                         if opt_pos['underlying'] == underlying_symbol:
                             matched_value += opt_pos['market_value']
+                            matched_count += 1
                             print(f"build_schwab_cache: Matched {opt_pos['symbol']} - ${opt_pos['market_value']:,.2f}")
                     
-                    # If only one DB position for this underlying, assign all matched value to it
-                    # Otherwise, split proportionally
-                    same_underlying_positions = [p for p in db_positions 
-                                                 if p.bot and underlying_symbol in p.bot.name.upper()]
-                    
-                    if len(same_underlying_positions) == 1:
-                        cache[db_pos.id] = matched_value
-                        print(f"build_schwab_cache: Position {db_pos.id} gets full value ${matched_value:,.2f}")
+                    # Only cache if we actually found matching positions in Schwab
+                    # matched_count > 0 means we found positions (matched_value could be 0 for break-even spreads)
+                    if matched_count == 0:
+                        print(f"build_schwab_cache: Position {db_pos.id} - no matching Schwab positions found for underlying {underlying_symbol}, skipping cache (will use fallback)")
                     else:
-                        # Split proportionally based on initial premium
-                        total_premium = sum(p.initial_premium_sold for p in same_underlying_positions if p.initial_premium_sold > 0)
-                        if total_premium > 0 and db_pos.initial_premium_sold > 0:
-                            proportion = db_pos.initial_premium_sold / total_premium
-                            allocated_value = matched_value * proportion
-                            cache[db_pos.id] = allocated_value
-                            print(f"build_schwab_cache: Position {db_pos.id} gets {proportion*100:.1f}% = ${allocated_value:,.2f}")
+                        # If only one DB position for this underlying, assign all matched value to it
+                        # Otherwise, split proportionally
+                        same_underlying_positions = [p for p in db_positions 
+                                                     if p.bot and underlying_symbol in p.bot.name.upper()]
+                        
+                        if len(same_underlying_positions) == 1:
+                            cache[db_pos.id] = matched_value
+                            print(f"build_schwab_cache: Position {db_pos.id} gets full value ${matched_value:,.2f} (matched {matched_count} option positions)")
                         else:
-                            cache[db_pos.id] = 0.0
+                            # Split proportionally based on initial premium
+                            total_premium = sum(p.initial_premium_sold for p in same_underlying_positions if p.initial_premium_sold > 0)
+                            if total_premium > 0 and db_pos.initial_premium_sold > 0:
+                                proportion = db_pos.initial_premium_sold / total_premium
+                                allocated_value = matched_value * proportion
+                                cache[db_pos.id] = allocated_value
+                                print(f"build_schwab_cache: Position {db_pos.id} gets {proportion*100:.1f}% = ${allocated_value:,.2f} (from {matched_count} matched positions)")
+                            else:
+                                # Can't split proportionally, use fallback
+                                print(f"build_schwab_cache: Position {db_pos.id} - cannot split proportionally (total_premium={total_premium}), skipping cache")
         
         finally:
             db.close()
@@ -1204,7 +1226,7 @@ def get_dashboard_stats():
         # Build schwab cache for all active positions
         schwab_cache = build_schwab_cache_for_positions(active_positions)
         
-        # Calculate total P&L
+        # Calculate total P&L (following risk page pattern)
         total_pnl = 0.0
         total_cost_basis = 0.0
         
@@ -1214,10 +1236,11 @@ def get_dashboard_stats():
             
             # Use the consistent P&L calculation from the Position model
             total_pnl += position.current_pnl
-            total_cost_basis += position.initial_premium_sold
+            # Cost basis for percentage calculation (always positive) - matches risk page pattern
+            total_cost_basis += abs(position.initial_premium_sold)
         
-        # Calculate P&L percentage using absolute value (handles both credit and debit positions)
-        total_pnl_pct = (total_pnl / abs(total_cost_basis) * 100) if abs(total_cost_basis) > 0 else 0
+        # Calculate P&L percentage using cost basis (matches risk page pattern)
+        total_pnl_pct = (total_pnl / total_cost_basis * 100) if total_cost_basis > 0.01 else 0.0
         
         stats = {
             'total_bots': db.query(Bot).count(),
