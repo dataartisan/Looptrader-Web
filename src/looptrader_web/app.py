@@ -985,8 +985,10 @@ def risk():
             # Underlying concentration: track count per underlying (matches looptrader-pro)
             underlying_concentration = {}
             
-            # Cache Greeks to avoid duplicate broker calls
-            greeks_cache = {}
+            # Batch fetch Greeks for all positions in a single API call
+            from models.database import get_greeks_for_all_positions
+            greeks_cache = get_greeks_for_all_positions(active_positions, schwab_client)
+            logger.info(f"Fetched Greeks for {len(greeks_cache)} positions in batched API call")
             
             for pos in active_positions:
                 try:
@@ -1042,9 +1044,8 @@ def risk():
                     
                     total_notional_risk += position_notional_risk
                     
-                    # Greeks from live broker quotes (cache for reuse)
-                    greeks = pos.get_greeks_from_broker(schwab_client)
-                    greeks_cache[pos.id] = greeks
+                    # Greeks from batched API call (already fetched above)
+                    greeks = greeks_cache.get(pos.id, {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0})
                     logger.debug(f"Position {pos.id}: Greeks = Δ{greeks['delta']:.2f}, Γ{greeks['gamma']:.3f}, Θ{greeks['theta']:.2f}, V{greeks['vega']:.2f}, Notional=${position_notional_risk:.2f}")
                     
                     total_delta += greeks['delta']
@@ -2728,7 +2729,93 @@ def add_trailing_stops():
                 action = request.form.get('action')
                 selected_bots = request.form.getlist('selected_bots')
                 
-                if not selected_bots:
+                if action == 'smarttrail':
+                    # Handle smarttrail action
+                    from services.smarttrail import SmartTrailService
+                    
+                    # Parse form data
+                    smarttrail_target = request.form.get('smarttrail_target', 'all')
+                    tier_thresholds = request.form.getlist('tier_thresholds[]')
+                    trailing_percentage = request.form.get('smarttrail_trailing_percentage', type=float, default=10.0)
+                    strategy_group_name = request.form.get('strategy_group_name', '').strip()
+                    
+                    # Validate inputs
+                    if not tier_thresholds:
+                        flash('Please enter at least one tier activation threshold', 'danger')
+                    else:
+                        try:
+                            tier_activation_thresholds = [float(t) for t in tier_thresholds]
+                            
+                            # Validate tier thresholds
+                            for threshold in tier_activation_thresholds:
+                                if not (0 <= threshold <= 200):
+                                    flash(f'Activation thresholds must be between 0 and 200%. Got: {threshold}%', 'danger')
+                                    return redirect(url_for('add_trailing_stops'))
+                            
+                            # Validate trailing percentage
+                            if not (0 < trailing_percentage <= 100):
+                                flash(f'Trailing percentage must be between 0 and 100%. Got: {trailing_percentage}%', 'danger')
+                                return redirect(url_for('add_trailing_stops'))
+                            
+                            # Determine target parameters
+                            bot_id = None
+                            selected_bot_ids = None
+                            strategy_group = None
+                            
+                            if smarttrail_target == 'selected':
+                                if not selected_bots:
+                                    flash('Please select at least one bot for Smart Trail', 'danger')
+                                    return redirect(url_for('add_trailing_stops'))
+                                selected_bot_ids = [int(bid) for bid in selected_bots]
+                            elif smarttrail_target == 'strategy':
+                                if not strategy_group_name:
+                                    flash('Please enter a strategy group name', 'danger')
+                                    return redirect(url_for('add_trailing_stops'))
+                                strategy_group = [strategy_group_name]
+                            
+                            # Apply smarttrail
+                            service = SmartTrailService()
+                            result = service.apply_tiered_trails(
+                                tier_activation_thresholds=tier_activation_thresholds,
+                                trailing_percentage=trailing_percentage,
+                                bot_id=bot_id,
+                                selected_bot_ids=selected_bot_ids,
+                                strategy_group=strategy_group
+                            )
+                            
+                            if result['success']:
+                                # Build success message
+                                tier_summary_lines = []
+                                if result.get('tier_summary'):
+                                    for tier_key, count in sorted(result['tier_summary'].items()):
+                                        tier_summary_lines.append(f"{tier_key}: {count} position(s)")
+                                
+                                message = f"✅ Smart Trail applied successfully!\n\n"
+                                message += f"Positions processed: {result['positions_processed']}\n"
+                                message += f"Total positions found: {result.get('total_positions', 0)}\n"
+                                
+                                if tier_summary_lines:
+                                    message += f"\nTier distribution:\n"
+                                    message += "\n".join(f"  • {line}" for line in tier_summary_lines)
+                                
+                                if result.get('errors'):
+                                    message += f"\n\n⚠️ Errors: {len(result['errors'])} position(s) failed"
+                                
+                                flash(message, 'success')
+                            else:
+                                flash(f"❌ Smart Trail failed: {result.get('message', 'Unknown error')}", 'danger')
+                            
+                            # Redirect back to prevent form resubmission
+                            return redirect(url_for('add_trailing_stops'))
+                            
+                        except ValueError as e:
+                            flash(f'Invalid input: {str(e)}', 'danger')
+                        except Exception as e:
+                            flash(f'Error applying Smart Trail: {str(e)}', 'danger')
+                            import traceback
+                            print(traceback.format_exc())
+                
+                elif not selected_bots:
                     flash('Please select at least one bot', 'warning')
                 elif action == 'add':
                     # Handle bulk trailing stop creation

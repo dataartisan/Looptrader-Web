@@ -925,6 +925,187 @@ class Position(Base):
             traceback.print_exc()
             return greeks
 
+
+def get_greeks_for_all_positions(positions, schwab_client=None):
+    """Get Greeks for all positions in a single batched API call.
+    
+    This function batches all option symbols from all positions and makes a single
+    get_quotes() API call, then distributes the results to each position. This is
+    much faster than calling get_greeks_from_broker() individually for each position.
+    
+    Args:
+        positions: List of Position objects
+        schwab_client: Optional pre-initialized Schwab client
+        
+    Returns:
+        Dictionary mapping position.id -> {'delta': float, 'gamma': float, 'theta': float, 'vega': float}
+    """
+    from typing import Dict, List
+    
+    result = {}
+    
+    if not positions:
+        return result
+    
+    try:
+        # Initialize Schwab client if not provided
+        if schwab_client is None:
+            import os
+            import schwab
+            from schwab.auth import client_from_token_file
+            
+            token_path = os.path.join('/app', 'token.json')
+            if not os.path.exists(token_path):
+                app_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                token_path = os.path.join(app_root, 'token.json')
+            
+            if not os.path.exists(token_path):
+                print("get_greeks_for_all_positions: No token.json found, cannot get Greeks from broker")
+                return {pos.id: {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0} for pos in positions}
+            
+            api_key = os.getenv('SCHWAB_API_KEY')
+            app_secret = os.getenv('SCHWAB_APP_SECRET')
+            
+            if not api_key or not app_secret:
+                print("get_greeks_for_all_positions: Missing SCHWAB credentials")
+                return {pos.id: {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0} for pos in positions}
+            
+            schwab_client = client_from_token_file(token_path, api_key, app_secret)
+        
+        # Collect all symbols from all positions
+        position_symbols_map = {}  # position_id -> list of symbols
+        all_symbols_set = set()
+        
+        for pos in positions:
+            try:
+                # Find the opening order
+                opening_order = None
+                for order in pos.orders:
+                    if hasattr(order, 'isOpenPosition') and order.isOpenPosition:
+                        opening_order = order
+                        break
+                
+                if not opening_order:
+                    continue
+                
+                # Check if orderLegCollection exists
+                if not hasattr(opening_order, 'orderLegCollection') or not opening_order.orderLegCollection:
+                    continue
+                
+                # Extract symbols for this position
+                symbols = [leg.instrument.symbol for leg in opening_order.orderLegCollection if leg.instrument and leg.instrument.symbol]
+                if symbols:
+                    position_symbols_map[pos.id] = {
+                        'symbols': symbols,
+                        'order': opening_order
+                    }
+                    all_symbols_set.update(symbols)
+            except Exception as e:
+                print(f"Error collecting symbols for position {pos.id}: {e}")
+                continue
+        
+        if not all_symbols_set:
+            print("get_greeks_for_all_positions: No symbols found in any positions")
+            return {pos.id: {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0} for pos in positions}
+        
+        # Convert to list for API call
+        all_symbols = list(all_symbols_set)
+        print(f"get_greeks_for_all_positions: Fetching quotes for {len(all_symbols)} unique symbols from {len(position_symbols_map)} positions")
+        
+        # Schwab API may have limits, so batch if needed (e.g., 100 symbols per request)
+        MAX_SYMBOLS_PER_REQUEST = 100
+        all_quotes_data = {}
+        
+        if len(all_symbols) <= MAX_SYMBOLS_PER_REQUEST:
+            # Single batch
+            try:
+                import asyncio
+                if asyncio.iscoroutinefunction(schwab_client.get_quotes):
+                    quotes_resp = asyncio.run(schwab_client.get_quotes(all_symbols))
+                else:
+                    quotes_resp = schwab_client.get_quotes(all_symbols)
+                
+                if quotes_resp and quotes_resp.status_code == 200:
+                    all_quotes_data = quotes_resp.json()
+                else:
+                    print(f"get_greeks_for_all_positions: Failed to get quotes, status code: {quotes_resp.status_code if quotes_resp else 'None'}")
+            except Exception as e:
+                print(f"get_greeks_for_all_positions: Error fetching quotes: {e}")
+        else:
+            # Multiple batches
+            print(f"get_greeks_for_all_positions: Splitting {len(all_symbols)} symbols into batches of {MAX_SYMBOLS_PER_REQUEST}")
+            for i in range(0, len(all_symbols), MAX_SYMBOLS_PER_REQUEST):
+                batch_symbols = all_symbols[i:i + MAX_SYMBOLS_PER_REQUEST]
+                try:
+                    import asyncio
+                    if asyncio.iscoroutinefunction(schwab_client.get_quotes):
+                        quotes_resp = asyncio.run(schwab_client.get_quotes(batch_symbols))
+                    else:
+                        quotes_resp = schwab_client.get_quotes(batch_symbols)
+                    
+                    if quotes_resp and quotes_resp.status_code == 200:
+                        batch_data = quotes_resp.json()
+                        all_quotes_data.update(batch_data)
+                    else:
+                        print(f"get_greeks_for_all_positions: Failed to get quotes for batch {i//MAX_SYMBOLS_PER_REQUEST + 1}, status code: {quotes_resp.status_code if quotes_resp else 'None'}")
+                except Exception as e:
+                    print(f"get_greeks_for_all_positions: Error fetching batch {i//MAX_SYMBOLS_PER_REQUEST + 1}: {e}")
+        
+        # Calculate Greeks for each position using the batched quotes
+        for pos_id, pos_data in position_symbols_map.items():
+            greeks = {
+                'delta': 0.0,
+                'gamma': 0.0,
+                'theta': 0.0,
+                'vega': 0.0
+            }
+            
+            opening_order = pos_data['order']
+            
+            # Sum Greeks across legs (matching LoopTrader Pro's logic)
+            for leg in opening_order.orderLegCollection:
+                if not leg.instrument:
+                    continue
+                
+                symbol = leg.instrument.symbol
+                quote_info = all_quotes_data.get(symbol, {}).get('quote', {})
+                
+                if not quote_info:
+                    continue
+                
+                quantity = leg.quantity if leg.quantity else 0
+                
+                # Determine sign based on instruction (SELL = negative, BUY = positive)
+                multiplier = -quantity if leg.instruction and 'SELL' in leg.instruction.upper() else quantity
+                
+                # Extract Greeks from quote and multiply by 100 (per-contract multiplier)
+                delta = quote_info.get('delta', 0.0)
+                gamma = quote_info.get('gamma', 0.0)
+                theta = quote_info.get('theta', 0.0)
+                vega = quote_info.get('vega', 0.0)
+                
+                greeks['delta'] += multiplier * delta * 100
+                greeks['gamma'] += multiplier * gamma * 100
+                greeks['theta'] += multiplier * theta * 100
+                greeks['vega'] += multiplier * vega * 100
+            
+            result[pos_id] = greeks
+        
+        # Fill in missing positions with zeros
+        for pos in positions:
+            if pos.id not in result:
+                result[pos.id] = {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0}
+        
+        print(f"get_greeks_for_all_positions: Successfully calculated Greeks for {len(result)} positions")
+        return result
+        
+    except Exception as e:
+        print(f"Error in get_greeks_for_all_positions: {e}")
+        import traceback
+        traceback.print_exc()
+        # Return zeros for all positions on error
+        return {pos.id: {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0} for pos in positions}
+
 class TrailingStopState(Base):
     """Trailing stop state model"""
     __tablename__ = "TrailingStopState"
@@ -935,6 +1116,7 @@ class TrailingStopState(Base):
     trailing_percentage = mapped_column(Float, nullable=True)  # Nullable when using dollar mode
     is_active = mapped_column(Boolean, default=False)
     high_water_mark = mapped_column(Float, nullable=True)
+    below_activation_notified = mapped_column(Boolean, default=False, nullable=False)  # Track if we've sent the "below activation" warning
     created_at = mapped_column(DateTime, default=datetime.utcnow)
     updated_at = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
