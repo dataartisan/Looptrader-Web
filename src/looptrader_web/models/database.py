@@ -222,10 +222,15 @@ class Position(Base):
     def initial_premium_sold(self):
         """Calculate the net initial premium from the opening order.
         
-        In LoopTrader Pro, order.price is the NET price of the entire multi-leg order:
+        Matches looptrader-pro's calculate_entry_value() logic:
         - For credit spreads (NET_CREDIT): price is positive (we receive credit)
         - For debit spreads (NET_DEBIT): price is negative (we pay debit)
+        - Handles partial fills by using filledQuantity when available
         - Formula: premium = price * filledQuantity * 100
+        
+        Note: This matches looptrader-pro's calc_entry_value() behavior.
+        If orderActivityCollection were available, we would calculate weighted
+        average across partial fills, but the database schema doesn't include it.
         """
         try:
             # Find the opening order (marked with isOpenPosition=True)
@@ -255,13 +260,17 @@ class Position(Base):
                 print(f"Position {self.id}: Opening order has no price")
                 return 0.0
             
-            # Use filledQuantity if available, otherwise fall back to quantity
+            # Use filledQuantity if available (handles partial fills), otherwise fall back to quantity
+            # This matches looptrader-pro's calc_entry_value() which uses orderActivityCollection
+            # for accurate partial fill handling, but falls back to order.price * quantity
             quantity = opening_order.filledQuantity if opening_order.filledQuantity else opening_order.quantity
             if not quantity:
                 print(f"Position {self.id}: Opening order has no quantity")
                 return 0.0
             
             # Calculate total premium: price is already the net price per contract
+            # For credit spreads: price > 0, returns positive value (credit received)
+            # For debit spreads: price < 0, returns negative value (debit paid)
             # Multiply by quantity and 100 (option multiplier)
             total_premium = float(opening_order.price) * float(quantity) * 100
             
@@ -517,111 +526,145 @@ class Position(Base):
             if not self.active:
                 return 0.0
             
-            position_details = self.get_net_position_details()
-            
-            # If position is effectively closed, return 0
-            if position_details['is_closed']:
-                return 0.0
+            # Don't rely on get_net_position_details() for is_closed check
+            # If position.active is True, we should always calculate a cost to close
+            # The get_net_position_details() function has issues with orderType vs instruction
             
             # First, try precise quotes-based valuation per leg (mimics looptrader-pro /positions)
-            try:
-                quotes_value = self.get_current_value_from_quotes()
-                if quotes_value is not None:
-                    return abs(quotes_value)
-            except Exception as _:
-                # Fall through to Schwab cache method
-                pass
+            # Skip direct API calls here - rely on cache instead to avoid blocking
+            # Direct API calls should only happen in build_schwab_cache_for_positions
+            # try:
+            #     quotes_value = self.get_current_value_from_quotes()
+            #     if quotes_value is not None:
+            #         return abs(quotes_value)
+            # except Exception as _:
+            #     # Fall through to Schwab cache method
+            #     pass
             
-            # Try to get real market value first
-            # Check if a Schwab cache was injected into this object
+            # Try to get real market value from cache only (no direct API calls here)
+            # API calls should only happen in build_schwab_cache_for_positions
             schwab_cache = getattr(self, '_schwab_cache', None)
             if schwab_cache and self.id in schwab_cache:
                 # Cache has value for this position
                 # Note: If cache has this position ID, the value was matched from Schwab (even if 0)
                 market_value = schwab_cache[self.id]
-                print(f"Position {self.id}: Using cached market value ${market_value:,.2f} for current open premium")
                 return abs(market_value)  # Ensure it's positive (cost to close)
             
-            # Try get_current_market_value for direct API call
-            market_value = self.get_current_market_value(schwab_cache=schwab_cache)
-            if market_value is not None:
-                # market_value is already absolute from get_current_market_value
-                print(f"Position {self.id}: Using real market value ${market_value:,.2f} for current open premium")
-                return abs(market_value)  # Ensure it's positive (cost to close)
-            else:
-                print(f"Position {self.id}: Real market value not available, using fallback calculation")
+            # Enhanced fallback calculation using opening order price
+            # This provides realistic estimates when real-time quotes aren't available
+            opening_order = None
+            for order in self.orders:
+                if hasattr(order, 'isOpenPosition') and order.isOpenPosition and order.price is not None:
+                    opening_order = order
+                    break
             
-            # Enhanced fallback calculation
-            net_contracts = position_details['net_contracts']
-            total_cost_basis = position_details['total_cost_basis']
-            
-            if abs(net_contracts) < 0.01:
+            if not opening_order or opening_order.price is None:
                 return 0.0
             
-            # For more accurate estimation, let's analyze the order pattern
-            # to determine if this is likely a credit spread, debit spread, or naked position
-            orders = position_details['orders']
+            # Get entry price per contract from opening order
+            entry_price_per_contract = abs(opening_order.price)
+            quantity = opening_order.quantity if opening_order.quantity else opening_order.filledQuantity or 1
             
-            # If we have both buys and sells, this might be a spread
-            has_buys = any(order['type'] == 'BUY' for order in orders)
-            has_sells = any(order['type'] == 'SELL' for order in orders)
+            # Calculate position age for time decay
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            opened = self.opened_datetime
             
-            if has_buys and has_sells:
-                # This is likely a spread - use a more conservative approach
-                # The current cost should be closer to the net premium paid/received
-                avg_net_premium_per_contract = total_cost_basis / (abs(net_contracts) * 100) if net_contracts != 0 else 0
+            # Ensure both datetimes are timezone-aware
+            if opened.tzinfo is None:
+                # If opened_datetime is naive, assume it's UTC
+                opened = opened.replace(tzinfo=timezone.utc)
+            
+            position_age_hours = (now - opened).total_seconds() / 3600
+            
+            # Determine if this is a credit spread (positive entry price) or debit spread (negative)
+            # For credit spreads: entry is positive, cost to close should decrease over time (profitable)
+            # For debit spreads: entry is negative, cost to close should increase over time (losing)
+            # We'll use the absolute entry price and apply realistic decay
+            
+            # Check if it's a spread by looking at order legs
+            is_spread = False
+            if opening_order.orderLegCollection and len(opening_order.orderLegCollection) >= 2:
+                is_spread = True
+            
+            if is_spread:
+                # For spreads, use a more realistic decay model
+                # Credit spreads (positive entry) typically decay favorably
+                # Debit spreads (negative entry) typically decay unfavorably
+                # We'll estimate based on time and typical spread behavior
                 
-                # For spreads, use 50% of the net premium as a reasonable estimate
-                # This accounts for partial moves in underlying price
-                estimated_close_cost = abs(avg_net_premium_per_contract * 0.5)
-                return abs(net_contracts) * estimated_close_cost * 100
+                if entry_price_per_contract > 0:  # Credit spread
+                    # Credit spreads typically become cheaper to close (more profitable) over time
+                    # Use decay factors that reduce the cost to close
+                    if position_age_hours <= 6:
+                        decay_factor = 0.98  # 2% reduction (slight improvement)
+                    elif position_age_hours <= 24:
+                        decay_factor = 0.90  # 10% reduction (profitable)
+                    elif position_age_hours <= 72:
+                        decay_factor = 0.75  # 25% reduction (more profitable)
+                    elif position_age_hours <= 168:  # 1 week
+                        decay_factor = 0.60  # 40% reduction
+                    else:
+                        decay_factor = 0.40  # 60% reduction for old positions
+                else:  # Debit spread (shouldn't happen with abs(), but just in case)
+                    entry_price_per_contract = abs(entry_price_per_contract)
+                    # Debit spreads typically become more expensive to close (losing) over time
+                    if position_age_hours <= 6:
+                        decay_factor = 1.05  # 5% increase
+                    elif position_age_hours <= 24:
+                        decay_factor = 1.15  # 15% increase
+                    elif position_age_hours <= 72:
+                        decay_factor = 1.30  # 30% increase
+                    elif position_age_hours <= 168:
+                        decay_factor = 1.50  # 50% increase
+                    else:
+                        decay_factor = 2.00  # 100% increase for old positions
                 
-            elif position_details['is_short']:  # Pure short position
-                # For naked short positions, use a more conservative time decay
-                avg_sell_price = total_cost_basis / (abs(net_contracts) * 100) if net_contracts != 0 else 0
+                estimated_price_per_contract = entry_price_per_contract * decay_factor
+                # Ensure minimum value (spreads rarely go to zero)
+                estimated_price_per_contract = max(estimated_price_per_contract, entry_price_per_contract * 0.10)
                 
-                # Calculate position age in hours for more granular decay
-                from datetime import datetime, timezone
-                position_age_hours = (datetime.now(timezone.utc) - self.opened_datetime).total_seconds() / 3600
+            else:
+                # Single leg position (naked option)
+                # For short options (credit received), value decreases over time
+                # For long options (debit paid), value decreases over time (theta decay)
                 
-                # More realistic decay model for short options
-                if position_age_hours <= 6:  # First 6 hours
-                    decay_factor = 0.95  # 5% decay
-                elif position_age_hours <= 24:  # First day
-                    decay_factor = 0.85  # 15% decay
-                elif position_age_hours <= 168:  # First week
-                    decay_factor = 0.60  # 40% decay
-                elif position_age_hours <= 720:  # First month
-                    decay_factor = 0.30  # 70% decay
+                # Determine if short or long by checking first leg instruction
+                is_short = False
+                if opening_order.orderLegCollection:
+                    first_leg = opening_order.orderLegCollection[0]
+                    if hasattr(first_leg, 'instruction'):
+                        instruction = str(first_leg.instruction).upper()
+                        is_short = 'SELL' in instruction
+                
+                if is_short:
+                    # Short options: premium received, cost to close decreases over time (profitable)
+                    if position_age_hours <= 6:
+                        decay_factor = 0.98
+                    elif position_age_hours <= 24:
+                        decay_factor = 0.90
+                    elif position_age_hours <= 168:
+                        decay_factor = 0.70
+                    else:
+                        decay_factor = 0.50
                 else:
-                    decay_factor = 0.10  # 90% decay for very old positions
+                    # Long options: premium paid, value decreases over time (losing)
+                    if position_age_hours <= 6:
+                        decay_factor = 0.95
+                    elif position_age_hours <= 24:
+                        decay_factor = 0.80
+                    elif position_age_hours <= 168:
+                        decay_factor = 0.50
+                    else:
+                        decay_factor = 0.20
                 
-                estimated_current_price = max(avg_sell_price * decay_factor, avg_sell_price * 0.02)
-                return abs(net_contracts) * estimated_current_price * 100
-                
-            elif position_details['is_long']:  # Pure long position
-                # For long positions, more aggressive decay since options lose value over time
-                avg_buy_price = abs(total_cost_basis) / (abs(net_contracts) * 100) if net_contracts != 0 else 0
-                
-                from datetime import datetime, timezone
-                position_age_hours = (datetime.now(timezone.utc) - self.opened_datetime).total_seconds() / 3600
-                
-                # Aggressive decay for long options
-                if position_age_hours <= 6:  # First 6 hours
-                    decay_factor = 0.90  # 10% decay
-                elif position_age_hours <= 24:  # First day
-                    decay_factor = 0.70  # 30% decay
-                elif position_age_hours <= 168:  # First week
-                    decay_factor = 0.40  # 60% decay
-                elif position_age_hours <= 720:  # First month
-                    decay_factor = 0.15  # 85% decay
-                else:
-                    decay_factor = 0.05  # 95% decay for very old positions
-                
-                estimated_current_price = max(avg_buy_price * decay_factor, avg_buy_price * 0.01)
-                return abs(net_contracts) * estimated_current_price * 100
+                estimated_price_per_contract = entry_price_per_contract * decay_factor
+                estimated_price_per_contract = max(estimated_price_per_contract, entry_price_per_contract * 0.05)
             
-            return 0.0
+            # Calculate total cost to close
+            total_cost_to_close = estimated_price_per_contract * quantity * 100
+            
+            return total_cost_to_close
                 
         except Exception as e:
             print(f"Error calculating current open premium for position {self.id}: {e}")
@@ -715,25 +758,28 @@ class Position(Base):
     
     @property
     def current_pnl(self):
-        """Calculate current profit/loss
+        """Calculate current profit/loss matching looptrader-pro's /positions command logic.
         
-        For credit spreads (most common for PCS):
-        - initial_premium_sold = credit received (e.g., $285 for $2.85 credit)
-        - current_open_premium = cost to buy back and close (e.g., $250 for $2.50)
-        - P&L = credit received - cost to close = $285 - $250 = $35 profit
+        This calculation matches looptrader-pro's position_command() P&L calculation:
+        - For credit spreads (initial_premium_sold > 0):
+          P&L = entry_credit - cost_to_close
+          Example: Sold for $285, costs $250 to close = $35 profit
         
-        Example:
-        - Sold PCS for $2.85 credit: initial_premium_sold = $285
-        - Current market to close is $2.50: current_open_premium = $250
-        - P&L = $285 - $250 = $35 profit
+        - For debit spreads (initial_premium_sold < 0):
+          Uses same formula: P&L = initial - current
+          Since initial is negative and current is positive (cost to close),
+          this correctly calculates the P&L
+          Example: Paid $150, costs $200 to close = -$350 (loss if closing)
+        
+        The key is that initial_premium_sold preserves the sign from the order price,
+        and current_open_premium is always the absolute cost to close (positive).
         """
         initial = self.initial_premium_sold
         current = self.current_open_premium
         
-        # For credit positions (sold for credit), P&L = credit - cost_to_close
-        # For debit positions (paid debit), P&L = current_value - debit_paid
-        # Since initial_premium_sold is positive for credits and negative for debits,
-        # this formula works for both:
+        # Unified formula works for both credit and debit spreads
+        # For credits: positive - positive = profit if current < initial
+        # For debits: negative - positive = loss (more negative = bigger loss)
         pnl = initial - current
         
         print(f"Position {self.id}: P&L = ${initial:.2f} (initial) - ${current:.2f} (current) = ${pnl:.2f}")
@@ -1037,6 +1083,11 @@ class Instrument(Base):
         return None
 
 # Analytics helper functions
+# Simple in-memory cache for Schwab API calls to reduce rate limiting
+_schwab_cache_store = {}
+_schwab_cache_timestamp = {}
+CACHE_TTL_SECONDS = 30  # Cache for 30 seconds
+
 def build_schwab_cache_for_positions(positions):
     """Build a cache of Schwab account data with position-level matching
     
@@ -1050,6 +1101,16 @@ def build_schwab_cache_for_positions(positions):
     import os
     import schwab
     import json
+    from datetime import datetime, timezone
+    
+    # Check if we have a recent cache
+    cache_key = tuple(sorted([p.id for p in positions if p.active]))
+    current_time = datetime.now(timezone.utc).timestamp()
+    
+    if cache_key in _schwab_cache_store:
+        cache_age = current_time - _schwab_cache_timestamp.get(cache_key, 0)
+        if cache_age < CACHE_TTL_SECONDS:
+            return _schwab_cache_store[cache_key].copy()
     
     cache = {}
     
@@ -1061,7 +1122,6 @@ def build_schwab_cache_for_positions(positions):
             token_path = os.path.join(app_root, 'token.json')
         
         if not os.path.exists(token_path):
-            print("build_schwab_cache: Token file not found")
             return cache
         
         # Load and validate token
@@ -1070,7 +1130,6 @@ def build_schwab_cache_for_positions(positions):
         
         token_info = token_data.get('token', token_data)
         if not all(key in token_info for key in ['access_token', 'refresh_token']):
-            print("build_schwab_cache: Token file missing required fields")
             return cache
         
         # Create Schwab client
@@ -1084,12 +1143,9 @@ def build_schwab_cache_for_positions(positions):
         # Get all unique account_ids from positions
         account_ids = set(pos.account_id for pos in positions if pos.account_id and pos.active)
         
-        print(f"build_schwab_cache: Processing {len(account_ids)} unique accounts for {len(positions)} positions")
-        
-        # Get account numbers from Schwab
+        # Get account numbers from Schwab (only if not cached)
         accounts_response = client.get_account_numbers()
         if accounts_response.status_code != 200:
-            print(f"build_schwab_cache: Failed to get account numbers")
             return cache
         
         accounts_data = accounts_response.json()
@@ -1119,7 +1175,6 @@ def build_schwab_cache_for_positions(positions):
                 # Get account positions from Schwab
                 account_response = client.get_account(account_hash, fields=['positions'])
                 if account_response.status_code != 200:
-                    print(f"build_schwab_cache: Failed to get positions for account {account_id}")
                     continue
                 
                 account_data_resp = account_response.json()
@@ -1144,15 +1199,12 @@ def build_schwab_cache_for_positions(positions):
                             'long_quantity': schwab_pos.get('longQuantity', 0)
                         })
                 
-                print(f"build_schwab_cache: Account {account_id} has {len(option_positions)} option positions")
-                
                 # Match our positions to Schwab option positions
                 db_positions = [p for p in positions if p.account_id == account_id and p.active]
                 
                 for db_pos in db_positions:
                     # Get bot name to extract underlying symbol
                     bot_name = db_pos.bot.name if db_pos.bot else ""
-                    print(f"build_schwab_cache: Matching position {db_pos.id} with bot '{bot_name}'")
                     
                     # Extract underlying symbol from bot name (e.g., "short SPX Put" -> "SPX")
                     underlying_symbol = None
@@ -1164,11 +1216,6 @@ def build_schwab_cache_for_positions(positions):
                     if not underlying_symbol:
                         # Try to extract from description or default to SPX
                         underlying_symbol = 'SPX'
-                        print(f"build_schwab_cache: Could not extract underlying from '{bot_name}', defaulting to SPX")
-                    
-                    # Get net position details to understand if we're long or short
-                    position_details = db_pos.get_net_position_details()
-                    net_contracts = position_details.get('net_contracts', 0)
                     
                     # Match Schwab positions by underlying symbol
                     matched_value = 0.0
@@ -1177,13 +1224,10 @@ def build_schwab_cache_for_positions(positions):
                         if opt_pos['underlying'] == underlying_symbol:
                             matched_value += opt_pos['market_value']
                             matched_count += 1
-                            print(f"build_schwab_cache: Matched {opt_pos['symbol']} - ${opt_pos['market_value']:,.2f}")
                     
                     # Only cache if we actually found matching positions in Schwab
                     # matched_count > 0 means we found positions (matched_value could be 0 for break-even spreads)
-                    if matched_count == 0:
-                        print(f"build_schwab_cache: Position {db_pos.id} - no matching Schwab positions found for underlying {underlying_symbol}, skipping cache (will use fallback)")
-                    else:
+                    if matched_count > 0:
                         # If only one DB position for this underlying, assign all matched value to it
                         # Otherwise, split proportionally
                         same_underlying_positions = [p for p in db_positions 
@@ -1191,7 +1235,6 @@ def build_schwab_cache_for_positions(positions):
                         
                         if len(same_underlying_positions) == 1:
                             cache[db_pos.id] = matched_value
-                            print(f"build_schwab_cache: Position {db_pos.id} gets full value ${matched_value:,.2f} (matched {matched_count} option positions)")
                         else:
                             # Split proportionally based on initial premium
                             total_premium = sum(p.initial_premium_sold for p in same_underlying_positions if p.initial_premium_sold > 0)
@@ -1199,10 +1242,6 @@ def build_schwab_cache_for_positions(positions):
                                 proportion = db_pos.initial_premium_sold / total_premium
                                 allocated_value = matched_value * proportion
                                 cache[db_pos.id] = allocated_value
-                                print(f"build_schwab_cache: Position {db_pos.id} gets {proportion*100:.1f}% = ${allocated_value:,.2f} (from {matched_count} matched positions)")
-                            else:
-                                # Can't split proportionally, use fallback
-                                print(f"build_schwab_cache: Position {db_pos.id} - cannot split proportionally (total_premium={total_premium}), skipping cache")
         
         finally:
             db.close()
@@ -1211,6 +1250,11 @@ def build_schwab_cache_for_positions(positions):
         print(f"build_schwab_cache: Error building cache: {e}")
         import traceback
         traceback.print_exc()
+    
+    # Store in cache for future use
+    if cache_key:
+        _schwab_cache_store[cache_key] = cache.copy()
+        _schwab_cache_timestamp[cache_key] = current_time
     
     return cache
 

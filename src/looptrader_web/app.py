@@ -9,10 +9,15 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import os
 import requests
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
 from dotenv import load_dotenv
 import pytz
+
+# Set up logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -616,100 +621,319 @@ def positions():
     try:
         db = SessionLocal()
         try:
+            from sqlalchemy.orm import joinedload
+            from datetime import datetime, timezone
+            
             # Get filter parameters
             account_filter = request.args.get('account')
             status_filter = request.args.get('status')
             active_only = request.args.get('active_only')
             
-            # Eager load orders with legs and instruments for P&L calculation
-            query = db.query(Position).options(
-                joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument),
-                joinedload(Position.bot)
-            ).order_by(Position.opened_datetime.desc())
+            # Query positions matching looptrader-pro's /positions command approach
+            # Get all bots first, then get active position for each bot
+            # This ensures we only process positions that have valid opening orders
+            bots = db.query(Bot).all()
+            accounts = db.query(BrokerageAccount).all()
             
-            if account_filter:
-                query = query.filter(Position.account_id == account_filter)
+            # Collect valid positions by querying through bots (matches looptrader-pro)
+            valid_positions = []
+            position_data = []  # Enhanced data with entry/current prices, strikes, etc.
             
-            if status_filter == 'active' or active_only == 'true':
-                query = query.filter(Position.active == True)
-            elif status_filter == 'closed':
-                query = query.filter(Position.active == False)
+            for bot in bots:
+                try:
+                    # Get active position for this bot
+                    db_position = db.query(Position).options(
+                        joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument),
+                        joinedload(Position.bot)
+                    ).filter(
+                        Position.bot_id == bot.id,
+                        Position.active == True
+                    ).first()
+                    
+                    # Apply active filter
+                    if active_only == 'true' and (db_position is None or not db_position.active):
+                        continue
+                    
+                    # If we want all positions, also check closed ones
+                    if active_only != 'true' and db_position is None:
+                        # Try to get any position for this bot (including closed)
+                        db_position = db.query(Position).options(
+                            joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument),
+                            joinedload(Position.bot)
+                        ).filter(
+                            Position.bot_id == bot.id
+                        ).order_by(Position.opened_datetime.desc()).first()
+                    
+                    if db_position is None:
+                        continue
+                    
+                    # Apply account filter
+                    if account_filter and str(db_position.account_id) != str(account_filter):
+                        continue
+                    
+                    # Validate position has opening order with orderLegCollection and price (matches looptrader-pro)
+                    opening_order = next(
+                        (order for order in db_position.orders if hasattr(order, 'isOpenPosition') and order.isOpenPosition),
+                        None
+                    )
+                    
+                    if opening_order is None or not opening_order.orderLegCollection or opening_order.price is None:
+                        if db_position.active:
+                            logger.warning(f"Bot {bot.id} ({bot.name}) has position {db_position.id} but no valid opening order, skipping")
+                        continue
+                    
+                    # Position is valid, add to list
+                    valid_positions.append(db_position)
+                    
+                    # Extract additional data for display (matching looptrader-pro format)
+                    # Get strikes from symbols
+                    position_strikes = []
+                    for leg in opening_order.orderLegCollection:
+                        if leg.instrument and leg.instrument.symbol:
+                            symbol = leg.instrument.symbol
+                            try:
+                                if len(symbol) >= 7:
+                                    strike_part = symbol[-7:]
+                                    strike_value = float(strike_part) / 1000
+                                    position_strikes.append(f"${strike_value:.0f}")
+                            except (ValueError, IndexError):
+                                continue
+                    
+                    strikes_str = "/".join(position_strikes) if position_strikes else "N/A"
+                    
+                    # Calculate entry price per contract
+                    quantity = opening_order.quantity if opening_order.quantity else opening_order.filledQuantity or 1
+                    entry_price_per_contract = abs(opening_order.price) if opening_order.price else 0.0
+                    
+                    # Calculate duration
+                    duration_text = "Unknown"
+                    entry_time_str = "Unknown"
+                    if db_position.opened_datetime:
+                        entry_time = db_position.opened_datetime
+                        if entry_time.tzinfo is None:
+                            entry_time = entry_time.replace(tzinfo=timezone.utc)
+                        now = datetime.now(timezone.utc)
+                        duration = now - entry_time
+                        hours = int(duration.total_seconds() / 3600)
+                        minutes = int((duration.total_seconds() % 3600) / 60)
+                        duration_text = f"{hours}h {minutes}m"
+                        entry_time_str = entry_time.strftime("%H:%M ET")
+                    
+                    # Get account name
+                    account_name = "Unknown"
+                    for account in accounts:
+                        if account.account_id == db_position.account_id:
+                            account_name = account.name
+                            break
+                    
+                    # Store enhanced position data
+                    position_data.append({
+                        'position': db_position,
+                        'bot_id': bot.id,
+                        'bot_name': bot.name,
+                        'account_name': account_name,
+                        'account_id': db_position.account_id,
+                        'strikes': strikes_str,
+                        'entry_price_per_contract': entry_price_per_contract,
+                        'entry_time': entry_time_str,
+                        'duration': duration_text,
+                        'quantity': quantity
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"Error processing bot {bot.id} ({bot.name}): {e}", exc_info=True)
+                    continue
             
-            positions = query.all()
+            logger.info(f"Found {len(valid_positions)} valid positions")
             
             # Build Schwab cache for active positions to get real-time market values
             # This matches looptrader-pro /positions command approach
-            active_positions = [p for p in positions if p.active]
+            active_positions = [p for p in valid_positions if p.active]
             if active_positions:
-                from models.database import build_schwab_cache_for_positions
-                schwab_cache = build_schwab_cache_for_positions(active_positions)
-                
-                # Inject cache into each position for P&L calculation
-                for position in positions:
-                    position._schwab_cache = schwab_cache
+                try:
+                    from models.database import build_schwab_cache_for_positions
+                    schwab_cache = build_schwab_cache_for_positions(active_positions)
+                    
+                    # Inject cache into each position for P&L calculation
+                    for position in valid_positions:
+                        position._schwab_cache = schwab_cache
+                except Exception as e:
+                    logger.error(f"Error building Schwab cache: {e}", exc_info=True)
+                    # Continue without cache - positions will use fallback calculation
             
-            accounts = db.query(BrokerageAccount).all()
-            bots = db.query(Bot).all()
+            # Calculate per-account and overall summaries (matching looptrader-pro)
+            from collections import defaultdict
+            account_groups = defaultdict(list)
+            for pos_data in position_data:
+                account_name = pos_data['account_name']
+                account_groups[account_name].append(pos_data)
+            
+            account_summaries = {}
+            total_pnl = 0.0
+            total_count = 0
+            total_winning = 0
+            total_losing = 0
+            total_pnl_pct_sum = 0.0  # For calculating average percentage
+            
+            for account_name, positions_list in account_groups.items():
+                account_pnl = 0.0
+                account_positions_active = [p for p in positions_list if p['position'].active]
+                for p in account_positions_active:
+                    try:
+                        account_pnl += p['position'].current_pnl
+                    except Exception as e:
+                        logger.warning(f"Error calculating P&L for position {p['position'].id}: {e}")
+                        continue
+                
+                account_avg_pct = 0.0
+                if account_positions_active:
+                    pct_sum = 0.0
+                    pct_count = 0
+                    for p in account_positions_active:
+                        try:
+                            pct_sum += p['position'].current_pnl_percent
+                            pct_count += 1
+                        except Exception as e:
+                            logger.warning(f"Error calculating P&L % for position {p['position'].id}: {e}")
+                            continue
+                    account_avg_pct = (pct_sum / pct_count) if pct_count > 0 else 0.0
+                
+                account_winning = 0
+                account_losing = 0
+                for p in account_positions_active:
+                    try:
+                        if p['position'].current_pnl > 0:
+                            account_winning += 1
+                        elif p['position'].current_pnl < 0:
+                            account_losing += 1
+                    except Exception as e:
+                        logger.warning(f"Error checking win/loss for position {p['position'].id}: {e}")
+                        continue
+                
+                account_summaries[account_name] = {
+                    'pnl': account_pnl,
+                    'avg_pct': account_avg_pct,
+                    'winning': account_winning,
+                    'losing': account_losing,
+                    'count': len(account_positions_active)
+                }
+                
+                total_pnl += account_pnl
+                total_count += len(account_positions_active)
+                total_winning += account_winning
+                total_losing += account_losing
+                for p in account_positions_active:
+                    try:
+                        total_pnl_pct_sum += p['position'].current_pnl_percent
+                    except Exception as e:
+                        logger.warning(f"Error calculating total P&L % for position {p['position'].id}: {e}")
+                        continue
+            
+            # Calculate overall average P&L percentage
+            avg_pnl_pct = (total_pnl_pct_sum / total_count) if total_count > 0 else 0.0
+            
+            # Sort positions by P&L percentage (worst to best, matching looptrader-pro)
+            def get_sort_key(x):
+                if not x['position'].active:
+                    return float('inf')
+                try:
+                    return x['position'].current_pnl_percent
+                except Exception as e:
+                    logger.warning(f"Error getting P&L % for sorting position {x['position'].id}: {e}")
+                    return 0.0
+            position_data.sort(key=get_sort_key)
             
             # Pass the active_only flag to template for button styling
+            # Ensure active_only is a boolean
+            active_only_bool = (active_only == 'true') if active_only else False
+            
             return render_template('positions/list.html', 
-                                 positions=positions, 
+                                 positions=valid_positions,
+                                 position_data=position_data,  # Enhanced data
                                  accounts=accounts, 
                                  bots=bots,
-                                 active_only=(active_only == 'true'))
+                                 account_summaries=account_summaries,
+                                 total_pnl=total_pnl,
+                                 total_count=total_count,
+                                 total_winning=total_winning,
+                                 total_losing=total_losing,
+                                 avg_pnl_pct=avg_pnl_pct,
+                                 active_only=active_only_bool)
         finally:
             db.close()
     except Exception as e:
-        import traceback
-        print(f"Error in positions route: {str(e)}")
-        print(traceback.format_exc())
+        logger.error(f"Error in positions route: {str(e)}", exc_info=True)
         flash(f'Error loading positions: {str(e)}', 'danger')
-        return render_template('positions/list.html', positions=[], accounts=[], bots=[], active_only=False)
+        return render_template('positions/list.html', 
+                             positions=[], 
+                             position_data=[],
+                             accounts=[], 
+                             bots=[],
+                             account_summaries={},
+                             total_pnl=0.0,
+                             total_count=0,
+                             total_winning=0,
+                             total_losing=0,
+                             avg_pnl_pct=0.0,
+                             active_only=False)
 
 @app.route('/risk')
 @login_required
 def risk():
-    """Display portfolio-level risk metrics"""
+    """Display portfolio-level risk metrics matching looptrader-pro's /risk command"""
     try:
         db = SessionLocal()
         try:
             from sqlalchemy.orm import joinedload
             
-            # Query active positions
-            print("Risk page: Querying active positions...")
-            try:
-                # First check all positions to debug
-                all_positions = db.query(Position).all()
-                print(f"Risk page: Total positions in database: {len(all_positions)}")
-                for p in all_positions[:5]:  # Show first 5
-                    print(f"  Position {p.id}: active={p.active}, bot={p.bot.name if p.bot else 'None'}")
-                
-                # Eagerly load orders with their legs and instruments
-                active_positions = db.query(Position).options(
-                    joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument)
-                ).filter_by(active=True).all()
-                
-                print(f"Risk page: Active positions found: {len(active_positions)}")
-            except Exception as e:
-                print(f"Risk page: Error with eager loading, falling back to lazy loading: {e}")
-                # Fallback to simple query without eager loading
-                all_positions = db.query(Position).all()
-                active_positions = db.query(Position).filter_by(active=True).all()
-                print(f"Risk page: Total positions: {len(all_positions)}, Active: {len(active_positions)}")
-            
+            # Query positions matching looptrader-pro's /risk command approach
+            # Get all bots first, then get active position for each bot
+            # This ensures we only process positions that have valid opening orders
             bots = db.query(Bot).all()
             accounts = db.query(BrokerageAccount).all()
             
-            position_count = len(active_positions)
+            # Collect valid active positions by querying through bots
+            # This matches looptrader-pro's approach: bot_repo.get_active_position_by_bot(bot.id)
+            active_positions = []
+            for bot in bots:
+                try:
+                    # Get active position for this bot
+                    db_position = db.query(Position).options(
+                        joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument),
+                        joinedload(Position.bot)
+                    ).filter(
+                        Position.bot_id == bot.id,
+                        Position.active == True
+                    ).first()
+                    
+                    if db_position is None or not db_position.active:
+                        continue
+                    
+                    # Validate position has opening order with orderLegCollection (matches looptrader-pro)
+                    opening_order = next(
+                        (order for order in db_position.orders if hasattr(order, 'isOpenPosition') and order.isOpenPosition),
+                        None
+                    )
+                    
+                    if opening_order is None or not opening_order.orderLegCollection:
+                        logger.warning(f"Bot {bot.id} ({bot.name}) has position {db_position.id} but no valid opening order, skipping")
+                        continue
+                    
+                    # Position is valid, add to list
+                    active_positions.append(db_position)
+                    
+                except Exception as e:
+                    logger.error(f"Error processing bot {bot.id} ({bot.name}): {e}", exc_info=True)
+                    continue
             
-            print(f"Risk page: Found {position_count} active positions out of {len(all_positions)} total")
+            position_count = len(active_positions)
+            logger.info(f"Found {position_count} valid active positions (queried through {len(bots)} bots)")
             
             # Build Schwab cache to avoid multiple API calls
             if position_count > 0:
-                print(f"Risk page: Building Schwab cache for {position_count} positions")
                 from models.database import build_schwab_cache_for_positions
                 schwab_cache = build_schwab_cache_for_positions(active_positions)
-                print(f"Risk page: Schwab cache built with {len(schwab_cache)} position entries")
+                logger.debug(f"Schwab cache built with {len(schwab_cache)} position entries")
                 
                 # Inject cache into each position
                 for position in active_positions:
@@ -735,31 +959,30 @@ def risk():
                     
                     if api_key and app_secret:
                         schwab_client = client_from_token_file(token_path, api_key, app_secret)
-                        print("Risk page: Schwab client initialized for live Greeks")
+                        logger.debug("Schwab client initialized for live Greeks")
                     else:
-                        print("Risk page: Missing SCHWAB credentials")
+                        logger.warning("Missing SCHWAB credentials")
                 else:
-                    print(f"Risk page: No token.json found at {token_path}")
+                    logger.warning(f"No token.json found at {token_path}")
             except Exception as e:
-                print(f"Risk page: Failed to initialize Schwab client: {e}")
+                logger.error(f"Failed to initialize Schwab client: {e}", exc_info=True)
             
-            # Calculate totals using live broker Greeks
-            # NOTE: Following looptrader-pro pattern:
-            # - total_premium_open: current market value (cost to close)
-            # - total_cost_basis: abs(initial premium) for percentage calculation
-            total_premium_open = 0.0  # Current cost to close positions
-            total_cost_basis = 0.0     # Initial investment (for percentage)
+            # Initialize aggregates matching looptrader-pro's /risk command
             total_delta = 0.0
             total_gamma = 0.0
             total_theta = 0.0
             total_vega = 0.0
+            total_notional_risk = 0.0  # Max risk from spread widths (matches looptrader-pro)
+            total_premium_open = 0.0  # Current market value (cost to close)
             total_pnl = 0.0
+            total_cost_basis = 0.0  # Initial investment (for percentage)
             
             best_position = None
             worst_position = None
             best_pnl_pct = float('-inf')
             worst_pnl_pct = float('inf')
             
+            # Underlying concentration: track count per underlying (matches looptrader-pro)
             underlying_concentration = {}
             
             # Cache Greeks to avoid duplicate broker calls
@@ -767,6 +990,16 @@ def risk():
             
             for pos in active_positions:
                 try:
+                    # Get opening order (already validated above)
+                    opening_order = next(
+                        (o for o in pos.orders if hasattr(o, 'isOpenPosition') and o.isOpenPosition),
+                        None
+                    )
+                    
+                    if not opening_order or not opening_order.orderLegCollection:
+                        logger.warning(f"Position {pos.id} missing opening order, skipping")
+                        continue
+                    
                     # Initial premium (signed: positive for credit, negative for debit)
                     initial_premium = pos.initial_premium_sold
                     # Current market value (cost to close position)
@@ -774,15 +1007,45 @@ def risk():
                     # Cost basis for percentage calculation (always positive)
                     cost_basis = abs(initial_premium)
                     
-                    print(f"Position {pos.id}: Initial=${initial_premium:.2f}, Current=${current_open_premium:.2f}, CostBasis=${cost_basis:.2f}")
-                    
                     total_premium_open += current_open_premium
                     total_cost_basis += cost_basis
+                    
+                    # Calculate notional risk (spread width * quantity * 100) matching looptrader-pro
+                    # Extract strikes from order legs to calculate spread width
+                    # Note: Instrument model doesn't have strikePrice, so we parse from symbol
+                    strikes = []
+                    for leg in opening_order.orderLegCollection:
+                        if leg.instrument and leg.instrument.symbol:
+                            # Parse strike from symbol: SPX_12345678C00500000 -> 5000.0
+                            # Format: SYMBOL_YYYYMMDDCPPPPPPPP where PPPPPPPP is strike * 1000
+                            symbol = leg.instrument.symbol
+                            try:
+                                if len(symbol) >= 7:
+                                    strike_part = symbol[-7:]  # Last 7 characters
+                                    strike_value = float(strike_part) / 1000
+                                    strikes.append(strike_value)
+                            except (ValueError, IndexError):
+                                # If parsing fails, try to get from description or skip
+                                logger.warning(f"Could not parse strike from symbol {symbol}")
+                                continue
+                    
+                    position_notional_risk = 0.0
+                    if len(strikes) >= 2:
+                        # For spreads, max risk is the width of the spread
+                        spread_width = abs(max(strikes) - min(strikes))
+                        quantity = opening_order.quantity if opening_order.quantity else opening_order.filledQuantity or 1
+                        position_notional_risk = spread_width * quantity * 100
+                    elif len(strikes) == 1:
+                        # For single legs (naked options), use strike as notional
+                        quantity = opening_order.quantity if opening_order.quantity else opening_order.filledQuantity or 1
+                        position_notional_risk = strikes[0] * quantity * 100
+                    
+                    total_notional_risk += position_notional_risk
                     
                     # Greeks from live broker quotes (cache for reuse)
                     greeks = pos.get_greeks_from_broker(schwab_client)
                     greeks_cache[pos.id] = greeks
-                    print(f"Position {pos.id}: Greeks = Δ{greeks['delta']:.2f}, Γ{greeks['gamma']:.3f}, Θ{greeks['theta']:.2f}, V{greeks['vega']:.2f}")
+                    logger.debug(f"Position {pos.id}: Greeks = Δ{greeks['delta']:.2f}, Γ{greeks['gamma']:.3f}, Θ{greeks['theta']:.2f}, V{greeks['vega']:.2f}, Notional=${position_notional_risk:.2f}")
                     
                     total_delta += greeks['delta']
                     total_gamma += greeks['gamma']
@@ -803,40 +1066,41 @@ def risk():
                         worst_pnl_pct = pnl_pct
                         worst_position = (pos.bot.name if pos.bot else f"Position {pos.id}", pnl, pnl_pct)
                     
-                    # Underlying concentration
-                    opening_order = next((o for o in pos.orders if hasattr(o, 'isOpenPosition') and o.isOpenPosition), None)
-                    if opening_order and hasattr(opening_order, 'orderLegCollection'):
-                        for leg in opening_order.orderLegCollection:
-                            if leg.instrument and leg.instrument.underlyingSymbol:
-                                underlying = leg.instrument.underlyingSymbol
-                                if underlying not in underlying_concentration:
-                                    underlying_concentration[underlying] = {
-                                        'delta': 0.0,
-                                        'cost_basis': 0.0,
-                                        'positions': 0
-                                    }
-                                underlying_concentration[underlying]['delta'] += greeks['delta']
-                                underlying_concentration[underlying]['cost_basis'] += cost_basis
-                                underlying_concentration[underlying]['positions'] += 1
+                    # Underlying concentration (matches looptrader-pro: just count positions)
+                    # Determine underlying symbol from first leg
+                    underlying_symbol = "UNKNOWN"
+                    if opening_order.orderLegCollection:
+                        first_leg = opening_order.orderLegCollection[0]
+                        if first_leg.instrument:
+                            # Extract underlying from symbol (remove option suffixes)
+                            symbol = first_leg.instrument.symbol if hasattr(first_leg.instrument, 'symbol') else ""
+                            if symbol:
+                                # Symbol format: SPX_12345678C00500000 -> SPX
+                                underlying_symbol = symbol.split("_")[0] if "_" in symbol else symbol
+                    
+                    if underlying_symbol not in underlying_concentration:
+                        underlying_concentration[underlying_symbol] = 0
+                    underlying_concentration[underlying_symbol] += 1
                     
                 except Exception as e:
-                    print(f"Error calculating metrics for position {pos.id}: {e}")
-                    import traceback
-                    traceback.print_exc()
+                    logger.error(f"Error calculating metrics for position {pos.id}: {e}", exc_info=True)
+                    continue  # Skip this position but continue with others
             
-            print(f"Risk page: Total premium_open = ${total_premium_open:.2f}, Cost_basis = ${total_cost_basis:.2f}, Total Greeks: Δ{total_delta:.2f}, Γ{total_gamma:.3f}, Θ{total_theta:.2f}, V{total_vega:.2f}")
+            logger.debug(f"Total premium_open = ${total_premium_open:.2f}, Cost_basis = ${total_cost_basis:.2f}, Total Greeks: Δ{total_delta:.2f}, Γ{total_gamma:.3f}, Θ{total_theta:.2f}, V{total_vega:.2f}")
             
-            # Group by account
+            # Group by account (for aggregate mode)
             account_metrics = {}
             for account in accounts:
                 account_positions = [p for p in active_positions if p.account_id == account.account_id]
                 account_premium_open = 0.0
                 account_cost_basis = 0.0
+                account_notional_risk = 0.0
                 account_delta = 0.0
                 account_gamma = 0.0
                 account_theta = 0.0
                 account_vega = 0.0
                 account_pnl = 0.0
+                account_underlyings = {}  # Track underlying concentration per account
                 
                 for p in account_positions:
                     try:
@@ -845,6 +1109,44 @@ def risk():
                         current_open = p.current_open_premium
                         account_premium_open += current_open
                         account_cost_basis += abs(initial_prem)
+                        
+                        # Calculate notional risk for this position
+                        opening_order = next(
+                            (o for o in p.orders if hasattr(o, 'isOpenPosition') and o.isOpenPosition),
+                            None
+                        )
+                        if opening_order and opening_order.orderLegCollection:
+                            strikes = []
+                            for leg in opening_order.orderLegCollection:
+                                if leg.instrument and leg.instrument.symbol:
+                                    # Parse strike from symbol (same as portfolio totals)
+                                    symbol = leg.instrument.symbol
+                                    try:
+                                        if len(symbol) >= 7:
+                                            strike_part = symbol[-7:]
+                                            strike_value = float(strike_part) / 1000
+                                            strikes.append(strike_value)
+                                    except (ValueError, IndexError):
+                                        continue
+                            
+                            if len(strikes) >= 2:
+                                spread_width = abs(max(strikes) - min(strikes))
+                                quantity = opening_order.quantity if opening_order.quantity else opening_order.filledQuantity or 1
+                                account_notional_risk += spread_width * quantity * 100
+                            elif len(strikes) == 1:
+                                quantity = opening_order.quantity if opening_order.quantity else opening_order.filledQuantity or 1
+                                account_notional_risk += strikes[0] * quantity * 100
+                            
+                            # Track underlying concentration for this account
+                            if opening_order.orderLegCollection:
+                                first_leg = opening_order.orderLegCollection[0]
+                                if first_leg.instrument:
+                                    symbol = first_leg.instrument.symbol if hasattr(first_leg.instrument, 'symbol') else ""
+                                    if symbol:
+                                        underlying_symbol = symbol.split("_")[0] if "_" in symbol else symbol
+                                        if underlying_symbol not in account_underlyings:
+                                            account_underlyings[underlying_symbol] = 0
+                                        account_underlyings[underlying_symbol] += 1
                         
                         # Use cached Greeks to avoid duplicate broker calls
                         greeks = greeks_cache.get(p.id, {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0})
@@ -855,24 +1157,9 @@ def risk():
                         
                         account_pnl += p.current_pnl
                     except Exception as e:
-                        print(f"Error calculating account metrics for position {p.id}: {e}")
+                        logger.error(f"Error calculating account metrics for position {p.id}: {e}", exc_info=True)
                 
-                print(f"Account {account.name}: {len(account_positions)} positions, open=${account_premium_open:.2f}, cost_basis=${account_cost_basis:.2f}, Δ{account_delta:.2f}")
-                
-                # Get underlying concentration for this account
-                account_underlyings = {}
-                for p in account_positions:
-                    opening_order = next((o for o in p.orders if hasattr(o, 'isOpenPosition') and o.isOpenPosition), None)
-                    if opening_order and hasattr(opening_order, 'orderLegCollection'):
-                        for leg in opening_order.orderLegCollection:
-                            if leg.instrument and leg.instrument.underlyingSymbol:
-                                underlying = leg.instrument.underlyingSymbol
-                                if underlying not in account_underlyings:
-                                    account_underlyings[underlying] = {'delta': 0.0, 'positions': 0}
-                                # Use cached Greeks
-                                p_greeks = greeks_cache.get(p.id, {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0})
-                                account_underlyings[underlying]['delta'] += p_greeks['delta']
-                                account_underlyings[underlying]['positions'] += 1
+                logger.debug(f"Account {account.name}: {len(account_positions)} positions, open=${account_premium_open:.2f}, cost_basis=${account_cost_basis:.2f}, notional=${account_notional_risk:.2f}, Δ{account_delta:.2f}")
                 
                 account_metrics[account.account_id] = {
                     'name': account.name,
@@ -883,7 +1170,7 @@ def risk():
                     'gamma': account_gamma,
                     'theta': account_theta,
                     'vega': account_vega,
-                    'notional_risk': account_cost_basis,  # Use cost basis as notional risk
+                    'notional_risk': account_notional_risk,  # Actual notional risk (spread width)
                     'pnl': account_pnl,
                     'underlying_concentration': account_underlyings
                 }
@@ -891,17 +1178,9 @@ def risk():
             # Calculate total P&L percentage using cost basis (following looptrader-pro pattern)
             total_pnl_pct = (total_pnl / total_cost_basis) * 100 if total_cost_basis > 0.01 else 0.0
             
-            # Format underlying concentration
-            underlying_list = [
-                {
-                    'symbol': symbol,
-                    'delta': data['delta'],
-                    'cost_basis': data['cost_basis'],
-                    'positions': data['positions']
-                }
-                for symbol, data in underlying_concentration.items()
-            ]
-            underlying_list.sort(key=lambda x: abs(x['delta']), reverse=True)
+            # Format underlying concentration for template (matches looptrader-pro: just count)
+            # Template expects list of tuples: [(symbol, count), ...]
+            underlying_list = sorted(underlying_concentration.items(), key=lambda x: x[1], reverse=True)
             
             warnings = []
             if position_count > 0 and total_cost_basis == 0:
@@ -920,7 +1199,7 @@ def risk():
                 total_gamma=total_gamma,
                 total_theta=total_theta,
                 total_vega=total_vega,
-                total_notional_risk=total_cost_basis,
+                total_notional_risk=total_notional_risk,  # Use actual notional risk (spread width)
                 total_premium=total_premium_open,
                 total_cost_basis=total_cost_basis,
                 total_pnl=total_pnl,
@@ -935,9 +1214,11 @@ def risk():
             db.close()
     except Exception as e:
         import traceback
-        print(f"Error in risk route: {str(e)}")
-        print(traceback.format_exc())
+        error_trace = traceback.format_exc()
+        logger.error(f"Error in risk route: {str(e)}", exc_info=True)
         flash(f'Error loading risk data: {str(e)}', 'danger')
+        
+        # Return template with error information instead of silently showing "no positions"
         return render_template(
             'risk/risk.html',
             aggregate=False,
@@ -954,7 +1235,7 @@ def risk():
             best_position=None,
             worst_position=None,
             underlying_concentration=[],
-            warnings=[],
+            warnings=[f'Error loading risk data: {str(e)}'],  # Show error in warnings
             account_metrics={}
         )
 
@@ -3154,8 +3435,13 @@ def calculate_total_premium_opened():
     finally:
         db.close()
 
-def calculate_account_premium_metrics(account_number):
-    """Calculate premium metrics for a specific account matching looptrader-pro logic"""
+def calculate_account_premium_metrics(account_number, liquidation_value=None):
+    """Calculate premium metrics for a specific account matching looptrader-pro logic
+    
+    Args:
+        account_number: Account number string
+        liquidation_value: Optional account Net Liquidation Value for percentage calculation
+    """
     try:
         db = SessionLocal()
         
@@ -3200,11 +3486,13 @@ def calculate_account_premium_metrics(account_number):
             Position.account_id == account.account_id
         ).all()
         
-        # Build Schwab cache for accurate P&L calculation (matches looptrader-pro)
+        # Build Schwab cache for accurate real-time P&L calculation (matches looptrader-pro)
+        # This cache provides current market values from Schwab API, ensuring accuracy
         from models.database import build_schwab_cache_for_positions
         schwab_cache = build_schwab_cache_for_positions(active_positions)
         
-        # Inject cache into positions
+        # Inject cache into positions BEFORE accessing current_open_premium or current_pnl
+        # This ensures position.current_open_premium uses real-time quotes when available
         for position in active_positions:
             position._schwab_cache = schwab_cache
         
@@ -3212,16 +3500,23 @@ def calculate_account_premium_metrics(account_number):
         current_open_premium = 0.0
         total_pnl = 0.0
         
-        # Calculate using looptrader-pro logic (position.current_pnl uses cache)
+        # Calculate using looptrader-pro logic (matches /positions command calculation)
         # CRITICAL: Use direct summation, NOT derived calculation
-        # Use abs() for premium_opened to get cost basis (always positive) - matches risk page pattern
+        # Use abs() for premium_opened to get cost basis (always positive) - matches looptrader-pro
         for position in active_positions:
             premium_opened += abs(position.initial_premium_sold)  # Cost basis (always positive)
             current_open_premium += position.current_open_premium  # Direct summation
-            total_pnl += position.current_pnl  # Uses looptrader-pro calculation
+            total_pnl += position.current_pnl  # Uses looptrader-pro calculation (matches /positions)
         
-        # Calculate percentage using cost basis (matches risk page pattern)
-        profit_loss_percent = (total_pnl / premium_opened * 100) if premium_opened > 0.01 else 0.0
+        # Calculate percentage based on account NLV if provided, otherwise use premium
+        if liquidation_value and liquidation_value > 0.01:
+            # Use NLV as the base for percentage calculation
+            profit_loss_percent = (total_pnl / liquidation_value * 100)
+        elif premium_opened > 0.01:
+            # Fallback to premium-based calculation if NLV not available
+            profit_loss_percent = (total_pnl / premium_opened * 100)
+        else:
+            profit_loss_percent = 0.0
         
         return {
             'premium_opened': premium_opened,
@@ -3476,13 +3771,15 @@ def get_schwab_accounts_detail():
                     short_market_value = current_balances.get('shortMarketValue', 0)
                     
                     # Calculate options-based P&L for this account
-                    account_metrics = calculate_account_premium_metrics(account_number)
+                    # Pass liquidation_value so percentage is calculated based on NLV
+                    account_liquidation_value = float(liquidation_value) if liquidation_value else 0
+                    account_metrics = calculate_account_premium_metrics(account_number, liquidation_value=account_liquidation_value)
                     
                     detailed_accounts.append({
                         'account_hash': account_hash,
                         'account_number': account_number,
                         'account_type': account_type,
-                        'liquidation_value': float(liquidation_value) if liquidation_value else 0,
+                        'liquidation_value': account_liquidation_value,
                         'cash_balance': float(cash_balance) if cash_balance else 0,
                         'buying_power': float(buying_power) if buying_power else 0,
                         'todays_pnl': account_metrics['profit_loss'],
@@ -3499,26 +3796,31 @@ def get_schwab_accounts_detail():
         # Calculate totals
         total_value = sum(acc['liquidation_value'] for acc in detailed_accounts)
         
-        # Calculate current P&L using position.current_pnl (matches looptrader-pro)
+        # Calculate totals matching looptrader-pro's /positions command calculation
+        # This ensures the accounts page shows the same values as the Telegram command
         db = SessionLocal()
         active_positions = db.query(Position).filter_by(active=True).all()
         
-        # Build Schwab cache for accurate P&L calculation
+        # Build Schwab cache for accurate real-time P&L calculation (matches looptrader-pro)
+        # This cache provides current market values from Schwab API, ensuring accuracy
         schwab_cache = build_schwab_cache_for_positions(active_positions)
         
-        # Inject Schwab cache into positions
+        # Inject Schwab cache into positions BEFORE accessing current_open_premium or current_pnl
+        # This ensures position.current_open_premium uses real-time quotes when available
         for pos in active_positions:
             pos._schwab_cache = schwab_cache
         
-        # Correctly calculate totals by summing from each position (following risk page pattern)
+        # Calculate totals by summing from each position (matches looptrader-pro's approach)
         # Total premium opened: use abs() for cost basis (always positive)
+        # This matches how looptrader-pro calculates entry_credit for credit spreads
         total_premium_opened = sum(abs(pos.initial_premium_sold) for pos in active_positions)
         current_open_premium = sum(pos.current_open_premium for pos in active_positions)
         current_profit_loss = sum(pos.current_pnl for pos in active_positions)
         db.close()
         
-        # Calculate percentage using cost basis (matches risk page pattern)
-        current_profit_loss_percent = (current_profit_loss / total_premium_opened * 100) if total_premium_opened > 0.01 else 0.0
+        # Calculate percentage using total account NLV instead of premium
+        # This shows P&L as a percentage of total account value
+        current_profit_loss_percent = (current_profit_loss / total_value * 100) if total_value > 0.01 else 0.0
         
         return {
             'accounts': detailed_accounts,

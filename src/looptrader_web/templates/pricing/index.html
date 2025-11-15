@@ -201,8 +201,8 @@
                 <h3 class="card-title"><i class="fas fa-lightbulb mr-2"></i>Market Interpretation</h3>
               </div>
               <div class="card-body">
-                <ul id="gex-interpretation-list" class="mb-0">
-                </ul>
+                <div id="gex-interpretation-list" class="mb-0">
+                </div>
               </div>
             </div>
           </div>
@@ -253,6 +253,137 @@
 
 <script>
 let gexChart = null;
+
+// Format interpretation text with better structure
+function formatInterpretation(interpretation) {
+    if (!interpretation || interpretation.length === 0) return '';
+    
+    let html = '<div class="interpretation-content">';
+    let currentSection = null;
+    let inList = false;
+    
+    interpretation.forEach(function(line) {
+        if (!line || line.trim() === '') {
+            if (inList) {
+                html += '</ul>';
+                inList = false;
+            }
+            html += '<div class="mb-2"></div>'; // Spacing
+            return;
+        }
+        
+        // Check for section headers (lines with emojis and colons, or all caps, or specific patterns)
+        const hasEmojiHeader = /^[🎯📊💡🔄🌐⚡📈📉✅⚠️📍🔒📏💡📋]/.test(line);
+        const hasColon = line.includes(':') || line.includes('：');
+        const isAllCaps = line.toUpperCase() === line && line.length > 5 && line.length < 100;
+        const isHeader = (hasEmojiHeader && hasColon) || (isAllCaps && !line.includes('$') && !line.match(/\d/));
+        
+        // Check for separator lines
+        const isSeparator = /^[═=─\-]+$/.test(line.trim());
+        
+        if (isSeparator) {
+            if (inList) {
+                html += '</ul>';
+                inList = false;
+            }
+            return; // Skip separator lines
+        }
+        
+        if (isHeader) {
+            if (inList) {
+                html += '</ul>';
+                inList = false;
+            }
+            
+            // Clean up header text
+            let headerText = line.replace(/^[🎯📊💡🔄🌐⚡📈📉✅⚠️📍🔒📏💡📋]\s*/, '').replace(/[:：]$/, '');
+            
+            // Determine header level
+            if (headerText.toUpperCase() === headerText && headerText.length > 10) {
+                // Major section header
+                html += '<h5 class="mt-3 mb-2 text-primary"><strong>' + headerText + '</strong></h5>';
+            } else {
+                // Subsection header
+                html += '<h6 class="mt-2 mb-2 text-info"><strong>' + headerText + '</strong></h6>';
+            }
+            currentSection = headerText;
+        } else {
+            // Regular content line
+            if (!inList) {
+                html += '<ul class="list-unstyled mb-2">';
+                inList = true;
+            }
+            
+            // Clean up line and format
+            let cleanLine = line.trim();
+            
+            // Check if it's a bullet point (starts with • or -)
+            const isBullet = cleanLine.startsWith('•') || cleanLine.startsWith('-');
+            if (isBullet) {
+                cleanLine = cleanLine.substring(1).trim();
+            }
+            
+            // Remove leading emojis for cleaner display (but keep them if they're meaningful)
+            // Only remove if they're at the very start and followed by space
+            cleanLine = cleanLine.replace(/^[🎯📊💡🔄🌐⚡📈📉✅⚠️📍🔒📏💡📋]\s+/, '');
+            
+            // Format dollar amounts - use function to properly escape
+            cleanLine = cleanLine.replace(/\$(\d+\.?\d*)/g, function(match, num) {
+                return '<strong class="text-success">$' + num + '</strong>';
+            });
+            
+            // Format billion/million amounts with badges
+            cleanLine = cleanLine.replace(/(\d+\.?\d*)\s*B\b/g, '<span class="badge badge-info">$1B</span>');
+            cleanLine = cleanLine.replace(/(\d+\.?\d*)\s*M\b/g, '<span class="badge badge-secondary">$1M</span>');
+            
+            // Highlight key terms with better styling
+            const keyTerms = [
+                {term: 'POSITIVE GAMMA', class: 'text-success'},
+                {term: 'NEGATIVE GAMMA', class: 'text-danger'},
+                {term: 'REGIME', class: 'text-primary'},
+                {term: 'SUPPORT', class: 'text-info'},
+                {term: 'RESISTANCE', class: 'text-warning'},
+                {term: 'VOLATILITY', class: 'text-info'},
+                {term: 'GAMMA', class: 'text-info'}
+            ];
+            keyTerms.forEach(function(item) {
+                const regex = new RegExp('\\b(' + item.term + ')\\b', 'gi');
+                cleanLine = cleanLine.replace(regex, '<strong class="' + item.class + '">$1</strong>');
+            });
+            
+            // Use different icons for different content types
+            let iconClass = 'fas fa-chevron-right';
+            if (cleanLine.toLowerCase().includes('bias') || cleanLine.toLowerCase().includes('strategy')) {
+                iconClass = 'fas fa-lightbulb';
+            } else if (cleanLine.toLowerCase().includes('risk') || cleanLine.toLowerCase().includes('management')) {
+                iconClass = 'fas fa-shield-alt';
+            } else if (cleanLine.toLowerCase().includes('warning') || cleanLine.toLowerCase().includes('⚠')) {
+                iconClass = 'fas fa-exclamation-triangle';
+            }
+            
+            html += '<li class="mb-2"><i class="' + iconClass + ' text-muted mr-2" style="font-size: 0.75em;"></i><span class="text-dark">' + cleanLine + '</span></li>';
+        }
+    });
+    
+    if (inList) {
+        html += '</ul>';
+    }
+    
+    html += '</div>';
+    
+    // Add some custom styling for better readability
+    html += '<style>';
+    html += '.interpretation-content h5 { border-bottom: 2px solid #007bff; padding-bottom: 8px; margin-top: 20px; margin-bottom: 12px; }';
+    html += '.interpretation-content h5:first-child { margin-top: 0; }';
+    html += '.interpretation-content h6 { border-left: 3px solid #17a2b8; padding-left: 12px; margin-top: 15px; margin-bottom: 10px; }';
+    html += '.interpretation-content ul { padding-left: 0; margin-bottom: 15px; }';
+    html += '.interpretation-content li { padding: 8px 0; border-bottom: 1px solid #e9ecef; line-height: 1.6; }';
+    html += '.interpretation-content li:last-child { border-bottom: none; }';
+    html += '.interpretation-content li:hover { background-color: #f8f9fa; padding-left: 5px; transition: all 0.2s; }';
+    html += '</style>';
+    
+    return html;
+}
 
 $(document).ready(function() {
     $('#fetch-btn').click(function() {
@@ -437,10 +568,8 @@ function updateGEXStats(data) {
         
         // Update interpretation
         if (data.interpretation && data.interpretation.length > 0) {
-            let interpretationHtml = '';
-            data.interpretation.forEach(function(line) {
-                interpretationHtml += '<li>' + line + '</li>';
-            });
+            // Use the same formatting function (defined in analytics.html or inline here)
+            let interpretationHtml = formatInterpretation(data.interpretation);
             $('#gex-interpretation-list').html(interpretationHtml);
             $('#gex-interpretation').show();
         } else {
