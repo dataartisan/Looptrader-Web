@@ -1270,6 +1270,11 @@ _schwab_cache_store = {}
 _schwab_cache_timestamp = {}
 CACHE_TTL_SECONDS = 30  # Cache for 30 seconds
 
+# Positions cache for batch queries
+_positions_cache = {}
+_positions_cache_timestamp = {}
+POSITIONS_CACHE_TTL_SECONDS = int(os.getenv('POSITIONS_CACHE_TTL', 45))  # Default 45 seconds, configurable
+
 def build_schwab_cache_for_positions(positions):
     """Build a cache of Schwab account data with position-level matching
     
@@ -1439,6 +1444,87 @@ def build_schwab_cache_for_positions(positions):
         _schwab_cache_timestamp[cache_key] = current_time
     
     return cache
+
+def get_positions_batch(active_only=True, account_filter=None, include_closed=False):
+    """Get positions in a single batch query with caching.
+    
+    Uses SQLAlchemy ORM subquery to get one position per bot (most recent).
+    Database-agnostic implementation for portability.
+    
+    Args:
+        active_only: If True, only return active positions
+        account_filter: Optional account_id to filter by
+        include_closed: If True, include closed positions (only relevant if active_only=False)
+        
+    Returns:
+        List of Position objects with all relationships loaded
+    """
+    import time
+    import copy
+    from sqlalchemy import func, and_
+    from sqlalchemy.orm import joinedload
+    
+    # Normalize account_filter
+    if account_filter == '':
+        account_filter = None
+    if account_filter is not None:
+        try:
+            account_filter = int(account_filter)
+        except (ValueError, TypeError):
+            account_filter = None
+    
+    # Check cache first
+    cache_key = (active_only, account_filter, include_closed)
+    if cache_key in _positions_cache:
+        cache_age = time.time() - _positions_cache_timestamp.get(cache_key, 0)
+        if cache_age < POSITIONS_CACHE_TTL_SECONDS:
+            # Return deep copy to avoid mutations
+            return copy.deepcopy(_positions_cache[cache_key])
+    
+    db = SessionLocal()
+    try:
+        # Subquery: Get most recent position per bot_id
+        subq = db.query(
+            Position.bot_id,
+            func.max(Position.opened_datetime).label('max_date')
+        )
+        
+        if active_only:
+            subq = subq.filter(Position.active == True)
+        
+        if account_filter:
+            subq = subq.filter(Position.account_id == account_filter)
+        
+        subq = subq.group_by(Position.bot_id).subquery()
+        
+        # Main query: Join subquery to get full Position objects
+        query = db.query(Position).options(
+            joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument),
+            joinedload(Position.bot)
+        ).join(
+            subq,
+            and_(
+                Position.bot_id == subq.c.bot_id,
+                Position.opened_datetime == subq.c.max_date
+            )
+        )
+        
+        if active_only:
+            query = query.filter(Position.active == True)
+        
+        if account_filter:
+            query = query.filter(Position.account_id == account_filter)
+        
+        result = query.all()
+        
+        # Cache result (store original, return copy)
+        _positions_cache[cache_key] = result
+        _positions_cache_timestamp[cache_key] = time.time()
+        
+        return result
+    finally:
+        db.close()
+
 
 def get_dashboard_stats():
     """Get dashboard statistics with P&L calculation matching looptrader-pro logic"""

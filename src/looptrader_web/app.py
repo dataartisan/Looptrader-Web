@@ -629,45 +629,34 @@ def positions():
             status_filter = request.args.get('status')
             active_only = request.args.get('active_only')
             
-            # Query positions matching looptrader-pro's /positions command approach
-            # Get all bots first, then get active position for each bot
-            # This ensures we only process positions that have valid opening orders
-            bots = db.query(Bot).all()
-            accounts = db.query(BrokerageAccount).all()
+            # Query positions using batch query with caching
+            from models.database import get_positions_batch
             
-            # Collect valid positions by querying through bots (matches looptrader-pro)
+            # Normalize active_only parameter
+            active_only_bool = (active_only == 'true') if active_only else True
+            
+            # Get positions in a single batch query (with caching)
+            all_positions = get_positions_batch(
+                active_only=active_only_bool,
+                account_filter=account_filter,
+                include_closed=(not active_only_bool)
+            )
+            
+            # Get accounts for account name lookup (optimized with dict)
+            accounts = db.query(BrokerageAccount).all()
+            account_map = {acc.account_id: acc.name for acc in accounts}
+            
+            # Get bots for bot name lookup (optimized with dict)
+            bots = db.query(Bot).all()
+            bot_map = {bot.id: bot for bot in bots}
+            
+            # Collect valid positions and extract data
             valid_positions = []
             position_data = []  # Enhanced data with entry/current prices, strikes, etc.
             
-            for bot in bots:
+            for db_position in all_positions:
                 try:
-                    # Get active position for this bot
-                    db_position = db.query(Position).options(
-                        joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument),
-                        joinedload(Position.bot)
-                    ).filter(
-                        Position.bot_id == bot.id,
-                        Position.active == True
-                    ).first()
-                    
-                    # Apply active filter
-                    if active_only == 'true' and (db_position is None or not db_position.active):
-                        continue
-                    
-                    # If we want all positions, also check closed ones
-                    if active_only != 'true' and db_position is None:
-                        # Try to get any position for this bot (including closed)
-                        db_position = db.query(Position).options(
-                            joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument),
-                            joinedload(Position.bot)
-                        ).filter(
-                            Position.bot_id == bot.id
-                        ).order_by(Position.opened_datetime.desc()).first()
-                    
-                    if db_position is None:
-                        continue
-                    
-                    # Apply account filter
+                    # Apply account filter (already applied in batch query, but double-check)
                     if account_filter and str(db_position.account_id) != str(account_filter):
                         continue
                     
@@ -679,7 +668,8 @@ def positions():
                     
                     if opening_order is None or not opening_order.orderLegCollection or opening_order.price is None:
                         if db_position.active:
-                            logger.warning(f"Bot {bot.id} ({bot.name}) has position {db_position.id} but no valid opening order, skipping")
+                            bot_name = db_position.bot.name if db_position.bot else f"Bot {db_position.bot_id}"
+                            logger.warning(f"Bot {db_position.bot_id} ({bot_name}) has position {db_position.id} but no valid opening order, skipping")
                         continue
                     
                     # Position is valid, add to list
@@ -719,18 +709,19 @@ def positions():
                         duration_text = f"{hours}h {minutes}m"
                         entry_time_str = entry_time.strftime("%H:%M ET")
                     
-                    # Get account name
-                    account_name = "Unknown"
-                    for account in accounts:
-                        if account.account_id == db_position.account_id:
-                            account_name = account.name
-                            break
+                    # Get account name (optimized dictionary lookup)
+                    account_name = account_map.get(db_position.account_id, "Unknown")
+                    
+                    # Get bot info (optimized dictionary lookup)
+                    bot = bot_map.get(db_position.bot_id)
+                    bot_id = db_position.bot_id
+                    bot_name = bot.name if bot else f"Bot {bot_id}"
                     
                     # Store enhanced position data
                     position_data.append({
                         'position': db_position,
-                        'bot_id': bot.id,
-                        'bot_name': bot.name,
+                        'bot_id': bot_id,
+                        'bot_name': bot_name,
                         'account_name': account_name,
                         'account_id': db_position.account_id,
                         'strikes': strikes_str,
@@ -741,7 +732,9 @@ def positions():
                     })
                     
                 except Exception as e:
-                    logger.error(f"Error processing bot {bot.id} ({bot.name}): {e}", exc_info=True)
+                    bot_id = db_position.bot_id
+                    bot_name = db_position.bot.name if db_position.bot else f"Bot {bot_id}"
+                    logger.error(f"Error processing position {db_position.id} for bot {bot_id} ({bot_name}): {e}", exc_info=True)
                     continue
             
             logger.info(f"Found {len(valid_positions)} valid positions")
@@ -886,27 +879,20 @@ def risk():
         try:
             from sqlalchemy.orm import joinedload
             
-            # Query positions matching looptrader-pro's /risk command approach
-            # Get all bots first, then get active position for each bot
-            # This ensures we only process positions that have valid opening orders
-            bots = db.query(Bot).all()
+            # Query positions using batch query with caching
+            from models.database import get_positions_batch
+            
+            # Get accounts for account metrics grouping
             accounts = db.query(BrokerageAccount).all()
             
-            # Collect valid active positions by querying through bots
-            # This matches looptrader-pro's approach: bot_repo.get_active_position_by_bot(bot.id)
+            # Get all active positions in a single batch query (with caching)
+            all_positions = get_positions_batch(active_only=True)
+            
+            # Collect valid active positions (filter out those without valid opening orders)
             active_positions = []
-            for bot in bots:
+            for db_position in all_positions:
                 try:
-                    # Get active position for this bot
-                    db_position = db.query(Position).options(
-                        joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument),
-                        joinedload(Position.bot)
-                    ).filter(
-                        Position.bot_id == bot.id,
-                        Position.active == True
-                    ).first()
-                    
-                    if db_position is None or not db_position.active:
+                    if not db_position.active:
                         continue
                     
                     # Validate position has opening order with orderLegCollection (matches looptrader-pro)
@@ -916,18 +902,20 @@ def risk():
                     )
                     
                     if opening_order is None or not opening_order.orderLegCollection:
-                        logger.warning(f"Bot {bot.id} ({bot.name}) has position {db_position.id} but no valid opening order, skipping")
+                        bot_name = db_position.bot.name if db_position.bot else f"Bot {db_position.bot_id}"
+                        logger.warning(f"Bot {db_position.bot_id} ({bot_name}) has position {db_position.id} but no valid opening order, skipping")
                         continue
                     
                     # Position is valid, add to list
                     active_positions.append(db_position)
                     
                 except Exception as e:
-                    logger.error(f"Error processing bot {bot.id} ({bot.name}): {e}", exc_info=True)
+                    bot_name = db_position.bot.name if db_position.bot else f"Bot {db_position.bot_id}"
+                    logger.error(f"Error processing bot {db_position.bot_id} ({bot_name}): {e}", exc_info=True)
                     continue
             
             position_count = len(active_positions)
-            logger.info(f"Found {position_count} valid active positions (queried through {len(bots)} bots)")
+            logger.info(f"Found {position_count} valid active positions (from batch query with caching)")
             
             # Build Schwab cache to avoid multiple API calls
             if position_count > 0:
@@ -2896,6 +2884,97 @@ def add_trailing_stops():
     except Exception as e:
         flash(f'Error loading manage trailing stops page: {str(e)}', 'danger')
         return render_template('trailing_stops/add.html', bots=[])
+
+# Webhook endpoints (no authentication required - internal use only)
+@app.route('/api/webhook/unpause-bot', methods=['POST'])
+def webhook_unpause_bot():
+    """
+    Webhook endpoint to unpause a bot by name.
+    
+    Accepts bot name via JSON body or query parameter.
+    No authentication required - for internal use only.
+    
+    Request formats:
+    - JSON: {"bot_name": "BotName"}
+    - Query: ?bot_name=BotName
+    
+    Returns JSON response with success/error status.
+    """
+    try:
+        # Extract bot name from request (JSON body or query parameter)
+        bot_name = None
+        
+        # Try JSON body first
+        if request.is_json:
+            data = request.get_json()
+            bot_name = data.get('bot_name') if data else None
+        
+        # Fall back to query parameter if not in body
+        if not bot_name:
+            bot_name = request.args.get('bot_name')
+        
+        # Validate bot name is provided
+        if not bot_name:
+            logger.warning("Webhook unpause-bot called without bot_name parameter")
+            return jsonify({
+                'success': False,
+                'message': 'bot_name parameter is required',
+                'error': 'MISSING_PARAMETER'
+            }), 400
+        
+        # Trim whitespace
+        bot_name = bot_name.strip()
+        if not bot_name:
+            return jsonify({
+                'success': False,
+                'message': 'bot_name cannot be empty',
+                'error': 'INVALID_PARAMETER'
+            }), 400
+        
+        # Query database for bot by name (case-insensitive)
+        db = SessionLocal()
+        try:
+            # Use ilike for case-insensitive matching (PostgreSQL)
+            # For other databases, use lower() comparison
+            from sqlalchemy import func
+            bot = db.query(Bot).filter(func.lower(Bot.name) == func.lower(bot_name)).first()
+            
+            if not bot:
+                logger.warning(f"Webhook unpause-bot: Bot '{bot_name}' not found")
+                return jsonify({
+                    'success': False,
+                    'message': f"Bot '{bot_name}' not found",
+                    'error': 'NOT_FOUND'
+                }), 404
+            
+            # Update bot paused state (matching looptrader-pro /resume command behavior)
+            # Note: /resume command only updates paused flag, it does NOT change the state
+            bot.paused = False
+            
+            db.commit()
+            
+            logger.info(f"Webhook unpause-bot: Bot '{bot.name}' (ID: {bot.id}) resumed successfully. Paused: {bot.paused}, State: {bot.state}")
+            
+            return jsonify({
+                'success': True,
+                'message': f"Bot '{bot.name}' resumed successfully",
+                'bot_id': bot.id,
+                'bot_name': bot.name,
+                'paused': False,
+                'state': bot.state,
+                'note': 'Bot will start automatically within 30 seconds if not already running (matches /resume command behavior)'
+            }), 200
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Webhook unpause-bot error: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': f'Internal server error: {str(e)}',
+            'error': 'INTERNAL_ERROR'
+        }), 500
 
 # API endpoints for AJAX calls
 @app.route('/api/stats')
