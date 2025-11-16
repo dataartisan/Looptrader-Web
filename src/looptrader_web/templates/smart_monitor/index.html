@@ -1,0 +1,635 @@
+{% extends "base.html" %}
+
+{% block title %}Smart Monitor Trigger - {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="content-wrapper">
+  <!-- Content Header -->
+  <div class="content-header">
+    <div class="container-fluid">
+      <div class="row mb-2">
+        <div class="col-sm-6">
+          <h1 class="m-0">Smart Monitor Trigger</h1>
+        </div>
+        <div class="col-sm-6">
+          <ol class="breadcrumb float-sm-right">
+            <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Home</a></li>
+            <li class="breadcrumb-item active">Smart Monitor Trigger</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main content -->
+  <section class="content">
+    <div class="container-fluid">
+      
+      <!-- Status Card -->
+      <div class="row">
+        <div class="col-md-12">
+          <div class="card card-primary">
+            <div class="card-header">
+              <h3 class="card-title"><i class="fas fa-chart-line mr-2"></i>Threshold Monitor Status</h3>
+            </div>
+            <div class="card-body">
+              <div class="row">
+                <div class="col-md-4">
+                  <div class="info-box">
+                    <span class="info-box-icon bg-info"><i class="fas fa-power-off"></i></span>
+                    <div class="info-box-content">
+                      <span class="info-box-text">Status</span>
+                      <span class="info-box-number" id="monitor-status">
+                        <span class="badge badge-secondary">Checking...</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="info-box">
+                    <span class="info-box-icon bg-success"><i class="fas fa-dollar-sign"></i></span>
+                    <div class="info-box-content">
+                      <span class="info-box-text">Latest SPX Spot Price</span>
+                      <span class="info-box-number" id="last-price">
+                        <span class="text-muted">-</span>
+                      </span>
+                      <small class="text-muted" id="price-timestamp"></small>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="info-box">
+                    <span class="info-box-icon bg-warning"><i class="fas fa-clock"></i></span>
+                    <div class="info-box-content">
+                      <span class="info-box-text">Last Check</span>
+                      <span class="info-box-number" id="last-check">
+                        <span class="text-muted">-</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="row mt-3">
+                <div class="col-md-12">
+                  <button id="btn-start" class="btn btn-success btn-lg mr-2" onclick="startMonitor()">
+                    <i class="fas fa-play mr-2"></i>Start Threshold Monitor
+                  </button>
+                  <button id="btn-stop" class="btn btn-danger btn-lg" onclick="stopMonitor()" disabled>
+                    <i class="fas fa-stop mr-2"></i>Stop Threshold Monitor
+                  </button>
+                </div>
+              </div>
+              
+              <!-- Latest Spot Prices Display -->
+              <div class="row mt-4">
+                <div class="col-md-12">
+                  <div class="card card-outline card-info">
+                    <div class="card-header">
+                      <h3 class="card-title"><i class="fas fa-chart-area mr-2"></i>Latest Spot Prices</h3>
+                    </div>
+                    <div class="card-body">
+                      <div class="table-responsive">
+                        <table class="table table-bordered table-striped">
+                          <thead>
+                            <tr>
+                              <th>Symbol</th>
+                              <th>Latest Spot Price</th>
+                              <th>Last Updated</th>
+                              <th>Status</th>
+                            </tr>
+                          </thead>
+                          <tbody id="spot-prices-table">
+                            <tr>
+                              <td><strong>SPX</strong></td>
+                              <td id="spot-price-value" class="text-center">
+                                <span class="text-muted">-</span>
+                              </td>
+                              <td id="spot-price-time" class="text-center">
+                                <span class="text-muted">-</span>
+                              </td>
+                              <td id="spot-price-status" class="text-center">
+                                <span class="badge badge-secondary">Waiting...</span>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Last Trigger Card -->
+      <div class="row">
+        <div class="col-md-12">
+          <div class="card card-warning">
+            <div class="card-header">
+              <h3 class="card-title"><i class="fas fa-bell mr-2"></i>Last Trigger Notification</h3>
+            </div>
+            <div class="card-body" id="last-trigger-card">
+              <div class="alert alert-info">
+                <i class="fas fa-info-circle mr-2"></i>No triggers yet. Monitor will display notifications here when thresholds are crossed.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Threshold Levels Card -->
+      <div class="row">
+        <div class="col-md-12">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title"><i class="fas fa-bullseye mr-2"></i>Threshold Levels & Bot Mappings</h3>
+            </div>
+            <div class="card-body">
+              <div class="row">
+                <!-- Put Thresholds -->
+                <div class="col-md-6">
+                  <h5 class="text-danger"><i class="fas fa-arrow-down mr-2"></i>Put Thresholds</h5>
+                  {% if thresholds and thresholds.puts %}
+                  <div class="table-responsive">
+                    <table class="table table-sm table-bordered">
+                      <thead class="thead-light">
+                        <tr>
+                          <th>Level</th>
+                          <th>Bot Name</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for put in thresholds.puts|sort(attribute='level', reverse=True) %}
+                        <tr>
+                          <td><strong>${{ put.level }}</strong></td>
+                          <td><span class="badge badge-danger">{{ put.bot_name }}</span></td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                  {% else %}
+                  <p class="text-muted">No put thresholds configured.</p>
+                  {% endif %}
+                </div>
+                
+                <!-- Call Thresholds -->
+                <div class="col-md-6">
+                  <h5 class="text-success"><i class="fas fa-arrow-up mr-2"></i>Call Thresholds</h5>
+                  {% if thresholds and thresholds.calls %}
+                  <div class="table-responsive">
+                    <table class="table table-sm table-bordered">
+                      <thead class="thead-light">
+                        <tr>
+                          <th>Level</th>
+                          <th>Bot Name</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for call in thresholds.calls|sort(attribute='level') %}
+                        <tr>
+                          <td><strong>${{ call.level }}</strong></td>
+                          <td><span class="badge badge-success">{{ call.bot_name }}</span></td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                  {% else %}
+                  <p class="text-muted">No call thresholds configured.</p>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Triggered Bots Card -->
+      <div class="row">
+        <div class="col-md-12">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title"><i class="fas fa-list mr-2"></i>Triggered Bots</h3>
+            </div>
+            <div class="card-body">
+              <div id="triggered-bots-list">
+                <p class="text-muted">No bots triggered yet.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Threshold Configuration Card -->
+      <div class="row">
+        <div class="col-md-12">
+          <div class="card card-info">
+            <div class="card-header">
+              <h3 class="card-title"><i class="fas fa-cog mr-2"></i>Configure Threshold Levels</h3>
+            </div>
+            <div class="card-body">
+              <form id="threshold-config-form">
+                <div class="row">
+                  <!-- Put Thresholds -->
+                  <div class="col-md-6">
+                    <h5 class="text-danger"><i class="fas fa-arrow-down mr-2"></i>Put Thresholds</h5>
+                    <p class="text-muted small">Put bots trigger when SPX price goes BELOW these levels</p>
+                    <div id="put-thresholds-container">
+                      {% if thresholds and thresholds.puts %}
+                        {% for put in thresholds.puts %}
+                        <div class="input-group mb-2 put-threshold-row">
+                          <div class="input-group-prepend">
+                            <span class="input-group-text">$</span>
+                          </div>
+                          <input type="number" class="form-control threshold-level" placeholder="Level" value="{{ put.level }}" step="0.01" required>
+                          <input type="text" class="form-control bot-name" placeholder="Bot Name" value="{{ put.bot_name }}" required>
+                          <div class="input-group-append">
+                            <button type="button" class="btn btn-danger remove-row" onclick="removeThresholdRow(this, 'put')">
+                              <i class="fas fa-times"></i>
+                            </button>
+                          </div>
+                        </div>
+                        {% endfor %}
+                      {% else %}
+                        <div class="input-group mb-2 put-threshold-row">
+                          <div class="input-group-prepend">
+                            <span class="input-group-text">$</span>
+                          </div>
+                          <input type="number" class="form-control threshold-level" placeholder="Level" step="0.01" required>
+                          <input type="text" class="form-control bot-name" placeholder="Bot Name" required>
+                          <div class="input-group-append">
+                            <button type="button" class="btn btn-danger remove-row" onclick="removeThresholdRow(this, 'put')">
+                              <i class="fas fa-times"></i>
+                            </button>
+                          </div>
+                        </div>
+                      {% endif %}
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-danger mt-2" onclick="addThresholdRow('put')">
+                      <i class="fas fa-plus mr-1"></i>Add Put Threshold
+                    </button>
+                  </div>
+                  
+                  <!-- Call Thresholds -->
+                  <div class="col-md-6">
+                    <h5 class="text-success"><i class="fas fa-arrow-up mr-2"></i>Call Thresholds</h5>
+                    <p class="text-muted small">Call bots trigger when SPX price goes ABOVE these levels</p>
+                    <div id="call-thresholds-container">
+                      {% if thresholds and thresholds.calls %}
+                        {% for call in thresholds.calls %}
+                        <div class="input-group mb-2 call-threshold-row">
+                          <div class="input-group-prepend">
+                            <span class="input-group-text">$</span>
+                          </div>
+                          <input type="number" class="form-control threshold-level" placeholder="Level" value="{{ call.level }}" step="0.01" required>
+                          <input type="text" class="form-control bot-name" placeholder="Bot Name" value="{{ call.bot_name }}" required>
+                          <div class="input-group-append">
+                            <button type="button" class="btn btn-danger remove-row" onclick="removeThresholdRow(this, 'call')">
+                              <i class="fas fa-times"></i>
+                            </button>
+                          </div>
+                        </div>
+                        {% endfor %}
+                      {% else %}
+                        <div class="input-group mb-2 call-threshold-row">
+                          <div class="input-group-prepend">
+                            <span class="input-group-text">$</span>
+                          </div>
+                          <input type="number" class="form-control threshold-level" placeholder="Level" step="0.01" required>
+                          <input type="text" class="form-control bot-name" placeholder="Bot Name" required>
+                          <div class="input-group-append">
+                            <button type="button" class="btn btn-danger remove-row" onclick="removeThresholdRow(this, 'call')">
+                              <i class="fas fa-times"></i>
+                            </button>
+                          </div>
+                        </div>
+                      {% endif %}
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-success mt-2" onclick="addThresholdRow('call')">
+                      <i class="fas fa-plus mr-1"></i>Add Call Threshold
+                    </button>
+                  </div>
+                </div>
+                
+                <div class="row mt-4">
+                  <div class="col-md-12">
+                    <div class="alert alert-warning">
+                      <i class="fas fa-exclamation-triangle mr-2"></i>
+                      <strong>Note:</strong> The monitor must be stopped and restarted for threshold changes to take effect.
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="row mt-2">
+                  <div class="col-md-12">
+                    <button type="submit" class="btn btn-primary btn-lg">
+                      <i class="fas fa-save mr-2"></i>Save Threshold Configuration
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-lg ml-2" onclick="loadCurrentConfig()">
+                      <i class="fas fa-sync mr-2"></i>Reload Current Config
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .info-box {
+    margin-bottom: 0;
+  }
+  #last-trigger-card .alert {
+    margin-bottom: 0;
+  }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  let statusCheckInterval = null;
+
+  // Check status on page load
+  $(document).ready(function() {
+    checkStatus();
+    // Auto-refresh status every 5 seconds
+    statusCheckInterval = setInterval(checkStatus, 5000);
+  });
+
+  // Cleanup on page unload
+  $(window).on('beforeunload', function() {
+    if (statusCheckInterval) {
+      clearInterval(statusCheckInterval);
+    }
+  });
+
+  function checkStatus() {
+    $.ajax({
+      url: '/api/threshold-monitor/status',
+      method: 'GET',
+      success: function(data) {
+        if (data.success) {
+          updateStatusDisplay(data);
+        }
+      },
+      error: function(xhr) {
+        console.error('Error checking status:', xhr);
+      }
+    });
+  }
+
+  function updateStatusDisplay(status) {
+    // Update status badge
+    const statusHtml = status.running 
+      ? '<span class="badge badge-success">Running</span>'
+      : '<span class="badge badge-danger">Stopped</span>';
+    $('#monitor-status').html(statusHtml);
+
+    // Update buttons
+    $('#btn-start').prop('disabled', status.running);
+    $('#btn-stop').prop('disabled', !status.running);
+
+    // Update last price
+    if (status.last_price) {
+      $('#last-price').html('<strong class="text-success">$' + status.last_price.toFixed(2) + '</strong>');
+      $('#spot-price-value').html('<strong class="text-success">$' + status.last_price.toFixed(2) + '</strong>');
+      
+      // Update timestamp
+      if (status.started_at) {
+        const checkTime = new Date(status.started_at);
+        $('#price-timestamp').text('Updated: ' + checkTime.toLocaleString());
+        $('#spot-price-time').text(checkTime.toLocaleString());
+      } else {
+        $('#price-timestamp').text('');
+        $('#spot-price-time').text('-');
+      }
+      
+      // Update status badge
+      if (status.running) {
+        $('#spot-price-status').html('<span class="badge badge-success">Live</span>');
+      } else {
+        $('#spot-price-status').html('<span class="badge badge-secondary">Stopped</span>');
+      }
+    } else {
+      $('#last-price').html('<span class="text-muted">-</span>');
+      $('#spot-price-value').html('<span class="text-muted">-</span>');
+      $('#price-timestamp').text('');
+      $('#spot-price-time').text('-');
+      $('#spot-price-status').html('<span class="badge badge-secondary">No Data</span>');
+    }
+
+    // Update last check time
+    if (status.started_at) {
+      const checkTime = new Date(status.started_at);
+      $('#last-check').text(checkTime.toLocaleString());
+    } else {
+      $('#last-check').text('-');
+    }
+
+    // Update last trigger notification
+    if (status.last_trigger) {
+      const trigger = status.last_trigger;
+      const typeBadge = trigger.type === 'put' 
+        ? '<span class="badge badge-danger">PUT</span>'
+        : '<span class="badge badge-success">CALL</span>';
+      const timestamp = new Date(trigger.timestamp).toLocaleString();
+      
+      $('#last-trigger-card').html(`
+        <div class="alert alert-success">
+          <h5><i class="fas fa-bell mr-2"></i>Bot Triggered!</h5>
+          <p class="mb-1"><strong>Bot:</strong> ${trigger.bot_name}</p>
+          <p class="mb-1"><strong>Type:</strong> ${typeBadge}</p>
+          <p class="mb-1"><strong>Threshold:</strong> ${trigger.threshold}</p>
+          <p class="mb-1"><strong>Price:</strong> $${trigger.price.toFixed(2)}</p>
+          <p class="mb-0"><strong>Time:</strong> ${timestamp}</p>
+        </div>
+      `);
+    } else {
+      $('#last-trigger-card').html(`
+        <div class="alert alert-info">
+          <i class="fas fa-info-circle mr-2"></i>No triggers yet. Monitor will display notifications here when thresholds are crossed.
+        </div>
+      `);
+    }
+
+    // Update triggered bots list
+    if (status.triggered_bots && status.triggered_bots.length > 0) {
+      const botsList = status.triggered_bots.map(bot => 
+        `<span class="badge badge-primary mr-2 mb-2">${bot}</span>`
+      ).join('');
+      $('#triggered-bots-list').html(botsList);
+    } else {
+      $('#triggered-bots-list').html('<p class="text-muted">No bots triggered yet.</p>');
+    }
+  }
+
+  function startMonitor() {
+    if (!confirm('Start the Threshold Monitor? It will begin monitoring SPX price and trigger bots when thresholds are crossed.')) {
+      return;
+    }
+
+    $.ajax({
+      url: '/api/threshold-monitor/start',
+      method: 'POST',
+      success: function(data) {
+        if (data.success) {
+          showNotification('success', 'Threshold Monitor started successfully!');
+          checkStatus();
+        } else {
+          showNotification('danger', 'Failed to start monitor: ' + (data.message || 'Unknown error'));
+        }
+      },
+      error: function(xhr) {
+        const errorMsg = xhr.responseJSON?.message || 'Failed to start monitor';
+        showNotification('danger', errorMsg);
+      }
+    });
+  }
+
+  function stopMonitor() {
+    if (!confirm('Stop the Threshold Monitor?')) {
+      return;
+    }
+
+    $.ajax({
+      url: '/api/threshold-monitor/stop',
+      method: 'POST',
+      success: function(data) {
+        if (data.success) {
+          showNotification('success', 'Threshold Monitor stopped successfully!');
+          checkStatus();
+        } else {
+          showNotification('danger', 'Failed to stop monitor: ' + (data.message || 'Unknown error'));
+        }
+      },
+      error: function(xhr) {
+        const errorMsg = xhr.responseJSON?.message || 'Failed to stop monitor';
+        showNotification('danger', errorMsg);
+      }
+    });
+  }
+
+  function showNotification(type, message) {
+    // Create and show a toast notification
+    const toast = $(`
+      <div class="toast" role="alert" aria-live="assertive" aria-atomic="true" data-delay="5000" style="position: fixed; top: 20px; right: 20px; z-index: 9999;">
+        <div class="toast-header bg-${type} text-white">
+          <strong class="mr-auto">Notification</strong>
+          <button type="button" class="ml-2 mb-1 close text-white" data-dismiss="toast">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="toast-body">
+          ${message}
+        </div>
+      </div>
+    `);
+    
+    $('body').append(toast);
+    toast.toast('show');
+    
+    toast.on('hidden.bs.toast', function() {
+      toast.remove();
+    });
+  }
+
+  function addThresholdRow(type) {
+    const container = type === 'put' ? $('#put-thresholds-container') : $('#call-thresholds-container');
+    const rowHtml = `
+      <div class="input-group mb-2 ${type}-threshold-row">
+        <div class="input-group-prepend">
+          <span class="input-group-text">$</span>
+        </div>
+        <input type="number" class="form-control threshold-level" placeholder="Level" step="0.01" required>
+        <input type="text" class="form-control bot-name" placeholder="Bot Name" required>
+        <div class="input-group-append">
+          <button type="button" class="btn btn-danger remove-row" onclick="removeThresholdRow(this, '${type}')">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+      </div>
+    `;
+    container.append(rowHtml);
+  }
+
+  function removeThresholdRow(button, type) {
+    $(button).closest(`.${type}-threshold-row`).remove();
+  }
+
+  function loadCurrentConfig() {
+    // Reload the page to get current config
+    location.reload();
+  }
+
+  // Handle form submission
+  $('#threshold-config-form').on('submit', function(e) {
+    e.preventDefault();
+    
+    // Collect put thresholds
+    const puts = [];
+    $('#put-thresholds-container .put-threshold-row').each(function() {
+      const level = parseFloat($(this).find('.threshold-level').val());
+      const botName = $(this).find('.bot-name').val().trim();
+      if (level && botName) {
+        puts.push({ level: level, bot_name: botName });
+      }
+    });
+    
+    // Collect call thresholds
+    const calls = [];
+    $('#call-thresholds-container .call-threshold-row').each(function() {
+      const level = parseFloat($(this).find('.threshold-level').val());
+      const botName = $(this).find('.bot-name').val().trim();
+      if (level && botName) {
+        calls.push({ level: level, bot_name: botName });
+      }
+    });
+    
+    // Validate
+    if (puts.length === 0 && calls.length === 0) {
+      showNotification('warning', 'Please add at least one threshold (put or call)');
+      return;
+    }
+    
+    // Send to server
+    $.ajax({
+      url: '/api/threshold-monitor/config',
+      method: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify({
+        thresholds: {
+          puts: puts,
+          calls: calls
+        }
+      }),
+      success: function(data) {
+        if (data.success) {
+          showNotification('success', 'Threshold configuration saved successfully! Please restart the monitor for changes to take effect.');
+          // Reload page after a short delay to show updated config
+          setTimeout(function() {
+            location.reload();
+          }, 1500);
+        } else {
+          showNotification('danger', 'Failed to save configuration: ' + (data.message || 'Unknown error'));
+        }
+      },
+      error: function(xhr) {
+        const errorMsg = xhr.responseJSON?.message || 'Failed to save configuration';
+        showNotification('danger', errorMsg);
+      }
+    });
+  });
+</script>
+{% endblock %}
+

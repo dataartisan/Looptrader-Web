@@ -1,0 +1,99 @@
+2025-11-16 13:41:26 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-16 13:41:26 - threshold_monitor - INFO - Loaded state from /app/data/threshold_state.json
+2025-11-16 13:41:26 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-16 13:41:26 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-16 13:41:26 - threshold_monitor - INFO - Initialized with 2 put thresholds and 2 call thresholds
+2025-11-16 13:41:26 - threshold_monitor - INFO - Already triggered bots: []
+2025-11-16 13:41:26 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-16 13:41:26 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-16 13:41:26 - threshold_monitor - INFO - Check interval: 300 seconds (5.0 minutes)
+2025-11-16 13:41:26 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-16 13:41:26 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-16 13:41:26 - threshold_monitor - INFO - Today (2025-11-16) is a market holiday, using next trading day (2025-11-17) for SPX price
+2025-11-16 13:41:26 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-17&toDate=2025-11-17 "HTTP/1.1 400 Bad Request"
+2025-11-16 13:41:27 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-17&toDate=2025-11-17 "HTTP/1.1 200 OK"
+2025-11-16 13:41:27 - threshold_monitor - INFO - 📊 SPX spot price: $6734.11 (from $SPX, expiration: 2025-11-17)
+2025-11-16 13:41:27 - threshold_monitor - INFO - 📊 Current SPX spot price: $6734.11
+2025-11-16 13:41:27 - threshold_monitor - INFO - PUT threshold check (first check): 20_32_Puts_1_second at level $6740, current price: $6734.11
+2025-11-16 13:41:27 - threshold_monitor - ERROR - Unexpected error in monitoring loop: Invalid format specifier '.2f if last_price else 'N/A'' for object of type 'float'
+Traceback (most recent call last):
+  File "/app/scripts/threshold_monitor.py", line 431, in run
+    triggered = self.check_thresholds(current_price)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/scripts/threshold_monitor.py", line 331, in check_thresholds
+    logger.info(f"✅ PUT threshold triggered: {bot_name} at level ${level} (current price: ${current_price:.2f}, was: ${last_price:.2f if last_price else 'N/A'})")
+                                                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: Invalid format specifier '.2f if last_price else 'N/A'' for object of type 'float'
+2025-11-16 13:41:27 - threshold_monitor - INFO - Removed PID file
+2025-11-16 13:41:27 - threshold_monitor - INFO - Monitor stopped
+2025-11-16 13:41:41 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-16 13:41:41 - threshold_monitor - INFO - Loaded state from /app/data/threshold_state.json
+2025-11-16 13:41:41 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-16 13:41:41 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-16 13:41:41 - threshold_monitor - INFO - Initialized with 2 put thresholds and 2 call thresholds
+2025-11-16 13:41:41 - threshold_monitor - INFO - Already triggered bots: []
+2025-11-16 13:41:41 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-16 13:41:41 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-16 13:41:41 - threshold_monitor - INFO - Check interval: 300 seconds (5.0 minutes)
+2025-11-16 13:41:41 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-16 13:41:41 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-16 13:41:41 - threshold_monitor - INFO - Today (2025-11-16) is a market holiday, using next trading day (2025-11-17) for SPX price
+2025-11-16 13:41:41 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-17&toDate=2025-11-17 "HTTP/1.1 400 Bad Request"
+2025-11-16 13:41:42 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-17&toDate=2025-11-17 "HTTP/1.1 200 OK"
+2025-11-16 13:41:42 - threshold_monitor - INFO - 📊 SPX spot price: $6734.11 (from $SPX, expiration: 2025-11-17)
+2025-11-16 13:41:42 - threshold_monitor - INFO - 📊 Current SPX spot price: $6734.11
+2025-11-16 13:41:42 - threshold_monitor - INFO - PUT threshold check (first check): 20_32_Puts_1_second at level $6740, current price: $6734.11
+2025-11-16 13:41:42 - threshold_monitor - ERROR - Unexpected error in monitoring loop: Invalid format specifier '.2f if last_price else 'N/A'' for object of type 'float'
+Traceback (most recent call last):
+  File "/app/scripts/threshold_monitor.py", line 431, in run
+    triggered = self.check_thresholds(current_price)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/scripts/threshold_monitor.py", line 331, in check_thresholds
+    logger.info(f"✅ PUT threshold triggered: {bot_name} at level ${level} (current price: ${current_price:.2f}, was: ${last_price:.2f if last_price else 'N/A'})")
+                                                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: Invalid format specifier '.2f if last_price else 'N/A'' for object of type 'float'
+2025-11-16 13:41:42 - threshold_monitor - INFO - Removed PID file
+2025-11-16 13:41:42 - threshold_monitor - INFO - Monitor stopped
+2025-11-16 13:42:12 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-16 13:42:12 - threshold_monitor - INFO - Loaded state from /app/data/threshold_state.json
+2025-11-16 13:42:12 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-16 13:42:12 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-16 13:42:12 - threshold_monitor - INFO - Initialized with 2 put thresholds and 2 call thresholds
+2025-11-16 13:42:12 - threshold_monitor - INFO - Already triggered bots: []
+2025-11-16 13:42:12 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-16 13:42:12 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-16 13:42:12 - threshold_monitor - INFO - Check interval: 300 seconds (5.0 minutes)
+2025-11-16 13:42:12 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-16 13:42:12 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-16 13:42:12 - threshold_monitor - INFO - Today (2025-11-16) is a market holiday, using next trading day (2025-11-17) for SPX price
+2025-11-16 13:42:12 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-17&toDate=2025-11-17 "HTTP/1.1 400 Bad Request"
+2025-11-16 13:42:12 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-17&toDate=2025-11-17 "HTTP/1.1 200 OK"
+2025-11-16 13:42:12 - threshold_monitor - INFO - 📊 SPX spot price: $6734.11 (from $SPX, expiration: 2025-11-17)
+2025-11-16 13:42:12 - threshold_monitor - INFO - 📊 Current SPX spot price: $6734.11
+2025-11-16 13:42:12 - threshold_monitor - INFO - PUT threshold check (first check): 20_32_Puts_1_second at level $6740, current price: $6734.11
+2025-11-16 13:42:12 - threshold_monitor - INFO - ✅ PUT threshold triggered: 20_32_Puts_1_second at level $6740 (current price: $6734.11, was: $6734.11)
+2025-11-16 13:42:12 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '20_32_Puts_1_second' at level 6740 (current price: 6734.11)
+2025-11-16 13:42:12 - threshold_monitor - INFO - Successfully unpaused bot '20_32_Puts_1_second' via webhook
+2025-11-16 13:42:12 - threshold_monitor - INFO - ✅ Bot '20_32_Puts_1_second' successfully triggered and added to triggered list
+2025-11-16 13:43:37 - threshold_monitor - INFO - Received signal 15, shutting down...
+2025-11-16 13:43:38 - threshold_monitor - INFO - Removed PID file
+2025-11-16 13:43:38 - threshold_monitor - INFO - Monitor stopped
+2025-11-16 13:43:46 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-16 13:43:46 - threshold_monitor - INFO - Loaded state from /app/data/threshold_state.json
+2025-11-16 13:43:46 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-16 13:43:46 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-16 13:43:46 - threshold_monitor - INFO - Initialized with 2 put thresholds and 2 call thresholds
+2025-11-16 13:43:46 - threshold_monitor - INFO - Already triggered bots: ['20_32_Puts_1_second']
+2025-11-16 13:43:46 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-16 13:43:46 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-16 13:43:46 - threshold_monitor - INFO - Check interval: 300 seconds (5.0 minutes)
+2025-11-16 13:43:46 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-16 13:43:46 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-16 13:43:46 - threshold_monitor - INFO - Today (2025-11-16) is a market holiday, using next trading day (2025-11-17) for SPX price
+2025-11-16 13:43:46 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-17&toDate=2025-11-17 "HTTP/1.1 400 Bad Request"
+2025-11-16 13:43:47 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-17&toDate=2025-11-17 "HTTP/1.1 200 OK"
+2025-11-16 13:43:47 - threshold_monitor - INFO - 📊 SPX spot price: $6734.11 (from $SPX, expiration: 2025-11-17)
+2025-11-16 13:43:47 - threshold_monitor - INFO - 📊 Current SPX spot price: $6734.11
+2025-11-16 13:44:29 - threshold_monitor - INFO - Received signal 15, shutting down...
+2025-11-16 13:44:29 - threshold_monitor - INFO - Removed PID file
+2025-11-16 13:44:29 - threshold_monitor - INFO - Monitor stopped

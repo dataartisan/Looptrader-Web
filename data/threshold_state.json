@@ -1,0 +1,14 @@
+{
+  "triggered_bots": [
+    "20_32_Puts_1_second"
+  ],
+  "last_price": 6734.11,
+  "last_check": "2025-11-16T13:43:47.509125+00:00",
+  "last_trigger": {
+    "bot_name": "20_32_Puts_1_second",
+    "threshold": 6740,
+    "price": 6734.11,
+    "timestamp": "2025-11-16T13:42:12.858550+00:00",
+    "type": "put"
+  }
+}

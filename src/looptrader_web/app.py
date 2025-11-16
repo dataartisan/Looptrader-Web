@@ -10,6 +10,9 @@ import os
 import requests
 import json
 import logging
+import time
+import signal
+import subprocess
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
 from dotenv import load_dotenv
@@ -2974,6 +2977,368 @@ def webhook_unpause_bot():
             'success': False,
             'message': f'Internal server error: {str(e)}',
             'error': 'INTERNAL_ERROR'
+        }), 500
+
+# Smart Monitor (Threshold Monitor) Routes
+@app.route('/smart-monitor')
+@login_required
+def smart_monitor():
+    """Display the Smart Monitor Trigger page."""
+    try:
+        import json
+        import os
+        
+        # Load threshold configuration
+        config_path = '/app/config/threshold_config.json'
+        thresholds_data = None
+        
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    thresholds_data = config.get('thresholds', {})
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Could not load threshold config: {e}")
+        
+        return render_template('smart_monitor/index.html', thresholds=thresholds_data)
+    except Exception as e:
+        logger.error(f"Error loading smart monitor trigger page: {e}", exc_info=True)
+        flash(f'Error loading Smart Monitor Trigger page: {str(e)}', 'danger')
+        return redirect(url_for('dashboard'))
+
+@app.route('/api/threshold-monitor/start', methods=['POST'])
+@login_required
+def threshold_monitor_start():
+    """Start the threshold monitor script."""
+    import subprocess
+    import os
+    
+    try:
+        script_path = '/app/scripts/threshold_monitor.py'
+        config_path = '/app/config/threshold_config.json'
+        pid_file = '/app/data/threshold_monitor.pid'
+        
+        # Check if already running
+        if os.path.exists(pid_file):
+            try:
+                with open(pid_file, 'r') as f:
+                    pid = int(f.read().strip())
+                # Check if process is actually running
+                os.kill(pid, 0)  # Signal 0 doesn't kill, just checks
+                return jsonify({
+                    'success': False,
+                    'message': f'Monitor is already running (PID: {pid})'
+                }), 400
+            except (OSError, ProcessLookupError, ValueError):
+                # Stale PID file, remove it
+                os.remove(pid_file)
+        
+        # Check if config file exists
+        if not os.path.exists(config_path):
+            return jsonify({
+                'success': False,
+                'message': f'Config file not found: {config_path}. Please create it from threshold_config.json.example'
+            }), 400
+        
+        # Start the script as background process
+        # Use start_new_session=True to detach from parent process
+        # Redirect stdout/stderr to log files for debugging
+        log_dir = '/app/data'
+        os.makedirs(log_dir, exist_ok=True)
+        stdout_log = open(os.path.join(log_dir, 'threshold_monitor_stdout.log'), 'a')
+        stderr_log = open(os.path.join(log_dir, 'threshold_monitor_stderr.log'), 'a')
+        
+        try:
+            process = subprocess.Popen(
+                ['python', script_path, '--config', config_path],
+                stdout=stdout_log,
+                stderr=stderr_log,
+                cwd='/app',
+                start_new_session=True  # Detach from parent
+            )
+            
+            # Give it a moment to write PID file and initialize
+            time.sleep(2)
+            
+            # Check if process is still running
+            if process.poll() is not None:
+                # Process already exited (crashed)
+                stdout_log.close()
+                stderr_log.close()
+                error_msg = "Process exited immediately"
+                try:
+                    with open(os.path.join(log_dir, 'threshold_monitor_stderr.log'), 'r') as f:
+                        error_content = f.read()
+                        if error_content:
+                            error_msg = f"Process crashed: {error_content[-500:]}"  # Last 500 chars
+                except:
+                    pass
+                return jsonify({
+                    'success': False,
+                    'message': f'Monitor process crashed on startup: {error_msg}'
+                }), 500
+            
+            # Read PID from file (preferred over process.pid since script writes its own PID)
+            pid = None
+            if os.path.exists(pid_file):
+                try:
+                    with open(pid_file, 'r') as f:
+                        pid = int(f.read().strip())
+                    # Verify the PID file matches a running process
+                    try:
+                        os.kill(pid, 0)
+                    except (OSError, ProcessLookupError):
+                        # PID file exists but process doesn't - might be stale
+                        logger.warning(f"PID file exists but process {pid} not found")
+                        pid = None
+                except (ValueError, IOError) as e:
+                    logger.warning(f"Could not read PID file: {e}")
+            
+            # Use PID from file if available, otherwise use process.pid
+            final_pid = pid or process.pid
+            
+            logger.info(f"Started threshold monitor (PID: {final_pid})")
+            return jsonify({
+                'success': True,
+                'pid': final_pid,
+                'message': 'Threshold monitor started successfully'
+            })
+            
+        except Exception as e:
+            stdout_log.close()
+            stderr_log.close()
+            raise
+        
+    except Exception as e:
+        logger.error(f"Error starting threshold monitor: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': f'Failed to start monitor: {str(e)}'
+        }), 500
+
+@app.route('/api/threshold-monitor/stop', methods=['POST'])
+@login_required
+def threshold_monitor_stop():
+    """Stop the threshold monitor script."""
+    import signal
+    import os
+    
+    try:
+        pid_file = '/app/data/threshold_monitor.pid'
+        
+        if not os.path.exists(pid_file):
+            return jsonify({
+                'success': False,
+                'message': 'Monitor is not running (no PID file found)'
+            }), 400
+        
+        try:
+            with open(pid_file, 'r') as f:
+                pid = int(f.read().strip())
+        except (ValueError, IOError) as e:
+            os.remove(pid_file)
+            return jsonify({
+                'success': False,
+                'message': f'Invalid PID file: {str(e)}'
+            }), 400
+        
+        # Check if process is running
+        try:
+            os.kill(pid, 0)  # Check if process exists
+        except (OSError, ProcessLookupError):
+            # Process doesn't exist, remove stale PID file
+            os.remove(pid_file)
+            return jsonify({
+                'success': False,
+                'message': f'Process {pid} is not running'
+            }), 400
+        
+        # Send SIGTERM for graceful shutdown
+        try:
+            os.kill(pid, signal.SIGTERM)
+            logger.info(f"Sent SIGTERM to threshold monitor (PID: {pid})")
+            
+            # Wait a moment for graceful shutdown
+            import time
+            time.sleep(2)
+            
+            # Check if still running, force kill if needed
+            try:
+                os.kill(pid, 0)
+                # Still running, force kill
+                os.kill(pid, signal.SIGKILL)
+                logger.warning(f"Force killed threshold monitor (PID: {pid})")
+            except (OSError, ProcessLookupError):
+                # Process stopped gracefully
+                pass
+            
+            # Wait a bit more to ensure process is fully stopped
+            time.sleep(1)
+            
+            # Verify process is actually stopped
+            try:
+                os.kill(pid, 0)
+                # Still running somehow
+                logger.warning(f"Process {pid} still running after kill attempt")
+            except (OSError, ProcessLookupError):
+                # Process is stopped, good
+                pass
+            
+            # Remove PID file
+            if os.path.exists(pid_file):
+                try:
+                    os.remove(pid_file)
+                    logger.info(f"Removed PID file: {pid_file}")
+                except Exception as e:
+                    logger.warning(f"Could not remove PID file: {e}")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Threshold monitor stopped (PID: {pid})'
+            })
+            
+        except Exception as e:
+            logger.error(f"Error stopping monitor: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Failed to stop monitor: {str(e)}'
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Error stopping threshold monitor: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+@app.route('/api/threshold-monitor/config', methods=['POST'])
+@login_required
+def threshold_monitor_config():
+    """Save threshold configuration."""
+    import json
+    import os
+    
+    try:
+        config_path = '/app/config/threshold_config.json'
+        
+        # Get thresholds from request
+        data = request.get_json()
+        if not data or 'thresholds' not in data:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid request: thresholds data required'
+            }), 400
+        
+        thresholds = data['thresholds']
+        
+        # Validate thresholds structure
+        if 'puts' not in thresholds or 'calls' not in thresholds:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid thresholds structure: must include "puts" and "calls" arrays'
+            }), 400
+        
+        # Load existing config or create new
+        config = {}
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
+        
+        # Update thresholds
+        config['thresholds'] = thresholds
+        
+        # Ensure other required fields exist
+        config.setdefault('webhook_url', 'http://localhost:5000/api/webhook/unpause-bot')
+        config.setdefault('check_interval_seconds', 300)
+        config.setdefault('token_path', '/app/token.json')
+        config.setdefault('state_file', '/app/data/threshold_state.json')
+        config.setdefault('pid_file', '/app/data/threshold_monitor.pid')
+        config.setdefault('symbol', 'SPX')
+        
+        # Save config file
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=2)
+        
+        logger.info(f"Saved threshold configuration: {len(thresholds.get('puts', []))} puts, {len(thresholds.get('calls', []))} calls")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Threshold configuration saved successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error saving threshold configuration: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': f'Error saving configuration: {str(e)}'
+        }), 500
+
+@app.route('/api/threshold-monitor/status', methods=['GET'])
+@login_required
+def threshold_monitor_status():
+    """Get threshold monitor status."""
+    import os
+    import json
+    
+    try:
+        pid_file = '/app/data/threshold_monitor.pid'
+        state_file = '/app/data/threshold_state.json'
+        
+        running = False
+        pid = None
+        started_at = None
+        last_trigger = None
+        last_price = None
+        triggered_bots = []
+        
+        # Check PID file
+        if os.path.exists(pid_file):
+            try:
+                with open(pid_file, 'r') as f:
+                    pid = int(f.read().strip())
+                
+                # Check if process is actually running
+                try:
+                    os.kill(pid, 0)  # Signal 0 doesn't kill, just checks
+                    running = True
+                except (OSError, ProcessLookupError):
+                    # Process doesn't exist, remove stale PID file
+                    os.remove(pid_file)
+                    pid = None
+            except (ValueError, IOError):
+                pass
+        
+        # Read state file for additional info
+        if os.path.exists(state_file):
+            try:
+                with open(state_file, 'r') as f:
+                    state = json.load(f)
+                    last_price = state.get('last_price')
+                    triggered_bots = state.get('triggered_bots', [])
+                    started_at = state.get('last_check')  # Use last_check as started_at approximation
+                    last_trigger = state.get('last_trigger')  # Get last trigger from state file
+            except (json.JSONDecodeError, IOError):
+                pass
+        
+        return jsonify({
+            'success': True,
+            'running': running,
+            'pid': pid,
+            'started_at': started_at,
+            'last_trigger': last_trigger,  # Will be None unless we read from process
+            'last_price': last_price,
+            'triggered_bots': triggered_bots
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting threshold monitor status: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
         }), 500
 
 # API endpoints for AJAX calls

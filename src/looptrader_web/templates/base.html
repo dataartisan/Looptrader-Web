@@ -208,6 +208,14 @@
               </li>
             </ul>
           </li>
+          
+          <!-- Smart Monitor Trigger -->
+          <li class="nav-item">
+            <a href="{{ url_for('smart_monitor') }}" class="nav-link {% if request.endpoint == 'smart_monitor' %}active{% endif %}">
+              <i class="nav-icon fas fa-chart-line"></i>
+              <p>Smart Monitor Trigger</p>
+            </a>
+          </li>
 
           <!-- Get Prices -->
           <li class="nav-item">

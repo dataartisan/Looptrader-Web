@@ -1796,6 +1796,131 @@ def upsert_trailing_stop(bot_id: int, activation_threshold: float, trailing_perc
     finally:
         db.close()
 
+def upsert_trailing_stops_batch(trailing_stop_configs: List[dict]) -> tuple[bool, int, List[dict]]:
+    """Create or update trailing stop configurations for multiple bots in a single atomic transaction.
+    
+    Args:
+        trailing_stop_configs: List of dictionaries with keys:
+            - bot_id: int
+            - activation_threshold: float
+            - trailing_percentage: Optional[float]
+            - trailing_dollar_amount: Optional[float]
+            - trailing_mode: str (default 'percentage')
+    
+    Returns:
+        Tuple of (success: bool, success_count: int, errors: List[dict]) where errors contains:
+            - bot_id: int
+            - error: str
+    """
+    db = SessionLocal()
+    try:
+        errors = []
+        success_count = 0
+        
+        # Validate all configurations before applying any changes (fail-fast)
+        for config in trailing_stop_configs:
+            bot_id = config.get("bot_id")
+            activation_threshold = config.get("activation_threshold")
+            trailing_percentage = config.get("trailing_percentage")
+            trailing_dollar_amount = config.get("trailing_dollar_amount")
+            trailing_mode = config.get("trailing_mode", "percentage")
+            
+            # Validate bot_id
+            if bot_id is None:
+                errors.append({"bot_id": bot_id, "error": "bot_id cannot be None"})
+                continue
+            
+            # Check if bot exists
+            bot = db.query(Bot).filter(Bot.id == bot_id).first()
+            if not bot:
+                errors.append({"bot_id": bot_id, "error": "Bot not found"})
+                continue
+            
+            # Validate mode and corresponding value
+            if trailing_mode == 'percentage' and trailing_percentage is None:
+                errors.append({
+                    "bot_id": bot_id,
+                    "error": "trailing_percentage required for percentage mode"
+                })
+                continue
+            if trailing_mode == 'dollar' and trailing_dollar_amount is None:
+                errors.append({
+                    "bot_id": bot_id,
+                    "error": "trailing_dollar_amount required for dollar mode"
+                })
+                continue
+        
+        # If any validation errors, return early without making any changes
+        if errors:
+            db.rollback()
+            return False, 0, errors
+        
+        # Apply all updates in a single transaction
+        for config in trailing_stop_configs:
+            bot_id = config["bot_id"]
+            activation_threshold = config["activation_threshold"]
+            trailing_percentage = config.get("trailing_percentage")
+            trailing_dollar_amount = config.get("trailing_dollar_amount")
+            trailing_mode = config.get("trailing_mode", "percentage")
+            
+            bot = db.query(Bot).filter(Bot.id == bot_id).first()
+            if not bot:
+                # Should not happen after validation, but handle gracefully
+                errors.append({"bot_id": bot_id, "error": "Bot not found during update"})
+                continue
+            
+            ts = bot.trailing_stop_state
+            if ts is None:
+                ts = TrailingStopState(
+                    bot_id=bot.id,
+                    activation_threshold=activation_threshold,
+                    trailing_percentage=trailing_percentage,
+                    trailing_dollar_amount=trailing_dollar_amount,
+                    trailing_mode=trailing_mode,
+                    is_active=False
+                )
+                # Validate before adding
+                try:
+                    ts.validate()
+                except ValueError as e:
+                    errors.append({"bot_id": bot_id, "error": str(e)})
+                    continue
+                db.add(ts)
+            else:
+                ts.activation_threshold = activation_threshold
+                ts.trailing_percentage = trailing_percentage
+                ts.trailing_dollar_amount = trailing_dollar_amount
+                ts.trailing_mode = trailing_mode
+                ts.is_active = False  # Reset activation
+                # Validate before committing
+                try:
+                    ts.validate()
+                except ValueError as e:
+                    errors.append({"bot_id": bot_id, "error": str(e)})
+                    continue
+            
+            success_count += 1
+        
+        # If any errors occurred during update, rollback
+        if errors:
+            db.rollback()
+            return False, 0, errors
+        
+        # Commit all changes at once
+        db.commit()
+        return True, success_count, []
+        
+    except Exception as e:
+        db.rollback()
+        # Return all configs as errors since transaction failed
+        errors = [
+            {"bot_id": config.get("bot_id"), "error": f"Transaction failed: {str(e)}"}
+            for config in trailing_stop_configs
+        ]
+        return False, 0, errors
+    finally:
+        db.close()
+
 def delete_trailing_stop(bot_id: int):
     """Delete a trailing stop configuration for a bot if it exists."""
     db = SessionLocal()

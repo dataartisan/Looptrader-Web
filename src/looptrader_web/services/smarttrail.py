@@ -2,11 +2,14 @@
 
 import os
 import re
-from typing import List, Optional, Tuple, Dict
+import time
+import random
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, List, Optional, Tuple, Dict
 from dataclasses import dataclass
 
 from models.database import SessionLocal, Bot, Position, Order, OrderLeg, Instrument
-from models.database import upsert_trailing_stop
+from models.database import upsert_trailing_stop, upsert_trailing_stops_batch
 
 
 @dataclass
@@ -23,6 +26,10 @@ class PositionWithDistance:
 
 class SmartTrailService:
     """Service for applying tiered trailing stops based on distance to spot."""
+    
+    # Spot price cache: {ticker: (timestamp, price)}
+    _spot_price_cache: Dict[str, Tuple[float, float]] = {}
+    _cache_ttl_seconds = 8  # Cache spot prices for 8 seconds
     
     def __init__(self):
         """Initialize SmartTrailService."""
@@ -175,9 +182,102 @@ class SmartTrailService:
         match = re.search(r"(\d+)$", symbol)
         return int(match.group(1)) if match else 0
     
+    def _get_cached_spot_price(self, ticker: str) -> Optional[float]:
+        """Get spot price from cache if available and not expired."""
+        ticker_upper = ticker.upper()
+        if ticker_upper in self._spot_price_cache:
+            cached_time, cached_price = self._spot_price_cache[ticker_upper]
+            if time.time() - cached_time < self._cache_ttl_seconds:
+                print(f"Using cached spot price for {ticker}: {cached_price}")
+                return cached_price
+            else:
+                # Remove expired entry
+                del self._spot_price_cache[ticker_upper]
+        return None
+    
+    def _cache_spot_price(self, ticker: str, price: float) -> None:
+        """Cache spot price with current timestamp."""
+        ticker_upper = ticker.upper()
+        self._spot_price_cache[ticker_upper] = (time.time(), price)
+        # Clean up old entries if cache gets too large (keep last 100)
+        if len(self._spot_price_cache) > 100:
+            # Remove oldest entries
+            sorted_entries = sorted(self._spot_price_cache.items(), key=lambda x: x[1][0])
+            for key, _ in sorted_entries[:-100]:
+                del self._spot_price_cache[key]
+    
+    def _fetch_spot_price_from_broker(self, ticker: str, max_retries: int = 3, initial_delay: float = 1.0, max_delay: float = 5.0) -> Optional[float]:
+        """
+        Fetch spot price from broker API with retry logic.
+        
+        Args:
+            ticker: Ticker symbol (e.g., "SPX", "SPY")
+            max_retries: Maximum number of retry attempts
+            initial_delay: Initial delay in seconds before first retry
+            max_delay: Maximum delay in seconds between retries
+            
+        Returns:
+            Spot price or None if unavailable
+        """
+        delay = initial_delay
+        
+        for attempt in range(max_retries):
+            try:
+                client = self._get_schwab_client()
+                
+                # Try different symbol formats
+                symbols_to_try = [f'${ticker}.X', ticker, f'${ticker}']
+                
+                for symbol in symbols_to_try:
+                    try:
+                        # Try to get quote first
+                        quote_response = client.get_quotes([symbol])
+                        if quote_response.status_code == 200:
+                            quote_data = quote_response.json()
+                            if symbol in quote_data:
+                                quote = quote_data[symbol]
+                                if 'lastPrice' in quote:
+                                    return float(quote['lastPrice'])
+                                elif 'mark' in quote:
+                                    return float(quote['mark'])
+                        
+                        # If quote doesn't work, try option chain for underlying price
+                        from datetime import date
+                        chain_response = client.get_option_chain(
+                            symbol=symbol,
+                            from_date=date.today(),
+                            to_date=date.today()
+                        )
+                        if chain_response.status_code == 200:
+                            chain_data = chain_response.json()
+                            if 'underlyingPrice' in chain_data:
+                                return float(chain_data['underlyingPrice'])
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            print(f"Attempt {attempt + 1} failed for {ticker} with symbol {symbol}: {e}")
+                        continue
+                
+                # If we get here, all symbols failed for this attempt
+                if attempt < max_retries - 1:
+                    jitter = random.uniform(0, 0.1 * delay)  # Add jitter
+                    print(f"All symbols failed for {ticker} on attempt {attempt + 1}/{max_retries}. Retrying in {delay + jitter:.2f} seconds...")
+                    time.sleep(delay + jitter)
+                    delay = min(delay * 2, max_delay)  # Exponential backoff
+                
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    jitter = random.uniform(0, 0.1 * delay)
+                    print(f"Error getting spot price for {ticker} on attempt {attempt + 1}/{max_retries}: {e}. Retrying in {delay + jitter:.2f} seconds...")
+                    time.sleep(delay + jitter)
+                    delay = min(delay * 2, max_delay)
+                else:
+                    print(f"Error getting spot price for {ticker} after {max_retries} attempts: {e}")
+        
+        return None
+    
     def get_spot_price(self, ticker: str) -> Optional[float]:
         """
-        Get current spot price for a ticker using Schwab API.
+        Get current spot price for a ticker using Schwab API with caching and retry logic.
         
         Args:
             ticker: Ticker symbol (e.g., "SPX", "SPY")
@@ -185,43 +285,18 @@ class SmartTrailService:
         Returns:
             Spot price or None if unavailable
         """
-        try:
-            client = self._get_schwab_client()
-            
-            # Try different symbol formats
-            symbols_to_try = [f'${ticker}.X', ticker, f'${ticker}']
-            
-            for symbol in symbols_to_try:
-                try:
-                    # Try to get quote first
-                    quote_response = client.get_quotes([symbol])
-                    if quote_response.status_code == 200:
-                        quote_data = quote_response.json()
-                        if symbol in quote_data:
-                            quote = quote_data[symbol]
-                            if 'lastPrice' in quote:
-                                return float(quote['lastPrice'])
-                            elif 'mark' in quote:
-                                return float(quote['mark'])
-                    
-                    # If quote doesn't work, try option chain for underlying price
-                    from datetime import date
-                    chain_response = client.get_option_chain(
-                        symbol=symbol,
-                        from_date=date.today(),
-                        to_date=date.today()
-                    )
-                    if chain_response.status_code == 200:
-                        chain_data = chain_response.json()
-                        if 'underlyingPrice' in chain_data:
-                            return float(chain_data['underlyingPrice'])
-                except Exception:
-                    continue
-            
-            return None
-        except Exception as e:
-            print(f"Error getting spot price for {ticker}: {e}")
-            return None
+        # Check cache first
+        cached_price = self._get_cached_spot_price(ticker)
+        if cached_price is not None:
+            return cached_price
+        
+        # Fetch from broker with retry logic
+        price = self._fetch_spot_price_from_broker(ticker)
+        if price is not None:
+            # Cache the result
+            self._cache_spot_price(ticker, price)
+        
+        return price
     
     def calculate_distances(
         self,
@@ -249,14 +324,28 @@ class SmartTrailService:
                 ticker_groups[ticker] = []
             ticker_groups[ticker].append((bot, position, order))
         
-        # Get spot prices for each ticker
+        # Get spot prices for all tickers concurrently
         spot_prices: Dict[str, float] = {}
-        for ticker, ticker_positions in ticker_groups.items():
-            spot_price = self.get_spot_price(ticker)
-            if spot_price:
-                spot_prices[ticker] = spot_price
-            else:
-                print(f"Could not get spot price for {ticker}, skipping {len(ticker_positions)} positions")
+        
+        # Fetch all spot prices concurrently using ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(len(ticker_groups), 10)) as executor:
+            # Submit all spot price fetch tasks
+            future_to_ticker = {
+                executor.submit(self.get_spot_price, ticker): ticker
+                for ticker in ticker_groups.keys()
+            }
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_ticker):
+                ticker = future_to_ticker[future]
+                try:
+                    spot_price = future.result()
+                    if spot_price:
+                        spot_prices[ticker] = spot_price
+                    else:
+                        print(f"Could not get spot price for {ticker}, skipping {len(ticker_groups[ticker])} positions")
+                except Exception as e:
+                    print(f"Error getting spot price for {ticker}: {e}")
         
         # Calculate distances for each position
         for bot, position, order in positions:
@@ -340,7 +429,7 @@ class SmartTrailService:
         bot_id: Optional[int] = None,
         selected_bot_ids: Optional[List[int]] = None,
         strategy_group: Optional[List[str]] = None
-    ) -> Dict[str, any]:
+    ) -> Dict[str, Any]:
         """
         Apply tiered trailing stops to positions.
         
@@ -388,41 +477,47 @@ class SmartTrailService:
             tier_activation_thresholds
         )
         
-        # Apply trailing stops
-        applied_count = 0
+        # Apply trailing stops atomically
         tier_summary = {}
-        errors = []
         
-        print(f"Applying trailing stops to {len(tiered_positions)} positions across {len(tier_activation_thresholds)} tiers")
-        
+        # Collect all trailing stop configurations
+        trailing_stop_configs = []
         for pos_with_dist, activation_threshold in tiered_positions:
-            try:
-                print(f"Applying trailing stop to bot {pos_with_dist.bot_id}: activation={activation_threshold}%, trail={trailing_percentage}%, distance={pos_with_dist.distance_to_spot:.1f} points")
-                
-                ok, msg = upsert_trailing_stop(
-                    bot_id=pos_with_dist.bot_id,
-                    activation_threshold=activation_threshold,
-                    trailing_percentage=trailing_percentage,
-                    trailing_mode="percentage"
-                )
-                
-                if ok:
-                    applied_count += 1
-                    
-                    # Track tier summary
-                    tier_key = f"{activation_threshold}%"
-                    if tier_key not in tier_summary:
-                        tier_summary[tier_key] = 0
-                    tier_summary[tier_key] += 1
-                else:
-                    errors.append(f"Bot {pos_with_dist.bot_id}: {msg}")
-            except Exception as e:
-                error_msg = f"Bot {pos_with_dist.bot_id}: {str(e)}"
-                errors.append(error_msg)
-                print(f"Error applying trailing stop to bot {pos_with_dist.bot_id}: {e}")
+            trailing_stop_configs.append({
+                "bot_id": pos_with_dist.bot_id,
+                "activation_threshold": activation_threshold,
+                "trailing_percentage": trailing_percentage,
+                "trailing_mode": "percentage"
+            })
+            
+            # Track tier summary (for reporting)
+            tier_key = f"{activation_threshold}%"
+            if tier_key not in tier_summary:
+                tier_summary[tier_key] = 0
+            tier_summary[tier_key] += 1
+        
+        print(f"Applying trailing stops to {len(tiered_positions)} positions across {len(tier_activation_thresholds)} tiers in atomic transaction")
+        
+        # Apply all updates in a single atomic transaction
+        success, applied_count, error_list = upsert_trailing_stops_batch(trailing_stop_configs)
+        
+        # Convert error list to string format for backward compatibility
+        errors = []
+        if error_list:
+            for error in error_list:
+                bot_id = error.get("bot_id", "Unknown")
+                error_msg = error.get("error", "Unknown error")
+                errors.append(f"Bot {bot_id}: {error_msg}")
+                # Adjust tier_summary to reflect actual successes
+                for pos_with_dist, activation_threshold in tiered_positions:
+                    if pos_with_dist.bot_id == bot_id:
+                        tier_key = f"{activation_threshold}%"
+                        if tier_key in tier_summary and tier_summary[tier_key] > 0:
+                            tier_summary[tier_key] -= 1
+                        break
         
         result = {
-            "success": applied_count > 0,
+            "success": success and applied_count > 0,
             "message": f"Applied tiered trailing stops to {applied_count} positions",
             "positions_processed": applied_count,
             "tier_summary": tier_summary,
