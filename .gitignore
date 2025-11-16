@@ -2,3 +2,4 @@
 token.json
 docker-compose.yml
 docker-compose.standalone.yml
+config/threshold_config.json

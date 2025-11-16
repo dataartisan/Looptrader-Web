@@ -34,7 +34,7 @@
             </div>
             <div class="card-body">
               <div class="row">
-                <div class="col-md-4">
+                <div class="col-md-3">
                   <div class="info-box">
                     <span class="info-box-icon bg-info"><i class="fas fa-power-off"></i></span>
                     <div class="info-box-content">
@@ -45,7 +45,7 @@
                     </div>
                   </div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                   <div class="info-box">
                     <span class="info-box-icon bg-success"><i class="fas fa-dollar-sign"></i></span>
                     <div class="info-box-content">
@@ -57,7 +57,7 @@
                     </div>
                   </div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                   <div class="info-box">
                     <span class="info-box-icon bg-warning"><i class="fas fa-clock"></i></span>
                     <div class="info-box-content">
@@ -66,6 +66,29 @@
                         <span class="text-muted">-</span>
                       </span>
                     </div>
+                  </div>
+                </div>
+                <div class="col-md-3">
+                  <div class="info-box">
+                    <span class="info-box-icon bg-primary"><i class="fas fa-calendar-day"></i></span>
+                    <div class="info-box-content">
+                      <span class="info-box-text">Trading Day Status</span>
+                      <span class="info-box-number" id="trading-day-status">
+                        <span class="badge badge-secondary">Checking...</span>
+                      </span>
+                      <small class="text-muted" id="next-trading-day"></small>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Trading Day Warning Alert -->
+              <div class="row mt-3" id="trading-day-alert-container" style="display: none;">
+                <div class="col-md-12">
+                  <div class="alert alert-warning" id="trading-day-alert">
+                    <i class="fas fa-exclamation-triangle mr-2"></i>
+                    <strong>Non-Trading Day:</strong> The monitor is running but will skip all checks until the next trading day.
+                    <span id="next-trading-day-alert"></span>
                   </div>
                 </div>
               </div>
@@ -435,6 +458,34 @@
       $('#last-check').text(checkTime.toLocaleString());
     } else {
       $('#last-check').text('-');
+    }
+
+    // Update trading day status
+    if (status.is_trading_day !== undefined) {
+      if (status.is_trading_day) {
+        $('#trading-day-status').html('<span class="badge badge-success">Trading Day</span>');
+        $('#next-trading-day').text('');
+        $('#trading-day-alert-container').hide();
+      } else {
+        $('#trading-day-status').html('<span class="badge badge-warning">Non-Trading Day</span>');
+        if (status.next_trading_day) {
+          const nextDay = new Date(status.next_trading_day);
+          $('#next-trading-day').text('Next: ' + nextDay.toLocaleDateString());
+          $('#next-trading-day-alert').text('Next trading day: ' + nextDay.toLocaleDateString());
+          if (status.running) {
+            $('#trading-day-alert-container').show();
+          } else {
+            $('#trading-day-alert-container').hide();
+          }
+        } else {
+          $('#next-trading-day').text('');
+          $('#trading-day-alert-container').hide();
+        }
+      }
+    } else {
+      $('#trading-day-status').html('<span class="badge badge-secondary">Unknown</span>');
+      $('#next-trading-day').text('');
+      $('#trading-day-alert-container').hide();
     }
 
     // Update last trigger notification

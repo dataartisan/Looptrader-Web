@@ -60,6 +60,16 @@ class ThresholdMonitor:
         # Track if this is the first check after startup (to trigger on existing conditions)
         self._first_check = True
         
+        # Check if today is a trading day
+        today = date.today()
+        self._is_trading_day = not self._is_market_holiday(today)
+        self._next_trading_day = self._get_next_trading_day(today) if not self._is_trading_day else today
+        
+        if not self._is_trading_day:
+            logger.warning(f"⚠️  Started on non-trading day ({today}). Monitor will skip all checks until next trading day ({self._next_trading_day})")
+        else:
+            logger.info(f"✓ Started on trading day ({today})")
+        
         # Register signal handlers for graceful shutdown
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -204,6 +214,37 @@ class ThresholdMonitor:
             next_day += timedelta(days=1)
         return next_day
     
+    def _is_trading_day(self, check_date: date) -> bool:
+        """Check if date is a trading day (not weekend or holiday)."""
+        return not self._is_market_holiday(check_date)
+    
+    def _check_and_wait_for_trading_day(self) -> bool:
+        """
+        Check if today is a trading day. If not, wait until next trading day.
+        
+        Returns:
+            True if today is a trading day, False if waiting for next trading day
+        """
+        today = date.today()
+        is_trading = self._is_trading_day(today)
+        
+        if not is_trading:
+            next_trading = self._get_next_trading_day(today)
+            logger.info(f"⏸️  Skipping checks - today ({today}) is not a trading day. Next trading day: {next_trading}")
+            self._is_trading_day = False
+            self._next_trading_day = next_trading
+            return False
+        
+        # If we were waiting and now it's a trading day, update flags
+        was_waiting = not self._is_trading_day
+        self._is_trading_day = True
+        self._next_trading_day = today
+        
+        if was_waiting:
+            logger.info(f"✓ Trading day resumed: {today}")
+        
+        return True
+    
     def _init_schwab_client(self) -> None:
         """Initialize Schwab API client from token file."""
         token_path = self.config['token_path']
@@ -296,6 +337,11 @@ class ThresholdMonitor:
         Returns:
             List of (bot_name, threshold_level) tuples for newly triggered bots
         """
+        # Block all triggers on non-trading days
+        if not self._is_trading_day:
+            logger.debug("Skipping threshold checks - not a trading day")
+            return []
+        
         triggered = []
         last_price = self.state.get('last_price')
         
@@ -420,6 +466,24 @@ class ThresholdMonitor:
         
         try:
             while self._running:
+                # Check if today is a trading day - skip all checks if not
+                if not self._check_and_wait_for_trading_day():
+                    # Not a trading day - wait until next trading day
+                    # Calculate seconds until next trading day (check every hour)
+                    today = date.today()
+                    next_trading = self._get_next_trading_day(today)
+                    days_until_trading = (next_trading - today).days
+                    
+                    # Wait in smaller increments (1 hour) so we can check if it becomes a trading day
+                    wait_seconds = min(3600, self.config['check_interval_seconds'])  # Check every hour or check_interval, whichever is smaller
+                    logger.info(f"Waiting {wait_seconds} seconds before checking trading day status again...")
+                    
+                    for _ in range(wait_seconds):
+                        if not self._running:
+                            break
+                        time.sleep(1)
+                    continue
+                
                 # Get current price
                 current_price = self.get_spx_price()
                 
@@ -438,7 +502,7 @@ class ThresholdMonitor:
                 self.state['last_price'] = current_price
                 self.state['last_check'] = datetime.now(timezone.utc).isoformat()
                 
-                # Mark that first check is complete
+                # Mark that first check is complete (only on trading days)
                 if self._first_check:
                     self._first_check = False
                 
@@ -518,13 +582,20 @@ class ThresholdMonitor:
         if running and self.state.get('last_check'):
             started_at = self.state.get('last_check')
         
+        # Check current trading day status
+        today = date.today()
+        is_trading_day = self._is_trading_day(today)
+        next_trading_day = self._get_next_trading_day(today) if not is_trading_day else today
+        
         return {
             'running': running,
             'pid': pid,
             'started_at': started_at,
             'last_trigger': self._last_trigger,
             'last_price': self.state.get('last_price'),
-            'triggered_bots': self.state.get('triggered_bots', [])
+            'triggered_bots': self.state.get('triggered_bots', []),
+            'is_trading_day': is_trading_day,
+            'next_trading_day': next_trading_day.isoformat() if not is_trading_day else None
         }
 
 

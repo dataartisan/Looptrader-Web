@@ -3283,6 +3283,37 @@ def threshold_monitor_status():
     """Get threshold monitor status."""
     import os
     import json
+    from datetime import date, timedelta
+    
+    def _is_market_holiday(check_date):
+        """Check if date is a market holiday (weekend or US stock market holiday)."""
+        # Check weekend
+        weekday = check_date.weekday()
+        if weekday >= 5:  # Saturday = 5, Sunday = 6
+            return True
+        
+        # US Stock Market Holidays for 2025
+        holidays_2025 = [
+            date(2025, 1, 1),   # New Year's Day
+            date(2025, 1, 20),  # MLK Day
+            date(2025, 2, 17),  # Presidents' Day
+            date(2025, 4, 18),  # Good Friday
+            date(2025, 5, 26),  # Memorial Day
+            date(2025, 6, 19),  # Juneteenth
+            date(2025, 7, 4),   # Independence Day
+            date(2025, 9, 1),   # Labor Day
+            date(2025, 11, 27), # Thanksgiving
+            date(2025, 12, 25), # Christmas
+        ]
+        
+        return check_date in holidays_2025
+    
+    def _get_next_trading_day(start_date):
+        """Get the next trading day after start_date."""
+        next_day = start_date + timedelta(days=1)
+        while _is_market_holiday(next_day):
+            next_day += timedelta(days=1)
+        return next_day
     
     try:
         pid_file = '/app/data/threshold_monitor.pid'
@@ -3324,6 +3355,11 @@ def threshold_monitor_status():
             except (json.JSONDecodeError, IOError):
                 pass
         
+        # Check current trading day status
+        today = date.today()
+        is_trading_day = not _is_market_holiday(today)
+        next_trading_day = _get_next_trading_day(today) if not is_trading_day else None
+        
         return jsonify({
             'success': True,
             'running': running,
@@ -3331,7 +3367,9 @@ def threshold_monitor_status():
             'started_at': started_at,
             'last_trigger': last_trigger,  # Will be None unless we read from process
             'last_price': last_price,
-            'triggered_bots': triggered_bots
+            'triggered_bots': triggered_bots,
+            'is_trading_day': is_trading_day,
+            'next_trading_day': next_trading_day.isoformat() if next_trading_day else None
         })
         
     except Exception as e:
