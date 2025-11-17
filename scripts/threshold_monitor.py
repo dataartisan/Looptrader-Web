@@ -24,6 +24,18 @@ from datetime import date, datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 
+# Import timezone support
+try:
+    from zoneinfo import ZoneInfo
+    NYSE_TZ = ZoneInfo("America/New_York")
+except ImportError:
+    # Fallback for Python < 3.9
+    try:
+        import pytz
+        NYSE_TZ = pytz.timezone("America/New_York")
+    except ImportError:
+        raise ImportError("Either zoneinfo (Python 3.9+) or pytz is required")
+
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
@@ -49,6 +61,7 @@ class ThresholdMonitor:
     
     def __init__(self, config_path: str):
         """Initialize monitor with configuration file."""
+        self.config_path = config_path
         self.config = self._load_config(config_path)
         self.state_file = self.config['state_file']
         self.pid_file = self.config.get('pid_file', '/app/data/threshold_monitor.pid')
@@ -60,10 +73,13 @@ class ThresholdMonitor:
         # Track if this is the first check after startup (to trigger on existing conditions)
         self._first_check = True
         
-        # Check if today is a trading day
-        today = date.today()
+        # Check if today is a trading day (using EST/ET timezone)
+        today = self._get_today_est()
         self._is_trading_day_flag = not self._is_market_holiday(today)
         self._next_trading_day = self._get_next_trading_day(today) if not self._is_trading_day_flag else today
+        
+        # Reset triggered bots if it's a new trading day
+        self._reset_triggered_bots_if_new_day(today)
         
         if not self._is_trading_day_flag:
             logger.warning(f"⚠️  Started on non-trading day ({today}). Monitor will skip all checks until next trading day ({self._next_trading_day})")
@@ -87,7 +103,12 @@ class ThresholdMonitor:
         )  # Lowest first
         
         logger.info(f"Initialized with {len(self.put_thresholds)} put thresholds and {len(self.call_thresholds)} call thresholds")
-        logger.info(f"Already triggered bots: {self.state.get('triggered_bots', [])}")
+        triggered_bots = self.state.get('triggered_bots', [])
+        triggered_date = self.state.get('triggered_bots_date')
+        if triggered_bots and triggered_date:
+            logger.info(f"Already triggered bots today ({triggered_date}): {triggered_bots}")
+        else:
+            logger.info("No bots triggered today")
     
     def _load_config(self, config_path: str) -> Dict:
         """Load configuration from JSON file."""
@@ -137,6 +158,7 @@ class ThresholdMonitor:
         # Create default state
         default_state = {
             'triggered_bots': [],
+            'triggered_bots_date': None,  # Date (YYYY-MM-DD) when bots were triggered
             'last_price': None,
             'last_check': None
         }
@@ -157,6 +179,49 @@ class ThresholdMonitor:
             logger.debug(f"Saved state to {state_file}")
         except IOError as e:
             logger.error(f"Error saving state: {e}")
+    
+    def _remove_threshold(self, level: float, threshold_type: str) -> None:
+        """
+        Remove a threshold level from the configuration after it triggers.
+        
+        Args:
+            level: The threshold level to remove
+            threshold_type: 'put' or 'call'
+        """
+        try:
+            threshold_list = self.config['thresholds'][f'{threshold_type}s']
+            
+            # Find and remove the threshold with matching level
+            original_count = len(threshold_list)
+            self.config['thresholds'][f'{threshold_type}s'] = [
+                t for t in threshold_list if t['level'] != level
+            ]
+            removed_count = original_count - len(self.config['thresholds'][f'{threshold_type}s'])
+            
+            if removed_count > 0:
+                # Save updated config to file
+                config_file = Path(self.config_path)
+                config_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(config_file, 'w') as f:
+                    json.dump(self.config, f, indent=2)
+                
+                # Reload thresholds lists
+                self.put_thresholds = sorted(
+                    self.config['thresholds']['puts'],
+                    key=lambda x: x['level'],
+                    reverse=True  # Highest first
+                )
+                self.call_thresholds = sorted(
+                    self.config['thresholds']['calls'],
+                    key=lambda x: x['level']
+                )  # Lowest first
+                
+                logger.info(f"✅ Removed {threshold_type.upper()} threshold level ${level:.2f} from configuration. "
+                          f"Remaining {threshold_type}s: {len(self.config['thresholds'][f'{threshold_type}s'])}")
+            else:
+                logger.warning(f"⚠️  Threshold level ${level:.2f} not found in {threshold_type}s list to remove")
+        except Exception as e:
+            logger.error(f"❌ Error removing threshold level ${level:.2f} from config: {e}", exc_info=True)
     
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully."""
@@ -214,6 +279,26 @@ class ThresholdMonitor:
             next_day += timedelta(days=1)
         return next_day
     
+    def _get_today_est(self) -> date:
+        """Get today's date in EST/ET timezone (for market operations)."""
+        now_est = datetime.now(NYSE_TZ)
+        return now_est.date()
+    
+    def _reset_triggered_bots_if_new_day(self, today: date) -> None:
+        """
+        Reset triggered bots list if it's a new trading day.
+        This allows bots to be triggered once per day.
+        """
+        triggered_date_str = self.state.get('triggered_bots_date')
+        today_str = today.isoformat()
+        
+        if triggered_date_str != today_str:
+            if triggered_date_str:
+                logger.info(f"New trading day detected ({today_str}). Resetting triggered bots from previous day ({triggered_date_str})")
+            self.state['triggered_bots'] = []
+            self.state['triggered_bots_date'] = today_str
+            self._save_state()
+    
     def _is_trading_day(self, check_date: date) -> bool:
         """Check if date is a trading day (not weekend or holiday)."""
         return not self._is_market_holiday(check_date)
@@ -225,7 +310,7 @@ class ThresholdMonitor:
         Returns:
             True if today is a trading day, False if waiting for next trading day
         """
-        today = date.today()
+        today = self._get_today_est()
         is_trading = self._is_trading_day(today)
         
         if not is_trading:
@@ -235,13 +320,18 @@ class ThresholdMonitor:
             self._next_trading_day = next_trading
             return False
         
-        # If we were waiting and now it's a trading day, update flags
+        # If we were waiting and now it's a trading day, update flags and reset triggered bots
         was_waiting = not self._is_trading_day_flag
         self._is_trading_day_flag = True
         self._next_trading_day = today
         
         if was_waiting:
             logger.info(f"✓ Trading day resumed: {today}")
+            # Reset triggered bots for the new trading day
+            self._reset_triggered_bots_if_new_day(today)
+        
+        # Always check if it's a new day (in case we've been running across midnight)
+        self._reset_triggered_bots_if_new_day(today)
         
         return True
     
@@ -278,7 +368,7 @@ class ThresholdMonitor:
             return None
         
         try:
-            today = date.today()
+            today = self._get_today_est()
             
             # Check if today is a market holiday
             if self._is_market_holiday(today):
@@ -470,7 +560,7 @@ class ThresholdMonitor:
                 if not self._check_and_wait_for_trading_day():
                     # Not a trading day - wait until next trading day
                     # Calculate seconds until next trading day (check every hour)
-                    today = date.today()
+                    today = self._get_today_est()
                     next_trading = self._get_next_trading_day(today)
                     days_until_trading = (next_trading - today).days
                     
@@ -509,13 +599,23 @@ class ThresholdMonitor:
                 # Trigger webhooks for newly crossed thresholds
                 for bot_name, level in triggered:
                     logger.info(f"🎯 THRESHOLD TRIGGERED: Bot '{bot_name}' at level {level} (current price: {current_price})")
+                    
+                    # Determine threshold type (put or call) before removing
+                    threshold_type = 'put' if level in [t['level'] for t in self.put_thresholds] else 'call'
+                    
                     success = self.call_webhook(bot_name)
                     
                     if success:
+                        # Ensure triggered_bots list exists and reset if new day
+                        today = self._get_today_est()
+                        self._reset_triggered_bots_if_new_day(today)
+                        
                         # Add to triggered bots list
                         if 'triggered_bots' not in self.state:
                             self.state['triggered_bots'] = []
-                        self.state['triggered_bots'].append(bot_name)
+                        if bot_name not in self.state['triggered_bots']:
+                            self.state['triggered_bots'].append(bot_name)
+                            self.state['triggered_bots_date'] = today.isoformat()
                         
                         # Store last trigger info for notifications
                         self._last_trigger = {
@@ -523,15 +623,18 @@ class ThresholdMonitor:
                             'threshold': level,
                             'price': current_price,
                             'timestamp': datetime.now(timezone.utc).isoformat(),
-                            'type': 'put' if level in [t['level'] for t in self.put_thresholds] else 'call'
+                            'type': threshold_type
                         }
                         
                         # Also save last_trigger to state file for persistence
                         self.state['last_trigger'] = self._last_trigger
                         
+                        # Remove the threshold level from configuration
+                        self._remove_threshold(level, threshold_type)
+                        
                         # Save state immediately
                         self._save_state()
-                        logger.info(f"✅ Bot '{bot_name}' successfully triggered and added to triggered list")
+                        logger.info(f"✅ Bot '{bot_name}' successfully triggered and added to triggered list for {today.isoformat()}")
                     else:
                         logger.error(f"❌ Failed to trigger webhook for '{bot_name}', will retry on next check")
                 
@@ -582,8 +685,8 @@ class ThresholdMonitor:
         if running and self.state.get('last_check'):
             started_at = self.state.get('last_check')
         
-        # Check current trading day status
-        today = date.today()
+        # Check current trading day status (using EST/ET timezone)
+        today = self._get_today_est()
         is_trading_day = self._is_trading_day(today)
         next_trading_day = self._get_next_trading_day(today) if not is_trading_day else today
         
