@@ -62,10 +62,10 @@ class ThresholdMonitor:
         
         # Check if today is a trading day
         today = date.today()
-        self._is_trading_day = not self._is_market_holiday(today)
-        self._next_trading_day = self._get_next_trading_day(today) if not self._is_trading_day else today
+        self._is_trading_day_flag = not self._is_market_holiday(today)
+        self._next_trading_day = self._get_next_trading_day(today) if not self._is_trading_day_flag else today
         
-        if not self._is_trading_day:
+        if not self._is_trading_day_flag:
             logger.warning(f"⚠️  Started on non-trading day ({today}). Monitor will skip all checks until next trading day ({self._next_trading_day})")
         else:
             logger.info(f"✓ Started on trading day ({today})")
@@ -231,13 +231,13 @@ class ThresholdMonitor:
         if not is_trading:
             next_trading = self._get_next_trading_day(today)
             logger.info(f"⏸️  Skipping checks - today ({today}) is not a trading day. Next trading day: {next_trading}")
-            self._is_trading_day = False
+            self._is_trading_day_flag = False
             self._next_trading_day = next_trading
             return False
         
         # If we were waiting and now it's a trading day, update flags
-        was_waiting = not self._is_trading_day
-        self._is_trading_day = True
+        was_waiting = not self._is_trading_day_flag
+        self._is_trading_day_flag = True
         self._next_trading_day = today
         
         if was_waiting:
@@ -338,7 +338,7 @@ class ThresholdMonitor:
             List of (bot_name, threshold_level) tuples for newly triggered bots
         """
         # Block all triggers on non-trading days
-        if not self._is_trading_day:
+        if not self._is_trading_day_flag:
             logger.debug("Skipping threshold checks - not a trading day")
             return []
         
