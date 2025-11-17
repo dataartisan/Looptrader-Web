@@ -103,45 +103,6 @@
                   </button>
                 </div>
               </div>
-              
-              <!-- Latest Spot Prices Display -->
-              <div class="row mt-4">
-                <div class="col-md-12">
-                  <div class="card card-outline card-info">
-                    <div class="card-header">
-                      <h3 class="card-title"><i class="fas fa-chart-area mr-2"></i>Latest Spot Prices</h3>
-                    </div>
-                    <div class="card-body">
-                      <div class="table-responsive">
-                        <table class="table table-bordered table-striped">
-                          <thead>
-                            <tr>
-                              <th>Symbol</th>
-                              <th>Latest Spot Price</th>
-                              <th>Last Updated</th>
-                              <th>Status</th>
-                            </tr>
-                          </thead>
-                          <tbody id="spot-prices-table">
-                            <tr>
-                              <td><strong>SPX</strong></td>
-                              <td id="spot-price-value" class="text-center">
-                                <span class="text-muted">-</span>
-                              </td>
-                              <td id="spot-price-time" class="text-center">
-                                <span class="text-muted">-</span>
-                              </td>
-                              <td id="spot-price-status" class="text-center">
-                                <span class="badge badge-secondary">Waiting...</span>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -424,38 +385,33 @@
     $('#btn-stop').prop('disabled', !status.running);
 
     // Update last price
-    if (status.last_price) {
-      $('#last-price').html('<strong class="text-success">$' + status.last_price.toFixed(2) + '</strong>');
-      $('#spot-price-value').html('<strong class="text-success">$' + status.last_price.toFixed(2) + '</strong>');
-      
-      // Update timestamp
-      if (status.started_at) {
-        const checkTime = new Date(status.started_at);
-        $('#price-timestamp').text('Updated: ' + checkTime.toLocaleString());
-        $('#spot-price-time').text(checkTime.toLocaleString());
+    if (status.last_price !== null && status.last_price !== undefined) {
+      const price = parseFloat(status.last_price);
+      if (!isNaN(price)) {
+        $('#last-price').html('<strong class="text-success">$' + price.toFixed(2) + '</strong>');
+        
+        // Update timestamp
+        if (status.started_at) {
+          const checkTime = new Date(status.started_at);
+          const estTime = checkTime.toLocaleString('en-US', { timeZone: 'America/New_York' });
+          $('#price-timestamp').text('Updated: ' + estTime + ' ET');
+        } else {
+          $('#price-timestamp').text('');
+        }
       } else {
+        $('#last-price').html('<span class="text-muted">-</span>');
         $('#price-timestamp').text('');
-        $('#spot-price-time').text('-');
-      }
-      
-      // Update status badge
-      if (status.running) {
-        $('#spot-price-status').html('<span class="badge badge-success">Live</span>');
-      } else {
-        $('#spot-price-status').html('<span class="badge badge-secondary">Stopped</span>');
       }
     } else {
       $('#last-price').html('<span class="text-muted">-</span>');
-      $('#spot-price-value').html('<span class="text-muted">-</span>');
       $('#price-timestamp').text('');
-      $('#spot-price-time').text('-');
-      $('#spot-price-status').html('<span class="badge badge-secondary">No Data</span>');
     }
 
     // Update last check time
     if (status.started_at) {
       const checkTime = new Date(status.started_at);
-      $('#last-check').text(checkTime.toLocaleString());
+      const estTime = checkTime.toLocaleString('en-US', { timeZone: 'America/New_York' });
+      $('#last-check').text(estTime + ' ET');
     } else {
       $('#last-check').text('-');
     }

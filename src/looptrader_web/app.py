@@ -3355,8 +3355,10 @@ def threshold_monitor_status():
             except (json.JSONDecodeError, IOError):
                 pass
         
-        # Check current trading day status
-        today = date.today()
+        # Check current trading day status (using EST/ET timezone)
+        # Get today's date in EST/ET timezone for accurate trading day detection
+        now_est = datetime.now(pytz.timezone('America/New_York'))
+        today = now_est.date()
         is_trading_day = not _is_market_holiday(today)
         next_trading_day = _get_next_trading_day(today) if not is_trading_day else None
         
