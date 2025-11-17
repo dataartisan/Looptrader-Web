@@ -427,11 +427,7 @@ class ThresholdMonitor:
         Returns:
             List of (bot_name, threshold_level) tuples for newly triggered bots
         """
-        # Block all triggers on non-trading days
-        if not self._is_trading_day_flag:
-            logger.debug("Skipping threshold checks - not a trading day")
-            return []
-        
+        # Note: Trading day check is already done in run() loop before calling this method
         triggered = []
         last_price = self.state.get('last_price')
         
@@ -652,11 +648,22 @@ class ThresholdMonitor:
             self._running = False
         except Exception as e:
             logger.error(f"Unexpected error in monitoring loop: {e}", exc_info=True)
-        finally:
-            # Save final state
+            # Continue running instead of stopping - wait before retrying
+            logger.info("Waiting before retrying after error...")
+            # Save state before continuing
             self._save_state()
-            self._cleanup_pid_file()
-            logger.info("Monitor stopped")
+            # Wait before retrying
+            for _ in range(self.config['check_interval_seconds']):
+                if not self._running:
+                    break
+                time.sleep(1)
+            continue  # Continue the loop instead of stopping
+        
+        # Only execute cleanup when actually stopping
+        # Save final state
+        self._save_state()
+        self._cleanup_pid_file()
+        logger.info("Monitor stopped")
     
     def get_status(self) -> Dict:
         """Get current monitor status."""
