@@ -3362,6 +3362,13 @@ def threshold_monitor_status():
         is_trading_day = not _is_market_holiday(today)
         next_trading_day = _get_next_trading_day(today) if not is_trading_day else None
         
+        # Ensure last_price is properly converted (handle both int and float)
+        if last_price is not None:
+            try:
+                last_price = float(last_price)
+            except (ValueError, TypeError):
+                last_price = None
+        
         return jsonify({
             'success': True,
             'running': running,

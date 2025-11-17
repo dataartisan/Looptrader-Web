@@ -589,6 +589,9 @@ class ThresholdMonitor:
                     self.state['last_price'] = current_price
                     self.state['last_check'] = datetime.now(timezone.utc).isoformat()
                     
+                    # Save state immediately after updating price (so UI can display it)
+                    self._save_state()
+                    
                     # Mark that first check is complete (only on trading days)
                     if self._first_check:
                         self._first_check = False
