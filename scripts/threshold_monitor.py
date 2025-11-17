@@ -552,118 +552,122 @@ class ThresholdMonitor:
         
         try:
             while self._running:
-                # Check if today is a trading day - skip all checks if not
-                if not self._check_and_wait_for_trading_day():
-                    # Not a trading day - wait until next trading day
-                    # Calculate seconds until next trading day (check every hour)
-                    today = self._get_today_est()
-                    next_trading = self._get_next_trading_day(today)
-                    days_until_trading = (next_trading - today).days
+                try:
+                    # Check if today is a trading day - skip all checks if not
+                    if not self._check_and_wait_for_trading_day():
+                        # Not a trading day - wait until next trading day
+                        # Calculate seconds until next trading day (check every hour)
+                        today = self._get_today_est()
+                        next_trading = self._get_next_trading_day(today)
+                        days_until_trading = (next_trading - today).days
+                        
+                        # Wait in smaller increments (1 hour) so we can check if it becomes a trading day
+                        wait_seconds = min(3600, self.config['check_interval_seconds'])  # Check every hour or check_interval, whichever is smaller
+                        logger.info(f"Waiting {wait_seconds} seconds before checking trading day status again...")
+                        
+                        for _ in range(wait_seconds):
+                            if not self._running:
+                                break
+                            time.sleep(1)
+                        continue
                     
-                    # Wait in smaller increments (1 hour) so we can check if it becomes a trading day
-                    wait_seconds = min(3600, self.config['check_interval_seconds'])  # Check every hour or check_interval, whichever is smaller
-                    logger.info(f"Waiting {wait_seconds} seconds before checking trading day status again...")
+                    # Get current price
+                    current_price = self.get_spx_price()
                     
-                    for _ in range(wait_seconds):
+                    if current_price is None:
+                        logger.warning("Could not get current price, retrying in next cycle")
+                        time.sleep(self.config['check_interval_seconds'])
+                        continue
+                    
+                    # Log current SPX spot price
+                    logger.info(f"📊 Current SPX spot price: ${current_price:.2f}")
+                    
+                    # Check thresholds BEFORE updating last_price (so we can detect crossings)
+                    triggered = self.check_thresholds(current_price)
+                    
+                    # Update last price in state after checking thresholds
+                    self.state['last_price'] = current_price
+                    self.state['last_check'] = datetime.now(timezone.utc).isoformat()
+                    
+                    # Mark that first check is complete (only on trading days)
+                    if self._first_check:
+                        self._first_check = False
+                    
+                    # Trigger webhooks for newly crossed thresholds
+                    for bot_name, level in triggered:
+                        logger.info(f"🎯 THRESHOLD TRIGGERED: Bot '{bot_name}' at level {level} (current price: {current_price})")
+                        
+                        # Determine threshold type (put or call) before removing
+                        threshold_type = 'put' if level in [t['level'] for t in self.put_thresholds] else 'call'
+                        
+                        success = self.call_webhook(bot_name)
+                        
+                        if success:
+                            # Ensure triggered_bots list exists and reset if new day
+                            today = self._get_today_est()
+                            self._reset_triggered_bots_if_new_day(today)
+                            
+                            # Add to triggered bots list
+                            if 'triggered_bots' not in self.state:
+                                self.state['triggered_bots'] = []
+                            if bot_name not in self.state['triggered_bots']:
+                                self.state['triggered_bots'].append(bot_name)
+                                self.state['triggered_bots_date'] = today.isoformat()
+                            
+                            # Store last trigger info for notifications
+                            self._last_trigger = {
+                                'bot_name': bot_name,
+                                'threshold': level,
+                                'price': current_price,
+                                'timestamp': datetime.now(timezone.utc).isoformat(),
+                                'type': threshold_type
+                            }
+                            
+                            # Also save last_trigger to state file for persistence
+                            self.state['last_trigger'] = self._last_trigger
+                            
+                            # Remove the threshold level from configuration
+                            self._remove_threshold(level, threshold_type)
+                            
+                            # Save state immediately
+                            self._save_state()
+                            logger.info(f"✅ Bot '{bot_name}' successfully triggered and added to triggered list for {today.isoformat()}")
+                        else:
+                            logger.error(f"❌ Failed to trigger webhook for '{bot_name}', will retry on next check")
+                    
+                    # Log current status
+                    logger.debug(f"Current price: {current_price}, Triggered bots: {len(self.state.get('triggered_bots', []))}")
+                    
+                    # Wait before next check (check _running flag periodically)
+                    for _ in range(self.config['check_interval_seconds']):
                         if not self._running:
                             break
                         time.sleep(1)
-                    continue
                 
-                # Get current price
-                current_price = self.get_spx_price()
-                
-                if current_price is None:
-                    logger.warning("Could not get current price, retrying in next cycle")
-                    time.sleep(self.config['check_interval_seconds'])
-                    continue
-                
-                # Log current SPX spot price
-                logger.info(f"📊 Current SPX spot price: ${current_price:.2f}")
-                
-                # Check thresholds BEFORE updating last_price (so we can detect crossings)
-                triggered = self.check_thresholds(current_price)
-                
-                # Update last price in state after checking thresholds
-                self.state['last_price'] = current_price
-                self.state['last_check'] = datetime.now(timezone.utc).isoformat()
-                
-                # Mark that first check is complete (only on trading days)
-                if self._first_check:
-                    self._first_check = False
-                
-                # Trigger webhooks for newly crossed thresholds
-                for bot_name, level in triggered:
-                    logger.info(f"🎯 THRESHOLD TRIGGERED: Bot '{bot_name}' at level {level} (current price: {current_price})")
-                    
-                    # Determine threshold type (put or call) before removing
-                    threshold_type = 'put' if level in [t['level'] for t in self.put_thresholds] else 'call'
-                    
-                    success = self.call_webhook(bot_name)
-                    
-                    if success:
-                        # Ensure triggered_bots list exists and reset if new day
-                        today = self._get_today_est()
-                        self._reset_triggered_bots_if_new_day(today)
-                        
-                        # Add to triggered bots list
-                        if 'triggered_bots' not in self.state:
-                            self.state['triggered_bots'] = []
-                        if bot_name not in self.state['triggered_bots']:
-                            self.state['triggered_bots'].append(bot_name)
-                            self.state['triggered_bots_date'] = today.isoformat()
-                        
-                        # Store last trigger info for notifications
-                        self._last_trigger = {
-                            'bot_name': bot_name,
-                            'threshold': level,
-                            'price': current_price,
-                            'timestamp': datetime.now(timezone.utc).isoformat(),
-                            'type': threshold_type
-                        }
-                        
-                        # Also save last_trigger to state file for persistence
-                        self.state['last_trigger'] = self._last_trigger
-                        
-                        # Remove the threshold level from configuration
-                        self._remove_threshold(level, threshold_type)
-                        
-                        # Save state immediately
-                        self._save_state()
-                        logger.info(f"✅ Bot '{bot_name}' successfully triggered and added to triggered list for {today.isoformat()}")
-                    else:
-                        logger.error(f"❌ Failed to trigger webhook for '{bot_name}', will retry on next check")
-                
-                # Log current status
-                logger.debug(f"Current price: {current_price}, Triggered bots: {len(self.state.get('triggered_bots', []))}")
-                
-                # Wait before next check (check _running flag periodically)
-                for _ in range(self.config['check_interval_seconds']):
-                    if not self._running:
-                        break
-                    time.sleep(1)
-                
-        except KeyboardInterrupt:
-            logger.info("Received interrupt signal, shutting down...")
-            self._running = False
-        except Exception as e:
-            logger.error(f"Unexpected error in monitoring loop: {e}", exc_info=True)
-            # Continue running instead of stopping - wait before retrying
-            logger.info("Waiting before retrying after error...")
-            # Save state before continuing
-            self._save_state()
-            # Wait before retrying
-            for _ in range(self.config['check_interval_seconds']):
-                if not self._running:
+                except KeyboardInterrupt:
+                    logger.info("Received interrupt signal, shutting down...")
+                    self._running = False
                     break
-                time.sleep(1)
-            continue  # Continue the loop instead of stopping
-        
-        # Only execute cleanup when actually stopping
-        # Save final state
-        self._save_state()
-        self._cleanup_pid_file()
-        logger.info("Monitor stopped")
+                except Exception as e:
+                    logger.error(f"Unexpected error in monitoring loop: {e}", exc_info=True)
+                    # Continue running instead of stopping - wait before retrying
+                    logger.info("Waiting before retrying after error...")
+                    # Save state before continuing
+                    self._save_state()
+                    # Wait before retrying
+                    for _ in range(self.config['check_interval_seconds']):
+                        if not self._running:
+                            break
+                        time.sleep(1)
+                    # Continue the loop (this continue is now inside the while loop)
+                    continue
+                
+        finally:
+            # Only execute cleanup when actually stopping
+            # Save final state
+            self._save_state()
+            self._cleanup_pid_file()
+            logger.info("Monitor stopped")
     
     def get_status(self) -> Dict:
         """Get current monitor status."""
