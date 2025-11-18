@@ -2937,17 +2937,23 @@ def webhook_unpause_bot():
         # Query database for bot by name (case-insensitive)
         db = SessionLocal()
         try:
+            # Log all available bot names for debugging
+            all_bots = db.query(Bot).all()
+            all_bot_names = [b.name for b in all_bots]
+            logger.info(f"Webhook unpause-bot: Searching for bot '{bot_name}'. Available bots: {all_bot_names}")
+            
             # Use ilike for case-insensitive matching (PostgreSQL)
             # For other databases, use lower() comparison
             from sqlalchemy import func
             bot = db.query(Bot).filter(func.lower(Bot.name) == func.lower(bot_name)).first()
             
             if not bot:
-                logger.warning(f"Webhook unpause-bot: Bot '{bot_name}' not found")
+                logger.warning(f"Webhook unpause-bot: Bot '{bot_name}' not found. Available bots: {all_bot_names}")
                 return jsonify({
                     'success': False,
                     'message': f"Bot '{bot_name}' not found",
-                    'error': 'NOT_FOUND'
+                    'error': 'NOT_FOUND',
+                    'available_bots': all_bot_names
                 }), 404
             
             # Update bot paused state (matching looptrader-pro /resume command behavior)

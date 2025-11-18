@@ -1,14 +1,16 @@
 {
   "triggered_bots": [
-    "20_32_Puts_1_second"
+    "15_35_Puts_1_manchiniputs_main",
+    "15_35_Puts_1_manchiniputs_second"
   ],
-  "last_price": 6734.11,
-  "last_check": "2025-11-16T13:43:47.509125+00:00",
+  "triggered_bots_date": "2025-11-18",
+  "last_price": 6624.0,
+  "last_check": "2025-11-18T17:09:10.043377+00:00",
   "last_trigger": {
-    "bot_name": "20_32_Puts_1_second",
-    "threshold": 6740,
-    "price": 6734.11,
-    "timestamp": "2025-11-16T13:42:12.858550+00:00",
-    "type": "put"
+    "bot_name": "15_35_Puts_1_manchiniputs_second",
+    "threshold": 6585,
+    "price": 6577.58,
+    "timestamp": "2025-11-18T16:02:53.250606+00:00",
+    "type": "call"
   }
 }

@@ -515,6 +515,8 @@ class ThresholdMonitor:
         """
         webhook_url = self.config['webhook_url']
         
+        logger.info(f"🔗 Calling webhook to unpause bot '{bot_name}' at URL: {webhook_url}")
+        
         try:
             response = requests.post(
                 webhook_url,
@@ -522,20 +524,26 @@ class ThresholdMonitor:
                 timeout=10
             )
             
+            logger.info(f"Webhook response status: {response.status_code} for bot '{bot_name}'")
+            
             if response.status_code == 200:
                 result = response.json()
                 if result.get('success'):
-                    logger.info(f"Successfully unpaused bot '{bot_name}' via webhook")
+                    logger.info(f"✅ Successfully unpaused bot '{bot_name}' via webhook. Bot ID: {result.get('bot_id')}, Paused: {result.get('paused')}, State: {result.get('state')}")
                     return True
                 else:
-                    logger.warning(f"Webhook returned success=False for '{bot_name}': {result.get('message')}")
+                    error_msg = result.get('message', 'Unknown error')
+                    available_bots = result.get('available_bots', [])
+                    logger.warning(f"❌ Webhook returned success=False for '{bot_name}': {error_msg}")
+                    if available_bots:
+                        logger.warning(f"   Available bots in database: {available_bots}")
                     return False
             else:
-                logger.error(f"Webhook returned status {response.status_code} for '{bot_name}': {response.text}")
+                logger.error(f"❌ Webhook returned status {response.status_code} for '{bot_name}': {response.text}")
                 return False
                 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error calling webhook for '{bot_name}': {e}")
+            logger.error(f"❌ Error calling webhook for '{bot_name}': {e}", exc_info=True)
             return False
     
     def run(self) -> None:
@@ -598,10 +606,11 @@ class ThresholdMonitor:
                     
                     # Trigger webhooks for newly crossed thresholds
                     for bot_name, level in triggered:
-                        logger.info(f"🎯 THRESHOLD TRIGGERED: Bot '{bot_name}' at level {level} (current price: {current_price})")
+                        logger.info(f"🎯 THRESHOLD TRIGGERED: Bot '{bot_name}' at level ${level} (current price: ${current_price:.2f})")
                         
                         # Determine threshold type (put or call) before removing
                         threshold_type = 'put' if level in [t['level'] for t in self.put_thresholds] else 'call'
+                        logger.info(f"   Threshold type: {threshold_type.upper()}, Bot name: '{bot_name}'")
                         
                         success = self.call_webhook(bot_name)
                         
