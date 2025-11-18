@@ -82,6 +82,22 @@
                 </div>
               </div>
               
+              <!-- Additional Status Row -->
+              <div class="row mt-3">
+                <div class="col-md-3">
+                  <div class="info-box">
+                    <span class="info-box-icon bg-info"><i class="fas fa-sync-alt"></i></span>
+                    <div class="info-box-content">
+                      <span class="info-box-text">Check Frequency</span>
+                      <span class="info-box-number" id="check-frequency">
+                        <span class="text-muted">-</span>
+                      </span>
+                      <small class="text-muted">Current setting</small>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
               <!-- Trading Day Warning Alert -->
               <div class="row mt-3" id="trading-day-alert-container" style="display: none;">
                 <div class="col-md-12">
@@ -213,10 +229,42 @@
         <div class="col-md-12">
           <div class="card card-info">
             <div class="card-header">
-              <h3 class="card-title"><i class="fas fa-cog mr-2"></i>Configure Threshold Levels</h3>
+              <h3 class="card-title"><i class="fas fa-cog mr-2"></i>Configure Threshold Levels & Monitor Settings</h3>
             </div>
             <div class="card-body">
               <form id="threshold-config-form">
+                <!-- Monitor Settings Section -->
+                <div class="row mb-4">
+                  <div class="col-md-12">
+                    <h5 class="mb-3"><i class="fas fa-clock mr-2"></i>Monitor Settings</h5>
+                    <div class="form-group">
+                      <label for="check-interval-minutes">
+                        <strong>Check Frequency (minutes)</strong>
+                        <small class="text-muted ml-2">How often the monitor checks SPX price</small>
+                      </label>
+                      <div class="input-group" style="max-width: 300px;">
+                        <input type="number" 
+                               class="form-control" 
+                               id="check-interval-minutes" 
+                               name="check_interval_minutes" 
+                               value="{{ check_interval_minutes }}" 
+                               min="1" 
+                               max="1440" 
+                               step="1" 
+                               required>
+                        <div class="input-group-append">
+                          <span class="input-group-text">minutes</span>
+                        </div>
+                      </div>
+                      <small class="form-text text-muted">
+                        Recommended: 5-15 minutes. Lower values check more frequently but use more API calls.
+                      </small>
+                    </div>
+                  </div>
+                </div>
+                
+                <hr class="my-4">
+                
                 <div class="row">
                   <!-- Put Thresholds -->
                   <div class="col-md-6">
@@ -303,7 +351,7 @@
                   <div class="col-md-12">
                     <div class="alert alert-warning">
                       <i class="fas fa-exclamation-triangle mr-2"></i>
-                      <strong>Note:</strong> The monitor must be stopped and restarted for threshold changes to take effect.
+                      <strong>Note:</strong> The monitor must be stopped and restarted for configuration changes (thresholds and check frequency) to take effect.
                     </div>
                   </div>
                 </div>
@@ -442,6 +490,18 @@
       $('#trading-day-status').html('<span class="badge badge-secondary">Unknown</span>');
       $('#next-trading-day').text('');
       $('#trading-day-alert-container').hide();
+    }
+    
+    // Update check frequency
+    if (status.check_interval_minutes !== undefined && status.check_interval_minutes !== null) {
+      const minutes = parseFloat(status.check_interval_minutes);
+      if (!isNaN(minutes)) {
+        $('#check-frequency').html('<strong>' + minutes.toFixed(1) + ' min</strong>');
+      } else {
+        $('#check-frequency').html('<span class="text-muted">-</span>');
+      }
+    } else {
+      $('#check-frequency').html('<span class="text-muted">-</span>');
     }
 
     // Update last trigger notification
@@ -603,6 +663,13 @@
       }
     });
     
+    // Get check interval in minutes
+    const checkIntervalMinutes = parseFloat($('#check-interval-minutes').val());
+    if (!checkIntervalMinutes || checkIntervalMinutes <= 0) {
+      showNotification('warning', 'Please enter a valid check frequency (must be greater than 0 minutes)');
+      return;
+    }
+    
     // Validate
     if (puts.length === 0 && calls.length === 0) {
       showNotification('warning', 'Please add at least one threshold (put or call)');
@@ -618,7 +685,8 @@
         thresholds: {
           puts: puts,
           calls: calls
-        }
+        },
+        check_interval_minutes: checkIntervalMinutes
       }),
       success: function(data) {
         if (data.success) {

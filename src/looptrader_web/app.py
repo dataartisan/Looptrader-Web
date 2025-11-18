@@ -2991,16 +2991,22 @@ def smart_monitor():
         # Load threshold configuration
         config_path = '/app/config/threshold_config.json'
         thresholds_data = None
+        check_interval_minutes = 5  # Default: 5 minutes
         
         if os.path.exists(config_path):
             try:
                 with open(config_path, 'r') as f:
                     config = json.load(f)
                     thresholds_data = config.get('thresholds', {})
+                    # Convert check_interval_seconds to minutes for display
+                    check_interval_seconds = config.get('check_interval_seconds', 300)
+                    check_interval_minutes = check_interval_seconds / 60.0
             except (json.JSONDecodeError, IOError) as e:
                 logger.warning(f"Could not load threshold config: {e}")
         
-        return render_template('smart_monitor/index.html', thresholds=thresholds_data)
+        return render_template('smart_monitor/index.html', 
+                             thresholds=thresholds_data,
+                             check_interval_minutes=check_interval_minutes)
     except Exception as e:
         logger.error(f"Error loading smart monitor trigger page: {e}", exc_info=True)
         flash(f'Error loading Smart Monitor Trigger page: {str(e)}', 'danger')
@@ -3221,7 +3227,7 @@ def threshold_monitor_config():
     try:
         config_path = '/app/config/threshold_config.json'
         
-        # Get thresholds from request
+        # Get data from request
         data = request.get_json()
         if not data or 'thresholds' not in data:
             return jsonify({
@@ -3238,6 +3244,22 @@ def threshold_monitor_config():
                 'message': 'Invalid thresholds structure: must include "puts" and "calls" arrays'
             }), 400
         
+        # Get check_interval_minutes from request (convert to seconds)
+        check_interval_minutes = data.get('check_interval_minutes', 5)
+        try:
+            check_interval_minutes = float(check_interval_minutes)
+            if check_interval_minutes <= 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'Check interval must be greater than 0 minutes'
+                }), 400
+            check_interval_seconds = int(check_interval_minutes * 60)
+        except (ValueError, TypeError):
+            return jsonify({
+                'success': False,
+                'message': 'Invalid check_interval_minutes value'
+            }), 400
+        
         # Load existing config or create new
         config = {}
         if os.path.exists(config_path):
@@ -3247,12 +3269,12 @@ def threshold_monitor_config():
             except (json.JSONDecodeError, IOError):
                 pass
         
-        # Update thresholds
+        # Update thresholds and check interval
         config['thresholds'] = thresholds
+        config['check_interval_seconds'] = check_interval_seconds
         
         # Ensure other required fields exist
         config.setdefault('webhook_url', 'http://localhost:5000/api/webhook/unpause-bot')
-        config.setdefault('check_interval_seconds', 300)
         config.setdefault('token_path', '/app/token.json')
         config.setdefault('state_file', '/app/data/threshold_state.json')
         config.setdefault('pid_file', '/app/data/threshold_monitor.pid')
@@ -3263,7 +3285,7 @@ def threshold_monitor_config():
         with open(config_path, 'w') as f:
             json.dump(config, f, indent=2)
         
-        logger.info(f"Saved threshold configuration: {len(thresholds.get('puts', []))} puts, {len(thresholds.get('calls', []))} calls")
+        logger.info(f"Saved threshold configuration: {len(thresholds.get('puts', []))} puts, {len(thresholds.get('calls', []))} calls, check_interval: {check_interval_minutes:.1f} minutes ({check_interval_seconds} seconds)")
         
         return jsonify({
             'success': True,
@@ -3369,12 +3391,25 @@ def threshold_monitor_status():
             except (ValueError, TypeError):
                 last_price = None
         
+        # Get check interval from config
+        config_path = '/app/config/threshold_config.json'
+        check_interval_minutes = 5  # Default
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    check_interval_seconds = config.get('check_interval_seconds', 300)
+                    check_interval_minutes = check_interval_seconds / 60.0
+            except (json.JSONDecodeError, IOError):
+                pass
+        
         return jsonify({
             'success': True,
             'running': running,
             'pid': pid,
             'started_at': started_at,
             'last_trigger': last_trigger,  # Will be None unless we read from process
+            'check_interval_minutes': check_interval_minutes,
             'last_price': last_price,
             'triggered_bots': triggered_bots,
             'is_trading_day': is_trading_day,
