@@ -127,6 +127,22 @@ class ThresholdMonitor:
             config.setdefault('symbol', 'SPX')
             config.setdefault('pid_file', '/app/data/threshold_monitor.pid')
             
+            # Ensure thresholds structure exists with puts and calls arrays (can be empty)
+            if 'thresholds' not in config:
+                config['thresholds'] = {}
+            if 'puts' not in config['thresholds']:
+                config['thresholds']['puts'] = []
+            if 'calls' not in config['thresholds']:
+                config['thresholds']['calls'] = []
+            
+            # Allow empty thresholds - monitor will run in "monitoring only" mode
+            # This is useful when all thresholds have been triggered and removed
+            threshold_count = len(config['thresholds']['puts']) + len(config['thresholds']['calls'])
+            if threshold_count == 0:
+                logger.warning("⚠️  No thresholds configured - monitor will run in monitoring-only mode (no triggers)")
+            else:
+                logger.info(f"Loaded {threshold_count} threshold(s) from configuration")
+            
             logger.info(f"Loaded configuration from {config_path}")
             return config
         except FileNotFoundError:
@@ -529,7 +545,15 @@ class ThresholdMonitor:
             if response.status_code == 200:
                 result = response.json()
                 if result.get('success'):
-                    logger.info(f"✅ Successfully unpaused bot '{bot_name}' via webhook. Bot ID: {result.get('bot_id')}, Paused: {result.get('paused')}, State: {result.get('state')}")
+                    enabled = result.get('enabled', 'unknown')
+                    paused = result.get('paused', 'unknown')
+                    state = result.get('state', 'unknown')
+                    changes = result.get('changes', [])
+                    was_enabled = result.get('was_enabled', 'unknown')
+                    was_paused = result.get('was_paused', 'unknown')
+                    
+                    changes_str = f" ({', '.join(changes)})" if changes else ""
+                    logger.info(f"✅ Successfully triggered bot '{bot_name}' via webhook. Bot ID: {result.get('bot_id')}, Enabled: {enabled} (was: {was_enabled}), Paused: {paused} (was: {was_paused}), State: {state}{changes_str}")
                     return True
                 else:
                     error_msg = result.get('message', 'Unknown error')
@@ -554,6 +578,13 @@ class ThresholdMonitor:
         logger.info(f"Monitoring {self.config['symbol']} price")
         logger.info(f"Check interval: {check_interval} seconds ({check_interval_minutes:.1f} minutes)")
         logger.info(f"Webhook URL: {self.config['webhook_url']}")
+        
+        # Log threshold status
+        total_thresholds = len(self.put_thresholds) + len(self.call_thresholds)
+        if total_thresholds == 0:
+            logger.warning("⚠️  Running in monitoring-only mode - no thresholds configured. Add thresholds via web UI to enable triggers.")
+        else:
+            logger.info(f"Active thresholds: {len(self.put_thresholds)} puts, {len(self.call_thresholds)} calls")
         
         # Write PID file
         self._write_pid_file()

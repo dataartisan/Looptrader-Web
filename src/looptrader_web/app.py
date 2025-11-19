@@ -2956,21 +2956,45 @@ def webhook_unpause_bot():
                     'available_bots': all_bot_names
                 }), 404
             
-            # Update bot paused state (matching looptrader-pro /resume command behavior)
-            # Note: /resume command only updates paused flag, it does NOT change the state
-            bot.paused = False
+            # Track what changed for logging
+            was_enabled = bot.enabled
+            was_paused = bot.paused
+            changes = []
             
+            # Enable bot if it's disabled (bots must be enabled to start)
+            if not bot.enabled:
+                bot.enabled = True
+                changes.append('enabled')
+                logger.info(f"Webhook unpause-bot: Bot '{bot.name}' was disabled, enabling it")
+            
+            # Unpause bot (matching looptrader-pro /resume command behavior)
+            # Note: /resume command only updates paused flag, it does NOT change the state
+            if bot.paused:
+                bot.paused = False
+                changes.append('unpaused')
+            
+            # Commit changes
             db.commit()
             
-            logger.info(f"Webhook unpause-bot: Bot '{bot.name}' (ID: {bot.id}) resumed successfully. Paused: {bot.paused}, State: {bot.state}")
+            # Build status message
+            if changes:
+                status_msg = f"Bot '{bot.name}' {' and '.join(changes)} successfully"
+            else:
+                status_msg = f"Bot '{bot.name}' is already enabled and unpaused"
+            
+            logger.info(f"Webhook unpause-bot: Bot '{bot.name}' (ID: {bot.id}) - Enabled: {bot.enabled} (was: {was_enabled}), Paused: {bot.paused} (was: {was_paused}), State: {bot.state}")
             
             return jsonify({
                 'success': True,
-                'message': f"Bot '{bot.name}' resumed successfully",
+                'message': status_msg,
                 'bot_id': bot.id,
                 'bot_name': bot.name,
-                'paused': False,
+                'enabled': bot.enabled,
+                'paused': bot.paused,
                 'state': bot.state,
+                'was_enabled': was_enabled,
+                'was_paused': was_paused,
+                'changes': changes,
                 'note': 'Bot will start automatically within 30 seconds if not already running (matches /resume command behavior)'
             }), 200
             
@@ -3243,12 +3267,116 @@ def threshold_monitor_config():
         
         thresholds = data['thresholds']
         
-        # Validate thresholds structure
-        if 'puts' not in thresholds or 'calls' not in thresholds:
+        # Validate thresholds structure - allow either puts or calls (or both)
+        # Ensure thresholds is a dict with puts and/or calls arrays
+        if not isinstance(thresholds, dict):
             return jsonify({
                 'success': False,
-                'message': 'Invalid thresholds structure: must include "puts" and "calls" arrays'
+                'message': 'Invalid thresholds structure: must be an object with "puts" and/or "calls" arrays'
             }), 400
+        
+        # Ensure at least one threshold type is provided
+        puts_list = thresholds.get('puts', [])
+        calls_list = thresholds.get('calls', [])
+        
+        if not puts_list and not calls_list:
+            return jsonify({
+                'success': False,
+                'message': 'At least one threshold (put or call) must be configured'
+            }), 400
+        
+        # Normalize to ensure both arrays exist (even if empty)
+        if 'puts' not in thresholds:
+            thresholds['puts'] = []
+        if 'calls' not in thresholds:
+            thresholds['calls'] = []
+        
+        # Validate that all bot names exist in database
+        # Add retry logic for database connection issues
+        from sqlalchemy.exc import OperationalError, DisconnectionError
+        
+        max_retries = 3
+        retry_delay = 1.0  # seconds
+        
+        all_bot_names = {}
+        db = None
+        
+        for attempt in range(max_retries):
+            db = None
+            try:
+                db = SessionLocal()
+                from sqlalchemy import func
+                all_bots = db.query(Bot).all()
+                all_bot_names = {b.name.lower(): b.name for b in all_bots}  # Case-insensitive lookup
+                db.close()
+                db = None
+                break  # Success, exit retry loop
+            except (OperationalError, DisconnectionError) as e:
+                # Close and clean up the failed session
+                if db:
+                    try:
+                        db.rollback()  # Rollback any pending transaction
+                    except:
+                        pass
+                    try:
+                        db.close()  # Close the session (SQLAlchemy will handle connection pool cleanup)
+                    except:
+                        pass
+                    db = None
+                
+                if attempt < max_retries - 1:
+                    logger.warning(f"Database connection error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {retry_delay}s...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    logger.error(f"Database connection error after {max_retries} attempts: {e}", exc_info=True)
+                    return jsonify({
+                        'success': False,
+                        'message': 'Database connection error. Please try again in a moment.',
+                        'error': 'DATABASE_CONNECTION_ERROR'
+                    }), 500
+            except Exception as e:
+                if db:
+                    try:
+                        db.rollback()
+                        db.close()
+                    except:
+                        pass
+                    db = None
+                logger.error(f"Error validating bot names: {e}", exc_info=True)
+                return jsonify({
+                    'success': False,
+                    'message': f'Error validating bot names: {str(e)}',
+                    'error': 'VALIDATION_ERROR'
+                }), 500
+        
+        # Collect all bot names from thresholds
+        bot_names_to_check = []
+        for threshold in thresholds.get('puts', []):
+            bot_name = threshold.get('bot_name')
+            if bot_name:
+                bot_names_to_check.append(bot_name)
+        for threshold in thresholds.get('calls', []):
+            bot_name = threshold.get('bot_name')
+            if bot_name:
+                bot_names_to_check.append(bot_name)
+        
+        # Check which bots don't exist
+        missing_bots = []
+        for bot_name in bot_names_to_check:
+            if bot_name.lower() not in all_bot_names:
+                missing_bots.append(bot_name)
+        
+        if missing_bots:
+            logger.warning(f"Threshold config save: Missing bots: {missing_bots}. Available bots: {list(all_bot_names.values())}")
+            return jsonify({
+                'success': False,
+                'message': f"One or more bot names not found in database: {', '.join(missing_bots)}",
+                'missing_bots': missing_bots,
+                'available_bots': list(all_bot_names.values())
+            }), 400
+        
+        logger.info(f"Threshold config save: All {len(bot_names_to_check)} bot names validated successfully")
         
         # Get check_interval_minutes from request (convert to seconds)
         check_interval_minutes = data.get('check_interval_minutes', 5)
@@ -3291,11 +3419,28 @@ def threshold_monitor_config():
         with open(config_path, 'w') as f:
             json.dump(config, f, indent=2)
         
+        # Clear old triggers from state file since config changed
+        # This prevents showing stale triggers from old config
+        state_file = config.get('state_file', '/app/data/threshold_state.json')
+        if os.path.exists(state_file):
+            try:
+                with open(state_file, 'r') as f:
+                    state = json.load(f)
+                # Clear old triggers but keep last_price and last_check
+                state['triggered_bots'] = []
+                state['triggered_bots_date'] = None
+                state['last_trigger'] = None
+                with open(state_file, 'w') as f:
+                    json.dump(state, f, indent=2)
+                logger.info(f"Cleared old triggers from state file after config change")
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Could not clear state file: {e}")
+        
         logger.info(f"Saved threshold configuration: {len(thresholds.get('puts', []))} puts, {len(thresholds.get('calls', []))} calls, check_interval: {check_interval_minutes:.1f} minutes ({check_interval_seconds} seconds)")
         
         return jsonify({
             'success': True,
-            'message': 'Threshold configuration saved successfully'
+            'message': 'Threshold configuration saved successfully. Please restart the monitor for changes to take effect.'
         })
         
     except Exception as e:
@@ -3372,6 +3517,7 @@ def threshold_monitor_status():
                 pass
         
         # Read state file for additional info
+        config_modified_after_start = False
         if os.path.exists(state_file):
             try:
                 with open(state_file, 'r') as f:
@@ -3380,6 +3526,20 @@ def threshold_monitor_status():
                     triggered_bots = state.get('triggered_bots', [])
                     started_at = state.get('last_check')  # Use last_check as started_at approximation
                     last_trigger = state.get('last_trigger')  # Get last trigger from state file
+                    
+                    # Check if config file was modified after monitor started
+                    # This helps detect if monitor needs restart
+                    config_path = '/app/config/threshold_config.json'
+                    if running and os.path.exists(config_path):
+                        config_mtime = os.path.getmtime(config_path)
+                        if started_at:
+                            try:
+                                from dateutil import parser
+                                start_time = parser.parse(started_at).timestamp()
+                                if config_mtime > start_time:
+                                    config_modified_after_start = True
+                            except (ValueError, TypeError):
+                                pass
             except (json.JSONDecodeError, IOError):
                 pass
         
@@ -3419,7 +3579,8 @@ def threshold_monitor_status():
             'last_price': last_price,
             'triggered_bots': triggered_bots,
             'is_trading_day': is_trading_day,
-            'next_trading_day': next_trading_day.isoformat() if next_trading_day else None
+            'next_trading_day': next_trading_day.isoformat() if next_trading_day else None,
+            'config_modified_after_start': config_modified_after_start  # Warn if config changed after monitor started
         })
         
     except Exception as e:

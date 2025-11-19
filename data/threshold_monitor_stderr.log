@@ -97,3 +97,989 @@ ValueError: Invalid format specifier '.2f if last_price else 'N/A'' for object o
 2025-11-16 13:44:29 - threshold_monitor - INFO - Received signal 15, shutting down...
 2025-11-16 13:44:29 - threshold_monitor - INFO - Removed PID file
 2025-11-16 13:44:29 - threshold_monitor - INFO - Monitor stopped
+2025-11-19 02:05:30 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 02:05:30 - threshold_monitor - INFO - Loaded state from /app/data/threshold_state.json
+2025-11-19 02:05:30 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 02:05:30 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 02:05:30 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 02:05:30 - threshold_monitor - INFO - Initialized with 2 put thresholds and 2 call thresholds
+2025-11-19 02:05:30 - threshold_monitor - INFO - Already triggered bots today (2025-11-18): ['15_35_Puts_1_manchiniputs_main', '15_35_Puts_1_manchiniputs_second']
+2025-11-19 02:05:30 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 02:05:30 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 02:05:30 - threshold_monitor - INFO - Check interval: 300 seconds (5.0 minutes)
+2025-11-19 02:05:30 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 02:05:30 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 02:05:30 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:05:30 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:05:31 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:05:31 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:05:31 - threshold_monitor - INFO - PUT threshold check (first check): 20_32_Puts_1_second at level $6740, current price: $6617.32
+2025-11-19 02:05:31 - threshold_monitor - INFO - ✅ PUT threshold triggered: 20_32_Puts_1_second at level $6740 (current price: $6617.32, was: $6624.00)
+2025-11-19 02:05:31 - threshold_monitor - INFO - PUT threshold check (first check): 20_32_Puts_1_second at level $6663, current price: $6617.32
+2025-11-19 02:05:31 - threshold_monitor - INFO - ✅ PUT threshold triggered: 20_32_Puts_1_second at level $6663 (current price: $6617.32, was: $6624.00)
+2025-11-19 02:05:31 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '20_32_Puts_1_second' at level $6740 (current price: $6617.32)
+2025-11-19 02:05:31 - threshold_monitor - INFO -    Threshold type: PUT, Bot name: '20_32_Puts_1_second'
+2025-11-19 02:05:31 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '20_32_Puts_1_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 02:05:31 - threshold_monitor - INFO - Webhook response status: 404 for bot '20_32_Puts_1_second'
+2025-11-19 02:05:31 - threshold_monitor - ERROR - ❌ Webhook returned status 404 for '20_32_Puts_1_second': {
+  "available_bots": [],
+  "error": "NOT_FOUND",
+  "message": "Bot '20_32_Puts_1_second' not found",
+  "success": false
+}
+
+2025-11-19 02:05:31 - threshold_monitor - ERROR - ❌ Failed to trigger webhook for '20_32_Puts_1_second', will retry on next check
+2025-11-19 02:05:31 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '20_32_Puts_1_second' at level $6663 (current price: $6617.32)
+2025-11-19 02:05:31 - threshold_monitor - INFO -    Threshold type: PUT, Bot name: '20_32_Puts_1_second'
+2025-11-19 02:05:31 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '20_32_Puts_1_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 02:05:31 - threshold_monitor - INFO - Webhook response status: 404 for bot '20_32_Puts_1_second'
+2025-11-19 02:05:31 - threshold_monitor - ERROR - ❌ Webhook returned status 404 for '20_32_Puts_1_second': {
+  "available_bots": [],
+  "error": "NOT_FOUND",
+  "message": "Bot '20_32_Puts_1_second' not found",
+  "success": false
+}
+
+2025-11-19 02:05:31 - threshold_monitor - ERROR - ❌ Failed to trigger webhook for '20_32_Puts_1_second', will retry on next check
+2025-11-19 02:06:12 - threshold_monitor - INFO - Received signal 15, shutting down...
+2025-11-19 02:06:13 - threshold_monitor - INFO - Removed PID file
+2025-11-19 02:06:13 - threshold_monitor - INFO - Monitor stopped
+2025-11-19 02:06:18 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 02:06:18 - threshold_monitor - INFO - Loaded state from /app/data/threshold_state.json
+2025-11-19 02:06:18 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 02:06:18 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 02:06:18 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 02:06:18 - threshold_monitor - INFO - Initialized with 2 put thresholds and 2 call thresholds
+2025-11-19 02:06:18 - threshold_monitor - INFO - Already triggered bots today (2025-11-18): ['15_35_Puts_1_manchiniputs_main', '15_35_Puts_1_manchiniputs_second']
+2025-11-19 02:06:18 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 02:06:18 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 02:06:18 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 02:06:18 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 02:06:18 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 02:06:19 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:06:20 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:06:20 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:06:20 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:06:20 - threshold_monitor - INFO - PUT threshold check (first check): 20_32_Puts_1_second at level $6740, current price: $6617.32
+2025-11-19 02:06:20 - threshold_monitor - INFO - ✅ PUT threshold triggered: 20_32_Puts_1_second at level $6740 (current price: $6617.32, was: $6617.32)
+2025-11-19 02:06:20 - threshold_monitor - INFO - PUT threshold check (first check): 20_32_Puts_1_second at level $6663, current price: $6617.32
+2025-11-19 02:06:20 - threshold_monitor - INFO - ✅ PUT threshold triggered: 20_32_Puts_1_second at level $6663 (current price: $6617.32, was: $6617.32)
+2025-11-19 02:06:20 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '20_32_Puts_1_second' at level $6740 (current price: $6617.32)
+2025-11-19 02:06:20 - threshold_monitor - INFO -    Threshold type: PUT, Bot name: '20_32_Puts_1_second'
+2025-11-19 02:06:20 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '20_32_Puts_1_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 02:06:20 - threshold_monitor - INFO - Webhook response status: 404 for bot '20_32_Puts_1_second'
+2025-11-19 02:06:20 - threshold_monitor - ERROR - ❌ Webhook returned status 404 for '20_32_Puts_1_second': {
+  "available_bots": [],
+  "error": "NOT_FOUND",
+  "message": "Bot '20_32_Puts_1_second' not found",
+  "success": false
+}
+
+2025-11-19 02:06:20 - threshold_monitor - ERROR - ❌ Failed to trigger webhook for '20_32_Puts_1_second', will retry on next check
+2025-11-19 02:06:20 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '20_32_Puts_1_second' at level $6663 (current price: $6617.32)
+2025-11-19 02:06:20 - threshold_monitor - INFO -    Threshold type: PUT, Bot name: '20_32_Puts_1_second'
+2025-11-19 02:06:20 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '20_32_Puts_1_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 02:06:20 - threshold_monitor - INFO - Webhook response status: 404 for bot '20_32_Puts_1_second'
+2025-11-19 02:06:20 - threshold_monitor - ERROR - ❌ Webhook returned status 404 for '20_32_Puts_1_second': {
+  "available_bots": [],
+  "error": "NOT_FOUND",
+  "message": "Bot '20_32_Puts_1_second' not found",
+  "success": false
+}
+
+2025-11-19 02:06:20 - threshold_monitor - ERROR - ❌ Failed to trigger webhook for '20_32_Puts_1_second', will retry on next check
+2025-11-19 02:07:20 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:07:21 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:07:21 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:07:21 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:08:21 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:08:22 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:08:22 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:08:22 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:09:22 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:09:23 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:09:23 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:09:23 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:10:23 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:10:24 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:10:24 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:10:24 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:11:24 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:11:24 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:11:24 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:11:24 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:12:25 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:12:26 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:12:26 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:12:26 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:13:26 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:13:27 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:13:27 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:13:27 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:14:27 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:14:28 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:14:28 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:14:28 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:15:28 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:15:29 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:15:29 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:15:29 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:16:29 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:16:29 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:16:29 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:16:29 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:17:30 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:17:30 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:17:30 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:17:30 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:18:31 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:18:31 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:18:31 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:18:31 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:19:32 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:19:32 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:19:32 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:19:32 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:20:33 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:20:33 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:20:33 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:20:33 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:21:34 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:21:34 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:21:34 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:21:34 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:22:35 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:22:35 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:22:35 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:22:35 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:23:36 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:23:36 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:23:36 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:23:36 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:24:37 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:24:37 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:24:37 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:24:37 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:25:38 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:25:38 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:25:38 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:25:38 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:26:39 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:26:39 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:26:39 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:26:39 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:27:40 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:27:40 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:27:40 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:27:40 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:28:41 - httpx - INFO - HTTP Request: POST https://api.schwabapi.com/v1/oauth/token "HTTP/1.1 200 OK"
+2025-11-19 02:28:41 - schwab.auth - INFO - Updating token to file /app/token.json
+2025-11-19 02:28:41 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:28:42 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:28:42 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:28:42 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:29:42 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:29:43 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:29:43 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:29:43 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:30:43 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:30:44 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:30:44 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:30:44 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:31:44 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:31:45 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:31:45 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:31:45 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:32:45 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:32:46 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:32:46 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:32:46 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:33:46 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:33:47 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:33:47 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:33:47 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:34:47 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:34:48 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:34:48 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:34:48 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:35:49 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:35:50 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:35:50 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:35:50 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:36:50 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:36:51 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:36:51 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:36:51 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:37:51 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:37:52 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:37:52 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:37:52 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:38:52 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:38:53 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:38:53 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:38:53 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:39:53 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:39:54 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:39:54 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:39:54 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:40:55 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:40:55 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:40:55 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:40:55 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:41:56 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:41:56 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:41:56 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:41:56 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:42:57 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:42:58 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:42:58 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:42:58 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:43:58 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:43:59 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:43:59 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:43:59 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:44:59 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:45:00 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:45:00 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:45:00 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:46:01 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:46:01 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:46:01 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:46:01 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:47:02 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:47:02 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:47:02 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:47:02 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:48:03 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:48:03 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:48:03 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:48:03 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:48:42 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 02:48:42 - threshold_monitor - WARNING - Error loading state file, creating new one: Expecting value: line 1 column 1 (char 0)
+2025-11-19 02:48:42 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 02:48:42 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 02:48:42 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 02:48:42 - threshold_monitor - INFO - Initialized with 2 put thresholds and 2 call thresholds
+2025-11-19 02:48:42 - threshold_monitor - INFO - No bots triggered today
+2025-11-19 02:48:42 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 02:48:42 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 02:48:42 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 02:48:42 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 02:48:42 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 02:48:43 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:48:43 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:48:43 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:48:43 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:48:43 - threshold_monitor - INFO - PUT threshold check (first check): 20_32_Puts_1_second at level $6740, current price: $6617.32
+2025-11-19 02:48:43 - threshold_monitor - INFO - ✅ PUT threshold triggered: 20_32_Puts_1_second at level $6740 (current price: $6617.32, was: N/A)
+2025-11-19 02:48:43 - threshold_monitor - INFO - PUT threshold check (first check): 20_32_Puts_1_second at level $6663, current price: $6617.32
+2025-11-19 02:48:43 - threshold_monitor - INFO - ✅ PUT threshold triggered: 20_32_Puts_1_second at level $6663 (current price: $6617.32, was: N/A)
+2025-11-19 02:48:43 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '20_32_Puts_1_second' at level $6740 (current price: $6617.32)
+2025-11-19 02:48:43 - threshold_monitor - INFO -    Threshold type: PUT, Bot name: '20_32_Puts_1_second'
+2025-11-19 02:48:43 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '20_32_Puts_1_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 02:48:43 - threshold_monitor - INFO - Webhook response status: 404 for bot '20_32_Puts_1_second'
+2025-11-19 02:48:43 - threshold_monitor - ERROR - ❌ Webhook returned status 404 for '20_32_Puts_1_second': {
+  "available_bots": [],
+  "error": "NOT_FOUND",
+  "message": "Bot '20_32_Puts_1_second' not found",
+  "success": false
+}
+
+2025-11-19 02:48:43 - threshold_monitor - ERROR - ❌ Failed to trigger webhook for '20_32_Puts_1_second', will retry on next check
+2025-11-19 02:48:43 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '20_32_Puts_1_second' at level $6663 (current price: $6617.32)
+2025-11-19 02:48:43 - threshold_monitor - INFO -    Threshold type: PUT, Bot name: '20_32_Puts_1_second'
+2025-11-19 02:48:43 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '20_32_Puts_1_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 02:48:43 - threshold_monitor - INFO - Webhook response status: 404 for bot '20_32_Puts_1_second'
+2025-11-19 02:48:43 - threshold_monitor - ERROR - ❌ Webhook returned status 404 for '20_32_Puts_1_second': {
+  "available_bots": [],
+  "error": "NOT_FOUND",
+  "message": "Bot '20_32_Puts_1_second' not found",
+  "success": false
+}
+
+2025-11-19 02:48:43 - threshold_monitor - ERROR - ❌ Failed to trigger webhook for '20_32_Puts_1_second', will retry on next check
+2025-11-19 02:49:44 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:49:44 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:49:44 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:49:44 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:52:37 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 02:52:37 - threshold_monitor - INFO - Loaded state from /app/data/threshold_state.json
+2025-11-19 02:52:37 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 02:52:37 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 02:52:37 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 02:52:37 - threshold_monitor - INFO - Initialized with 2 put thresholds and 2 call thresholds
+2025-11-19 02:52:37 - threshold_monitor - INFO - No bots triggered today
+2025-11-19 02:52:37 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 02:52:37 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 02:52:37 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 02:52:37 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 02:52:37 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 02:52:37 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:52:38 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:52:38 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:52:38 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:52:38 - threshold_monitor - INFO - PUT threshold check (first check): 20_32_Puts_1_second at level $6740, current price: $6617.32
+2025-11-19 02:52:38 - threshold_monitor - INFO - ✅ PUT threshold triggered: 20_32_Puts_1_second at level $6740 (current price: $6617.32, was: $6617.32)
+2025-11-19 02:52:38 - threshold_monitor - INFO - PUT threshold check (first check): 20_32_Puts_1_second at level $6663, current price: $6617.32
+2025-11-19 02:52:38 - threshold_monitor - INFO - ✅ PUT threshold triggered: 20_32_Puts_1_second at level $6663 (current price: $6617.32, was: $6617.32)
+2025-11-19 02:52:38 - threshold_monitor - INFO - CALL threshold check (first check): 20_32_Calls_1_second at level $6616, current price: $6617.32
+2025-11-19 02:52:38 - threshold_monitor - INFO - ✅ CALL threshold triggered: 20_32_Calls_1_second at level $6616 (current price: $6617.32, was: $6617.32)
+2025-11-19 02:52:38 - threshold_monitor - INFO - CALL threshold check (first check): 20_32_Calls_2_second at level $6616, current price: $6617.32
+2025-11-19 02:52:38 - threshold_monitor - INFO - ✅ CALL threshold triggered: 20_32_Calls_2_second at level $6616 (current price: $6617.32, was: $6617.32)
+2025-11-19 02:52:38 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '20_32_Puts_1_second' at level $6740 (current price: $6617.32)
+2025-11-19 02:52:38 - threshold_monitor - INFO -    Threshold type: PUT, Bot name: '20_32_Puts_1_second'
+2025-11-19 02:52:38 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '20_32_Puts_1_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 02:52:38 - threshold_monitor - INFO - Webhook response status: 200 for bot '20_32_Puts_1_second'
+2025-11-19 02:52:38 - threshold_monitor - INFO - ✅ Successfully triggered bot '20_32_Puts_1_second' via webhook. Bot ID: 37, Enabled: True (was: True), Paused: False (was: True), State: INITIALIZING (unpaused)
+2025-11-19 02:52:38 - threshold_monitor - INFO - ✅ Removed PUT threshold level $6740.00 from configuration. Remaining puts: 1
+2025-11-19 02:52:38 - threshold_monitor - INFO - ✅ Bot '20_32_Puts_1_second' successfully triggered and added to triggered list for 2025-11-18
+2025-11-19 02:52:38 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '20_32_Puts_1_second' at level $6663 (current price: $6617.32)
+2025-11-19 02:52:38 - threshold_monitor - INFO -    Threshold type: PUT, Bot name: '20_32_Puts_1_second'
+2025-11-19 02:52:38 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '20_32_Puts_1_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 02:52:38 - threshold_monitor - INFO - Webhook response status: 200 for bot '20_32_Puts_1_second'
+2025-11-19 02:52:38 - threshold_monitor - INFO - ✅ Successfully triggered bot '20_32_Puts_1_second' via webhook. Bot ID: 37, Enabled: True (was: True), Paused: False (was: False), State: INITIALIZING
+2025-11-19 02:52:38 - threshold_monitor - INFO - ✅ Removed PUT threshold level $6663.00 from configuration. Remaining puts: 0
+2025-11-19 02:52:38 - threshold_monitor - INFO - ✅ Bot '20_32_Puts_1_second' successfully triggered and added to triggered list for 2025-11-18
+2025-11-19 02:52:38 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '20_32_Calls_1_second' at level $6616 (current price: $6617.32)
+2025-11-19 02:52:38 - threshold_monitor - INFO -    Threshold type: CALL, Bot name: '20_32_Calls_1_second'
+2025-11-19 02:52:38 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '20_32_Calls_1_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 02:52:38 - threshold_monitor - INFO - Webhook response status: 200 for bot '20_32_Calls_1_second'
+2025-11-19 02:52:38 - threshold_monitor - INFO - ✅ Successfully triggered bot '20_32_Calls_1_second' via webhook. Bot ID: 27, Enabled: True (was: True), Paused: False (was: True), State: INITIALIZING (unpaused)
+2025-11-19 02:52:38 - threshold_monitor - INFO - ✅ Removed CALL threshold level $6616.00 from configuration. Remaining calls: 0
+2025-11-19 02:52:38 - threshold_monitor - INFO - ✅ Bot '20_32_Calls_1_second' successfully triggered and added to triggered list for 2025-11-18
+2025-11-19 02:52:38 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '20_32_Calls_2_second' at level $6616 (current price: $6617.32)
+2025-11-19 02:52:38 - threshold_monitor - INFO -    Threshold type: CALL, Bot name: '20_32_Calls_2_second'
+2025-11-19 02:52:38 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '20_32_Calls_2_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 02:52:38 - threshold_monitor - INFO - Webhook response status: 200 for bot '20_32_Calls_2_second'
+2025-11-19 02:52:38 - threshold_monitor - INFO - ✅ Successfully triggered bot '20_32_Calls_2_second' via webhook. Bot ID: 28, Enabled: True (was: True), Paused: False (was: True), State: INITIALIZING (unpaused)
+2025-11-19 02:52:38 - threshold_monitor - WARNING - ⚠️  Threshold level $6616.00 not found in calls list to remove
+2025-11-19 02:52:38 - threshold_monitor - INFO - ✅ Bot '20_32_Calls_2_second' successfully triggered and added to triggered list for 2025-11-18
+2025-11-19 02:52:49 - threshold_monitor - INFO - Received signal 15, shutting down...
+2025-11-19 02:52:50 - threshold_monitor - INFO - Removed PID file
+2025-11-19 02:52:50 - threshold_monitor - INFO - Monitor stopped
+2025-11-19 02:52:54 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 02:52:54 - threshold_monitor - INFO - Loaded state from /app/data/threshold_state.json
+2025-11-19 02:52:54 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 02:52:54 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 02:52:54 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 02:52:54 - threshold_monitor - INFO - Initialized with 0 put thresholds and 0 call thresholds
+2025-11-19 02:52:54 - threshold_monitor - INFO - Already triggered bots today (2025-11-18): ['20_32_Puts_1_second', '20_32_Calls_1_second', '20_32_Calls_2_second']
+2025-11-19 02:52:54 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 02:52:54 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 02:52:54 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 02:52:54 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 02:52:54 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 02:52:55 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:52:55 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:52:55 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:52:55 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:53:40 - threshold_monitor - INFO - Received signal 15, shutting down...
+2025-11-19 02:53:40 - threshold_monitor - INFO - Removed PID file
+2025-11-19 02:53:40 - threshold_monitor - INFO - Monitor stopped
+2025-11-19 02:53:46 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 02:53:46 - threshold_monitor - INFO - Loaded state from /app/data/threshold_state.json
+2025-11-19 02:53:46 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 02:53:46 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 02:53:46 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 02:53:46 - threshold_monitor - INFO - Initialized with 1 put thresholds and 1 call thresholds
+2025-11-19 02:53:46 - threshold_monitor - INFO - Already triggered bots today (2025-11-18): ['20_32_Puts_1_second', '20_32_Calls_1_second', '20_32_Calls_2_second']
+2025-11-19 02:53:46 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 02:53:46 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 02:53:46 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 02:53:46 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 02:53:46 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 02:53:46 - httpx - INFO - HTTP Request: POST https://api.schwabapi.com/v1/oauth/token "HTTP/1.1 200 OK"
+2025-11-19 02:53:46 - schwab.auth - INFO - Updating token to file /app/token.json
+2025-11-19 02:53:47 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:53:47 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:53:47 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:53:47 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:53:47 - threshold_monitor - INFO - CALL threshold check (first check): 15_35_Calls_1_manchinicalls_second at level $6615, current price: $6617.32
+2025-11-19 02:53:47 - threshold_monitor - INFO - ✅ CALL threshold triggered: 15_35_Calls_1_manchinicalls_second at level $6615 (current price: $6617.32, was: $6617.32)
+2025-11-19 02:53:47 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '15_35_Calls_1_manchinicalls_second' at level $6615 (current price: $6617.32)
+2025-11-19 02:53:47 - threshold_monitor - INFO -    Threshold type: CALL, Bot name: '15_35_Calls_1_manchinicalls_second'
+2025-11-19 02:53:47 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '15_35_Calls_1_manchinicalls_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 02:53:47 - threshold_monitor - INFO - Webhook response status: 200 for bot '15_35_Calls_1_manchinicalls_second'
+2025-11-19 02:53:47 - threshold_monitor - INFO - ✅ Successfully triggered bot '15_35_Calls_1_manchinicalls_second' via webhook. Bot ID: 25, Enabled: True (was: True), Paused: False (was: True), State: INITIALIZING (unpaused)
+2025-11-19 02:53:47 - threshold_monitor - INFO - ✅ Removed CALL threshold level $6615.00 from configuration. Remaining calls: 0
+2025-11-19 02:53:47 - threshold_monitor - INFO - ✅ Bot '15_35_Calls_1_manchinicalls_second' successfully triggered and added to triggered list for 2025-11-18
+2025-11-19 02:54:48 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:54:48 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:54:48 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:54:48 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:55:49 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:55:49 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:55:49 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:55:49 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:56:50 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 02:56:50 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 02:56:50 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 02:56:50 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 02:57:03 - threshold_monitor - INFO - Received signal 15, shutting down...
+2025-11-19 02:57:03 - threshold_monitor - INFO - Removed PID file
+2025-11-19 02:57:03 - threshold_monitor - INFO - Monitor stopped
+2025-11-19 03:00:02 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 03:00:02 - threshold_monitor - WARNING - Error loading state file, creating new one: Expecting value: line 1 column 1 (char 0)
+2025-11-19 03:00:02 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 03:00:02 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 03:00:02 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 03:00:02 - threshold_monitor - INFO - Initialized with 0 put thresholds and 1 call thresholds
+2025-11-19 03:00:02 - threshold_monitor - INFO - No bots triggered today
+2025-11-19 03:00:02 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 03:00:02 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 03:00:02 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 03:00:02 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:00:02 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 03:00:03 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:00:04 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:00:04 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:00:04 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:00:04 - threshold_monitor - INFO - CALL threshold check (first check): 15_35_Calls_1_manchinicalls_second at level $6616, current price: $6617.32
+2025-11-19 03:00:04 - threshold_monitor - INFO - ✅ CALL threshold triggered: 15_35_Calls_1_manchinicalls_second at level $6616 (current price: $6617.32, was: N/A)
+2025-11-19 03:00:04 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '15_35_Calls_1_manchinicalls_second' at level $6616 (current price: $6617.32)
+2025-11-19 03:00:04 - threshold_monitor - INFO -    Threshold type: CALL, Bot name: '15_35_Calls_1_manchinicalls_second'
+2025-11-19 03:00:04 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '15_35_Calls_1_manchinicalls_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:00:04 - threshold_monitor - INFO - Webhook response status: 200 for bot '15_35_Calls_1_manchinicalls_second'
+2025-11-19 03:00:04 - threshold_monitor - INFO - ✅ Successfully triggered bot '15_35_Calls_1_manchinicalls_second' via webhook. Bot ID: 25, Enabled: True (was: True), Paused: False (was: True), State: INITIALIZING (unpaused)
+2025-11-19 03:00:04 - threshold_monitor - INFO - ✅ Removed CALL threshold level $6616.00 from configuration. Remaining calls: 0
+2025-11-19 03:00:04 - threshold_monitor - INFO - ✅ Bot '15_35_Calls_1_manchinicalls_second' successfully triggered and added to triggered list for 2025-11-18
+2025-11-19 03:01:33 - threshold_monitor - ERROR - Error loading config: At least one threshold (put or call) must be configured
+2025-11-19 03:01:33 - threshold_monitor - ERROR - Failed to start monitor: At least one threshold (put or call) must be configured
+Traceback (most recent call last):
+  File "/app/scripts/threshold_monitor.py", line 763, in main
+    monitor = ThresholdMonitor(args.config)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/scripts/threshold_monitor.py", line 65, in __init__
+    self.config = self._load_config(config_path)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/scripts/threshold_monitor.py", line 140, in _load_config
+    raise ValueError("At least one threshold (put or call) must be configured")
+ValueError: At least one threshold (put or call) must be configured
+2025-11-19 03:01:45 - threshold_monitor - ERROR - Error loading config: At least one threshold (put or call) must be configured
+2025-11-19 03:01:45 - threshold_monitor - ERROR - Failed to start monitor: At least one threshold (put or call) must be configured
+Traceback (most recent call last):
+  File "/app/scripts/threshold_monitor.py", line 763, in main
+    monitor = ThresholdMonitor(args.config)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/scripts/threshold_monitor.py", line 65, in __init__
+    self.config = self._load_config(config_path)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/scripts/threshold_monitor.py", line 140, in _load_config
+    raise ValueError("At least one threshold (put or call) must be configured")
+ValueError: At least one threshold (put or call) must be configured
+2025-11-19 03:02:18 - threshold_monitor - WARNING - ⚠️  No thresholds configured - monitor will run in monitoring-only mode (no triggers)
+2025-11-19 03:02:18 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 03:02:18 - threshold_monitor - WARNING - Error loading state file, creating new one: Expecting value: line 1 column 1 (char 0)
+2025-11-19 03:02:18 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 03:02:18 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 03:02:18 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 03:02:18 - threshold_monitor - INFO - Initialized with 0 put thresholds and 0 call thresholds
+2025-11-19 03:02:18 - threshold_monitor - INFO - No bots triggered today
+2025-11-19 03:02:18 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 03:02:18 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 03:02:18 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 03:02:18 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:02:18 - threshold_monitor - WARNING - ⚠️  Running in monitoring-only mode - no thresholds configured. Add thresholds via web UI to enable triggers.
+2025-11-19 03:02:18 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 03:02:19 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:02:20 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:02:20 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:02:20 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:03:20 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:03:21 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:03:21 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:03:21 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:04:14 - threshold_monitor - INFO - Received signal 15, shutting down...
+2025-11-19 03:04:14 - threshold_monitor - INFO - Removed PID file
+2025-11-19 03:04:14 - threshold_monitor - INFO - Monitor stopped
+2025-11-19 03:04:17 - threshold_monitor - INFO - Loaded 1 threshold(s) from configuration
+2025-11-19 03:04:17 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 03:04:17 - threshold_monitor - INFO - Loaded state from /app/data/threshold_state.json
+2025-11-19 03:04:17 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 03:04:17 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 03:04:17 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 03:04:17 - threshold_monitor - INFO - Initialized with 0 put thresholds and 1 call thresholds
+2025-11-19 03:04:17 - threshold_monitor - INFO - No bots triggered today
+2025-11-19 03:04:17 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 03:04:17 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 03:04:17 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 03:04:17 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:04:17 - threshold_monitor - INFO - Active thresholds: 0 puts, 1 calls
+2025-11-19 03:04:17 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 03:04:17 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:04:18 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:04:18 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:04:18 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:04:18 - threshold_monitor - INFO - CALL threshold check (first check): 15_35_Calls_1_manchinicalls_second at level $6615, current price: $6617.32
+2025-11-19 03:04:18 - threshold_monitor - INFO - ✅ CALL threshold triggered: 15_35_Calls_1_manchinicalls_second at level $6615 (current price: $6617.32, was: $6617.32)
+2025-11-19 03:04:18 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '15_35_Calls_1_manchinicalls_second' at level $6615 (current price: $6617.32)
+2025-11-19 03:04:18 - threshold_monitor - INFO -    Threshold type: CALL, Bot name: '15_35_Calls_1_manchinicalls_second'
+2025-11-19 03:04:18 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '15_35_Calls_1_manchinicalls_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:04:18 - threshold_monitor - INFO - Webhook response status: 200 for bot '15_35_Calls_1_manchinicalls_second'
+2025-11-19 03:04:18 - threshold_monitor - INFO - ✅ Successfully triggered bot '15_35_Calls_1_manchinicalls_second' via webhook. Bot ID: 25, Enabled: True (was: True), Paused: False (was: True), State: INITIALIZING (unpaused)
+2025-11-19 03:04:18 - threshold_monitor - INFO - ✅ Removed CALL threshold level $6615.00 from configuration. Remaining calls: 0
+2025-11-19 03:04:18 - threshold_monitor - INFO - ✅ Bot '15_35_Calls_1_manchinicalls_second' successfully triggered and added to triggered list for 2025-11-18
+2025-11-19 03:05:18 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:05:19 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:05:19 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:05:19 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:06:19 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:06:20 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:06:20 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:06:20 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:07:21 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:07:21 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:07:21 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:07:21 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:08:22 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:08:22 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:08:22 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:08:22 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:09:23 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:09:24 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:09:24 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:09:24 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:10:24 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:10:25 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:10:25 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:10:25 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:11:26 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:11:26 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:11:26 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:11:26 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:12:24 - threshold_monitor - INFO - Loaded 1 threshold(s) from configuration
+2025-11-19 03:12:24 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 03:12:24 - threshold_monitor - WARNING - Error loading state file, creating new one: Expecting value: line 1 column 1 (char 0)
+2025-11-19 03:12:24 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 03:12:24 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 03:12:24 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 03:12:24 - threshold_monitor - INFO - Initialized with 0 put thresholds and 1 call thresholds
+2025-11-19 03:12:24 - threshold_monitor - INFO - No bots triggered today
+2025-11-19 03:12:24 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 03:12:24 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 03:12:24 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 03:12:24 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:12:24 - threshold_monitor - INFO - Active thresholds: 0 puts, 1 calls
+2025-11-19 03:12:24 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 03:12:24 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:12:24 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:12:24 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:12:24 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:12:24 - threshold_monitor - INFO - CALL threshold check (first check): 15_35_Calls_1_manchinicalls_main at level $6616, current price: $6617.32
+2025-11-19 03:12:24 - threshold_monitor - INFO - ✅ CALL threshold triggered: 15_35_Calls_1_manchinicalls_main at level $6616 (current price: $6617.32, was: N/A)
+2025-11-19 03:12:24 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '15_35_Calls_1_manchinicalls_main' at level $6616 (current price: $6617.32)
+2025-11-19 03:12:24 - threshold_monitor - INFO -    Threshold type: CALL, Bot name: '15_35_Calls_1_manchinicalls_main'
+2025-11-19 03:12:24 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '15_35_Calls_1_manchinicalls_main' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:12:24 - threshold_monitor - INFO - Webhook response status: 200 for bot '15_35_Calls_1_manchinicalls_main'
+2025-11-19 03:12:24 - threshold_monitor - INFO - ✅ Successfully triggered bot '15_35_Calls_1_manchinicalls_main' via webhook. Bot ID: 1, Enabled: True (was: True), Paused: False (was: True), State: INITIALIZING (unpaused)
+2025-11-19 03:12:24 - threshold_monitor - INFO - ✅ Removed CALL threshold level $6616.00 from configuration. Remaining calls: 0
+2025-11-19 03:12:24 - threshold_monitor - INFO - ✅ Bot '15_35_Calls_1_manchinicalls_main' successfully triggered and added to triggered list for 2025-11-18
+2025-11-19 03:13:25 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:13:25 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:13:25 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:13:25 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:14:26 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:14:26 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:14:26 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:14:26 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:15:27 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:15:27 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:15:27 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:15:27 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:18:29 - threshold_monitor - WARNING - ⚠️  No thresholds configured - monitor will run in monitoring-only mode (no triggers)
+2025-11-19 03:18:29 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 03:18:29 - threshold_monitor - WARNING - Error loading state file, creating new one: Expecting value: line 1 column 1 (char 0)
+2025-11-19 03:18:29 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 03:18:29 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 03:18:29 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 03:18:29 - threshold_monitor - INFO - Initialized with 0 put thresholds and 0 call thresholds
+2025-11-19 03:18:29 - threshold_monitor - INFO - No bots triggered today
+2025-11-19 03:18:29 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 03:18:29 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 03:18:29 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 03:18:29 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:18:29 - threshold_monitor - WARNING - ⚠️  Running in monitoring-only mode - no thresholds configured. Add thresholds via web UI to enable triggers.
+2025-11-19 03:18:29 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 03:18:30 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:18:30 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:18:30 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:18:30 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:19:31 - httpx - INFO - HTTP Request: POST https://api.schwabapi.com/v1/oauth/token "HTTP/1.1 200 OK"
+2025-11-19 03:19:31 - schwab.auth - INFO - Updating token to file /app/token.json
+2025-11-19 03:19:31 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:19:32 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:19:32 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:19:32 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:20:33 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:20:33 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:20:33 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:20:33 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:21:03 - threshold_monitor - INFO - Received signal 15, shutting down...
+2025-11-19 03:21:04 - threshold_monitor - INFO - Removed PID file
+2025-11-19 03:21:04 - threshold_monitor - INFO - Monitor stopped
+2025-11-19 03:21:08 - threshold_monitor - INFO - Loaded 1 threshold(s) from configuration
+2025-11-19 03:21:08 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 03:21:08 - threshold_monitor - INFO - Loaded state from /app/data/threshold_state.json
+2025-11-19 03:21:08 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 03:21:08 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 03:21:08 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 03:21:08 - threshold_monitor - INFO - Initialized with 0 put thresholds and 1 call thresholds
+2025-11-19 03:21:08 - threshold_monitor - INFO - No bots triggered today
+2025-11-19 03:21:08 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 03:21:08 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 03:21:08 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 03:21:08 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:21:08 - threshold_monitor - INFO - Active thresholds: 0 puts, 1 calls
+2025-11-19 03:21:08 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 03:21:08 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:21:09 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:21:09 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:21:09 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:21:09 - threshold_monitor - INFO - CALL threshold check (first check): 15_35_Calls_1_manchinicalls_second at level $6616, current price: $6617.32
+2025-11-19 03:21:09 - threshold_monitor - INFO - ✅ CALL threshold triggered: 15_35_Calls_1_manchinicalls_second at level $6616 (current price: $6617.32, was: $6617.32)
+2025-11-19 03:21:09 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '15_35_Calls_1_manchinicalls_second' at level $6616 (current price: $6617.32)
+2025-11-19 03:21:09 - threshold_monitor - INFO -    Threshold type: CALL, Bot name: '15_35_Calls_1_manchinicalls_second'
+2025-11-19 03:21:09 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '15_35_Calls_1_manchinicalls_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:21:09 - threshold_monitor - INFO - Webhook response status: 200 for bot '15_35_Calls_1_manchinicalls_second'
+2025-11-19 03:21:09 - threshold_monitor - INFO - ✅ Successfully triggered bot '15_35_Calls_1_manchinicalls_second' via webhook. Bot ID: 25, Enabled: True (was: True), Paused: False (was: True), State: INITIALIZING (unpaused)
+2025-11-19 03:21:09 - threshold_monitor - INFO - ✅ Removed CALL threshold level $6616.00 from configuration. Remaining calls: 0
+2025-11-19 03:21:09 - threshold_monitor - INFO - ✅ Bot '15_35_Calls_1_manchinicalls_second' successfully triggered and added to triggered list for 2025-11-18
+2025-11-19 03:22:09 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:22:10 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:22:10 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:22:10 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:23:10 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:23:11 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:23:11 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:23:11 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:24:29 - threshold_monitor - WARNING - ⚠️  No thresholds configured - monitor will run in monitoring-only mode (no triggers)
+2025-11-19 03:24:29 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 03:24:29 - threshold_monitor - WARNING - Error loading state file, creating new one: Expecting value: line 1 column 1 (char 0)
+2025-11-19 03:24:29 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 03:24:29 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 03:24:29 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 03:24:29 - threshold_monitor - INFO - Initialized with 0 put thresholds and 0 call thresholds
+2025-11-19 03:24:29 - threshold_monitor - INFO - No bots triggered today
+2025-11-19 03:24:29 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 03:24:29 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 03:24:29 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 03:24:29 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:24:29 - threshold_monitor - WARNING - ⚠️  Running in monitoring-only mode - no thresholds configured. Add thresholds via web UI to enable triggers.
+2025-11-19 03:24:29 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 03:24:29 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:24:30 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:24:30 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:24:30 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:24:49 - threshold_monitor - INFO - Received signal 15, shutting down...
+2025-11-19 03:24:49 - threshold_monitor - INFO - Removed PID file
+2025-11-19 03:24:49 - threshold_monitor - INFO - Monitor stopped
+2025-11-19 03:24:52 - threshold_monitor - INFO - Loaded 1 threshold(s) from configuration
+2025-11-19 03:24:52 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 03:24:52 - threshold_monitor - INFO - Loaded state from /app/data/threshold_state.json
+2025-11-19 03:24:52 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 03:24:52 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 03:24:52 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 03:24:52 - threshold_monitor - INFO - Initialized with 0 put thresholds and 1 call thresholds
+2025-11-19 03:24:52 - threshold_monitor - INFO - No bots triggered today
+2025-11-19 03:24:52 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 03:24:52 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 03:24:52 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 03:24:52 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:24:52 - threshold_monitor - INFO - Active thresholds: 0 puts, 1 calls
+2025-11-19 03:24:52 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 03:24:52 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:24:53 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:24:53 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:24:53 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:24:53 - threshold_monitor - INFO - CALL threshold check (first check): 15_35_Calls_1_manchinicalls_second at level $6616, current price: $6617.32
+2025-11-19 03:24:53 - threshold_monitor - INFO - ✅ CALL threshold triggered: 15_35_Calls_1_manchinicalls_second at level $6616 (current price: $6617.32, was: $6617.32)
+2025-11-19 03:24:53 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '15_35_Calls_1_manchinicalls_second' at level $6616 (current price: $6617.32)
+2025-11-19 03:24:53 - threshold_monitor - INFO -    Threshold type: CALL, Bot name: '15_35_Calls_1_manchinicalls_second'
+2025-11-19 03:24:53 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '15_35_Calls_1_manchinicalls_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:24:53 - threshold_monitor - INFO - Webhook response status: 200 for bot '15_35_Calls_1_manchinicalls_second'
+2025-11-19 03:24:53 - threshold_monitor - INFO - ✅ Successfully triggered bot '15_35_Calls_1_manchinicalls_second' via webhook. Bot ID: 25, Enabled: True (was: True), Paused: False (was: True), State: INITIALIZING (unpaused)
+2025-11-19 03:24:53 - threshold_monitor - INFO - ✅ Removed CALL threshold level $6616.00 from configuration. Remaining calls: 0
+2025-11-19 03:24:53 - threshold_monitor - INFO - ✅ Bot '15_35_Calls_1_manchinicalls_second' successfully triggered and added to triggered list for 2025-11-18
+2025-11-19 03:25:54 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:25:54 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:25:54 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:25:54 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:27:46 - threshold_monitor - INFO - Loaded 1 threshold(s) from configuration
+2025-11-19 03:27:46 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 03:27:46 - threshold_monitor - WARNING - Error loading state file, creating new one: Expecting value: line 1 column 1 (char 0)
+2025-11-19 03:27:46 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 03:27:46 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 03:27:46 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 03:27:46 - threshold_monitor - INFO - Initialized with 0 put thresholds and 1 call thresholds
+2025-11-19 03:27:46 - threshold_monitor - INFO - No bots triggered today
+2025-11-19 03:27:46 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 03:27:46 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 03:27:46 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 03:27:46 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:27:46 - threshold_monitor - INFO - Active thresholds: 0 puts, 1 calls
+2025-11-19 03:27:46 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 03:27:46 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:27:46 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:27:46 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:27:46 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:27:46 - threshold_monitor - INFO - CALL threshold check (first check): 15_35_Puts_1_manchiniputs_second at level $6616, current price: $6617.32
+2025-11-19 03:27:46 - threshold_monitor - INFO - ✅ CALL threshold triggered: 15_35_Puts_1_manchiniputs_second at level $6616 (current price: $6617.32, was: N/A)
+2025-11-19 03:27:46 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '15_35_Puts_1_manchiniputs_second' at level $6616 (current price: $6617.32)
+2025-11-19 03:27:46 - threshold_monitor - INFO -    Threshold type: CALL, Bot name: '15_35_Puts_1_manchiniputs_second'
+2025-11-19 03:27:46 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '15_35_Puts_1_manchiniputs_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:27:46 - threshold_monitor - INFO - Webhook response status: 200 for bot '15_35_Puts_1_manchiniputs_second'
+2025-11-19 03:27:46 - threshold_monitor - INFO - ✅ Successfully triggered bot '15_35_Puts_1_manchiniputs_second' via webhook. Bot ID: 45, Enabled: True (was: True), Paused: False (was: True), State: INITIALIZING (unpaused)
+2025-11-19 03:27:46 - threshold_monitor - INFO - ✅ Removed CALL threshold level $6616.00 from configuration. Remaining calls: 0
+2025-11-19 03:27:46 - threshold_monitor - INFO - ✅ Bot '15_35_Puts_1_manchiniputs_second' successfully triggered and added to triggered list for 2025-11-18
+2025-11-19 03:28:47 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:28:47 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:28:48 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:28:48 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:32:11 - threshold_monitor - INFO - Loaded 1 threshold(s) from configuration
+2025-11-19 03:32:11 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 03:32:11 - threshold_monitor - WARNING - Error loading state file, creating new one: Expecting value: line 1 column 1 (char 0)
+2025-11-19 03:32:11 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 03:32:11 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 03:32:11 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 03:32:11 - threshold_monitor - INFO - Initialized with 0 put thresholds and 1 call thresholds
+2025-11-19 03:32:11 - threshold_monitor - INFO - No bots triggered today
+2025-11-19 03:32:11 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 03:32:11 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 03:32:11 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 03:32:11 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:32:11 - threshold_monitor - INFO - Active thresholds: 0 puts, 1 calls
+2025-11-19 03:32:11 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 03:32:11 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:32:12 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:32:12 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:32:12 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:32:12 - threshold_monitor - INFO - CALL threshold check (first check): 20_32_Puts_1_manchiniputs_second at level $6616, current price: $6617.32
+2025-11-19 03:32:12 - threshold_monitor - INFO - ✅ CALL threshold triggered: 20_32_Puts_1_manchiniputs_second at level $6616 (current price: $6617.32, was: N/A)
+2025-11-19 03:32:12 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '20_32_Puts_1_manchiniputs_second' at level $6616 (current price: $6617.32)
+2025-11-19 03:32:12 - threshold_monitor - INFO -    Threshold type: CALL, Bot name: '20_32_Puts_1_manchiniputs_second'
+2025-11-19 03:32:12 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '20_32_Puts_1_manchiniputs_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:32:12 - threshold_monitor - INFO - Webhook response status: 200 for bot '20_32_Puts_1_manchiniputs_second'
+2025-11-19 03:32:12 - threshold_monitor - INFO - ✅ Successfully triggered bot '20_32_Puts_1_manchiniputs_second' via webhook. Bot ID: 46, Enabled: True (was: True), Paused: False (was: True), State: INITIALIZING (unpaused)
+2025-11-19 03:32:12 - threshold_monitor - INFO - ✅ Removed CALL threshold level $6616.00 from configuration. Remaining calls: 0
+2025-11-19 03:32:12 - threshold_monitor - INFO - ✅ Bot '20_32_Puts_1_manchiniputs_second' successfully triggered and added to triggered list for 2025-11-18
+2025-11-19 03:33:13 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:33:13 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:33:13 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:33:13 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:33:41 - threshold_monitor - INFO - Received signal 15, shutting down...
+2025-11-19 03:33:41 - threshold_monitor - INFO - Removed PID file
+2025-11-19 03:33:41 - threshold_monitor - INFO - Monitor stopped
+2025-11-19 03:33:45 - threshold_monitor - INFO - Loaded 1 threshold(s) from configuration
+2025-11-19 03:33:45 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 03:33:45 - threshold_monitor - INFO - Loaded state from /app/data/threshold_state.json
+2025-11-19 03:33:45 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 03:33:45 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 03:33:45 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 03:33:45 - threshold_monitor - INFO - Initialized with 0 put thresholds and 1 call thresholds
+2025-11-19 03:33:45 - threshold_monitor - INFO - Already triggered bots today (2025-11-18): ['20_32_Puts_1_manchiniputs_second']
+2025-11-19 03:33:45 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 03:33:45 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 03:33:45 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 03:33:45 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:33:45 - threshold_monitor - INFO - Active thresholds: 0 puts, 1 calls
+2025-11-19 03:33:45 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 03:33:45 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:33:45 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:33:46 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:33:46 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:33:46 - threshold_monitor - INFO - CALL threshold check (first check): 15_35_Calls_1_manchinicalls_second at level $6616, current price: $6617.32
+2025-11-19 03:33:46 - threshold_monitor - INFO - ✅ CALL threshold triggered: 15_35_Calls_1_manchinicalls_second at level $6616 (current price: $6617.32, was: $6617.32)
+2025-11-19 03:33:46 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '15_35_Calls_1_manchinicalls_second' at level $6616 (current price: $6617.32)
+2025-11-19 03:33:46 - threshold_monitor - INFO -    Threshold type: CALL, Bot name: '15_35_Calls_1_manchinicalls_second'
+2025-11-19 03:33:46 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '15_35_Calls_1_manchinicalls_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:33:46 - threshold_monitor - INFO - Webhook response status: 200 for bot '15_35_Calls_1_manchinicalls_second'
+2025-11-19 03:33:46 - threshold_monitor - INFO - ✅ Successfully triggered bot '15_35_Calls_1_manchinicalls_second' via webhook. Bot ID: 25, Enabled: True (was: True), Paused: False (was: True), State: INITIALIZING (unpaused)
+2025-11-19 03:33:46 - threshold_monitor - INFO - ✅ Removed CALL threshold level $6616.00 from configuration. Remaining calls: 0
+2025-11-19 03:33:46 - threshold_monitor - INFO - ✅ Bot '15_35_Calls_1_manchinicalls_second' successfully triggered and added to triggered list for 2025-11-18
+2025-11-19 03:34:46 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:34:47 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:34:47 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:34:47 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:35:47 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:35:48 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:35:48 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:35:48 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:36:48 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:36:49 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:36:49 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:36:49 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:37:49 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:37:50 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:37:50 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:37:50 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:38:50 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:38:51 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:38:51 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:38:51 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:39:51 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:39:52 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:39:52 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:39:52 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:40:52 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:40:53 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:40:53 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:40:53 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:41:53 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:41:54 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:41:54 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:41:54 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:42:55 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:46:30 - threshold_monitor - INFO - Loaded 1 threshold(s) from configuration
+2025-11-19 03:46:30 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 03:46:30 - threshold_monitor - INFO - Loaded state from /app/data/threshold_state.json
+2025-11-19 03:46:30 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 03:46:30 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 03:46:30 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 03:46:30 - threshold_monitor - INFO - Initialized with 0 put thresholds and 1 call thresholds
+2025-11-19 03:46:30 - threshold_monitor - INFO - No bots triggered today
+2025-11-19 03:46:30 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 03:46:30 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 03:46:30 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 03:46:30 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:46:30 - threshold_monitor - INFO - Active thresholds: 0 puts, 1 calls
+2025-11-19 03:46:30 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 03:46:31 - httpx - INFO - HTTP Request: POST https://api.schwabapi.com/v1/oauth/token "HTTP/1.1 200 OK"
+2025-11-19 03:46:31 - schwab.auth - INFO - Updating token to file /app/token.json
+2025-11-19 03:46:31 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:46:32 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:46:32 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:46:32 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:46:32 - threshold_monitor - INFO - CALL threshold check (first check): 15_35_Calls_1_manchinicalls_second at level $6616, current price: $6617.32
+2025-11-19 03:46:32 - threshold_monitor - INFO - ✅ CALL threshold triggered: 15_35_Calls_1_manchinicalls_second at level $6616 (current price: $6617.32, was: $6617.32)
+2025-11-19 03:46:32 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '15_35_Calls_1_manchinicalls_second' at level $6616 (current price: $6617.32)
+2025-11-19 03:46:32 - threshold_monitor - INFO -    Threshold type: CALL, Bot name: '15_35_Calls_1_manchinicalls_second'
+2025-11-19 03:46:32 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '15_35_Calls_1_manchinicalls_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:46:32 - threshold_monitor - INFO - Webhook response status: 200 for bot '15_35_Calls_1_manchinicalls_second'
+2025-11-19 03:46:32 - threshold_monitor - INFO - ✅ Successfully triggered bot '15_35_Calls_1_manchinicalls_second' via webhook. Bot ID: 25, Enabled: True (was: True), Paused: False (was: True), State: INITIALIZING (unpaused)
+2025-11-19 03:46:32 - threshold_monitor - INFO - ✅ Removed CALL threshold level $6616.00 from configuration. Remaining calls: 0
+2025-11-19 03:46:32 - threshold_monitor - INFO - ✅ Bot '15_35_Calls_1_manchinicalls_second' successfully triggered and added to triggered list for 2025-11-18
+2025-11-19 03:47:32 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:47:33 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:47:33 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:47:33 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:48:33 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:48:34 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:48:34 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:48:34 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:49:35 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:49:35 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:49:35 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:49:35 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:50:36 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:50:36 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:50:36 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:50:36 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:51:37 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:51:37 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:51:37 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:51:37 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:52:38 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:52:38 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:52:38 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:52:38 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:53:39 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:53:39 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:53:39 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:53:39 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:54:40 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:54:40 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:54:40 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:54:40 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:55:41 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:55:41 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:55:41 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:55:41 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:56:42 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:56:42 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:56:42 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:56:42 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:59:46 - threshold_monitor - INFO - Loaded 1 threshold(s) from configuration
+2025-11-19 03:59:46 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 03:59:46 - threshold_monitor - WARNING - Error loading state file, creating new one: Expecting value: line 1 column 1 (char 0)
+2025-11-19 03:59:46 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 03:59:46 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 03:59:46 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 03:59:46 - threshold_monitor - INFO - Initialized with 0 put thresholds and 1 call thresholds
+2025-11-19 03:59:46 - threshold_monitor - INFO - No bots triggered today
+2025-11-19 03:59:46 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 03:59:46 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 03:59:46 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 03:59:46 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:59:46 - threshold_monitor - INFO - Active thresholds: 0 puts, 1 calls
+2025-11-19 03:59:46 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 03:59:46 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 03:59:46 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 03:59:47 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 03:59:47 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 03:59:47 - threshold_monitor - INFO - CALL threshold check (first check): 15_35_Calls_1_manchinicalls_main at level $6616, current price: $6617.32
+2025-11-19 03:59:47 - threshold_monitor - INFO - ✅ CALL threshold triggered: 15_35_Calls_1_manchinicalls_main at level $6616 (current price: $6617.32, was: N/A)
+2025-11-19 03:59:47 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '15_35_Calls_1_manchinicalls_main' at level $6616 (current price: $6617.32)
+2025-11-19 03:59:47 - threshold_monitor - INFO -    Threshold type: CALL, Bot name: '15_35_Calls_1_manchinicalls_main'
+2025-11-19 03:59:47 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '15_35_Calls_1_manchinicalls_main' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 03:59:47 - threshold_monitor - INFO - Webhook response status: 200 for bot '15_35_Calls_1_manchinicalls_main'
+2025-11-19 03:59:47 - threshold_monitor - INFO - ✅ Successfully triggered bot '15_35_Calls_1_manchinicalls_main' via webhook. Bot ID: 1, Enabled: True (was: True), Paused: False (was: True), State: INITIALIZING (unpaused)
+2025-11-19 03:59:47 - threshold_monitor - INFO - ✅ Removed CALL threshold level $6616.00 from configuration. Remaining calls: 0
+2025-11-19 03:59:47 - threshold_monitor - INFO - ✅ Bot '15_35_Calls_1_manchinicalls_main' successfully triggered and added to triggered list for 2025-11-18
+2025-11-19 04:00:47 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 04:00:48 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 04:00:48 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 04:00:48 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 04:01:48 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 04:01:49 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 04:01:49 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 04:01:49 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 04:02:49 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 04:02:50 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 04:02:50 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 04:02:50 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 04:03:24 - threshold_monitor - INFO - Received signal 15, shutting down...
+2025-11-19 04:03:24 - threshold_monitor - INFO - Removed PID file
+2025-11-19 04:03:24 - threshold_monitor - INFO - Monitor stopped
+2025-11-19 04:03:30 - threshold_monitor - INFO - Loaded 1 threshold(s) from configuration
+2025-11-19 04:03:30 - threshold_monitor - INFO - Loaded configuration from /app/config/threshold_config.json
+2025-11-19 04:03:30 - threshold_monitor - INFO - Loaded state from /app/data/threshold_state.json
+2025-11-19 04:03:30 - schwab.auth - INFO - Loading token from file /app/token.json
+2025-11-19 04:03:30 - threshold_monitor - INFO - Schwab client initialized successfully
+2025-11-19 04:03:30 - threshold_monitor - INFO - ✓ Started on trading day (2025-11-18)
+2025-11-19 04:03:30 - threshold_monitor - INFO - Initialized with 0 put thresholds and 1 call thresholds
+2025-11-19 04:03:30 - threshold_monitor - INFO - Already triggered bots today (2025-11-18): ['15_35_Calls_1_manchinicalls_main']
+2025-11-19 04:03:30 - threshold_monitor - INFO - Starting threshold monitor...
+2025-11-19 04:03:30 - threshold_monitor - INFO - Monitoring SPX price
+2025-11-19 04:03:30 - threshold_monitor - INFO - Check interval: 60 seconds (1.0 minutes)
+2025-11-19 04:03:30 - threshold_monitor - INFO - Webhook URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 04:03:30 - threshold_monitor - INFO - Active thresholds: 0 puts, 1 calls
+2025-11-19 04:03:30 - threshold_monitor - INFO - Wrote PID file: /app/data/threshold_monitor.pid
+2025-11-19 04:03:30 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 04:03:31 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 04:03:31 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 04:03:31 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 04:03:31 - threshold_monitor - INFO - CALL threshold check (first check): 15_35_Calls_1_manchinicalls_second at level $6616, current price: $6617.32
+2025-11-19 04:03:31 - threshold_monitor - INFO - ✅ CALL threshold triggered: 15_35_Calls_1_manchinicalls_second at level $6616 (current price: $6617.32, was: $6617.32)
+2025-11-19 04:03:31 - threshold_monitor - INFO - 🎯 THRESHOLD TRIGGERED: Bot '15_35_Calls_1_manchinicalls_second' at level $6616 (current price: $6617.32)
+2025-11-19 04:03:31 - threshold_monitor - INFO -    Threshold type: CALL, Bot name: '15_35_Calls_1_manchinicalls_second'
+2025-11-19 04:03:31 - threshold_monitor - INFO - 🔗 Calling webhook to unpause bot '15_35_Calls_1_manchinicalls_second' at URL: http://localhost:5000/api/webhook/unpause-bot
+2025-11-19 04:03:31 - threshold_monitor - INFO - Webhook response status: 200 for bot '15_35_Calls_1_manchinicalls_second'
+2025-11-19 04:03:31 - threshold_monitor - INFO - ✅ Successfully triggered bot '15_35_Calls_1_manchinicalls_second' via webhook. Bot ID: 25, Enabled: True (was: True), Paused: False (was: True), State: INITIALIZING (unpaused)
+2025-11-19 04:03:31 - threshold_monitor - INFO - ✅ Removed CALL threshold level $6616.00 from configuration. Remaining calls: 0
+2025-11-19 04:03:31 - threshold_monitor - INFO - ✅ Bot '15_35_Calls_1_manchinicalls_second' successfully triggered and added to triggered list for 2025-11-18
+2025-11-19 04:04:32 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 04:04:32 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 04:04:32 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 04:04:32 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 04:05:33 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 04:05:33 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 04:05:33 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 04:05:33 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 04:06:34 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 04:06:34 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 04:06:34 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 04:06:34 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32
+2025-11-19 04:07:35 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX.X&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 400 Bad Request"
+2025-11-19 04:07:35 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/marketdata/v1/chains?symbol=%24SPX&fromDate=2025-11-18&toDate=2025-11-18 "HTTP/1.1 200 OK"
+2025-11-19 04:07:36 - threshold_monitor - INFO - 📊 SPX spot price: $6617.32 (from $SPX, expiration: 2025-11-18)
+2025-11-19 04:07:36 - threshold_monitor - INFO - 📊 Current SPX spot price: $6617.32

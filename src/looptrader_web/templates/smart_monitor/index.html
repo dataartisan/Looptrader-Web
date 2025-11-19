@@ -119,6 +119,17 @@
                   </button>
                 </div>
               </div>
+              
+              <!-- Config Change Warning -->
+              <div class="row mt-3" id="config-change-warning-container" style="display: none;">
+                <div class="col-md-12">
+                  <div class="alert alert-warning alert-dismissible">
+                    <button type="button" class="close" data-dismiss="alert" aria-hidden="true">&times;</button>
+                    <h5><i class="icon fas fa-exclamation-triangle"></i> Configuration Changed!</h5>
+                    <p>The threshold configuration has been modified since the monitor started. <strong>Please restart the monitor</strong> for the new settings to take effect.</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -286,19 +297,6 @@
                           </div>
                         </div>
                         {% endfor %}
-                      {% else %}
-                        <div class="input-group mb-2 put-threshold-row">
-                          <div class="input-group-prepend">
-                            <span class="input-group-text">$</span>
-                          </div>
-                          <input type="number" class="form-control threshold-level" placeholder="Level" step="0.01" required>
-                          <input type="text" class="form-control bot-name" placeholder="Bot Name" required>
-                          <div class="input-group-append">
-                            <button type="button" class="btn btn-danger remove-row" onclick="removeThresholdRow(this, 'put')">
-                              <i class="fas fa-times"></i>
-                            </button>
-                          </div>
-                        </div>
                       {% endif %}
                     </div>
                     <button type="button" class="btn btn-sm btn-outline-danger mt-2" onclick="addThresholdRow('put')">
@@ -326,19 +324,6 @@
                           </div>
                         </div>
                         {% endfor %}
-                      {% else %}
-                        <div class="input-group mb-2 call-threshold-row">
-                          <div class="input-group-prepend">
-                            <span class="input-group-text">$</span>
-                          </div>
-                          <input type="number" class="form-control threshold-level" placeholder="Level" step="0.01" required>
-                          <input type="text" class="form-control bot-name" placeholder="Bot Name" required>
-                          <div class="input-group-append">
-                            <button type="button" class="btn btn-danger remove-row" onclick="removeThresholdRow(this, 'call')">
-                              <i class="fas fa-times"></i>
-                            </button>
-                          </div>
-                        </div>
                       {% endif %}
                     </div>
                     <button type="button" class="btn btn-sm btn-outline-success mt-2" onclick="addThresholdRow('call')">
@@ -504,6 +489,13 @@
       $('#check-frequency').html('<span class="text-muted">-</span>');
     }
 
+    // Show warning if config was modified after monitor started
+    if (status.config_modified_after_start && status.running) {
+      $('#config-change-warning-container').show();
+    } else {
+      $('#config-change-warning-container').hide();
+    }
+
     // Update last trigger notification
     if (status.last_trigger) {
       const trigger = status.last_trigger;
@@ -631,7 +623,11 @@
   }
 
   function removeThresholdRow(button, type) {
-    $(button).closest(`.${type}-threshold-row`).remove();
+    const row = $(button).closest(`.${type}-threshold-row`);
+    const container = type === 'put' ? $('#put-thresholds-container') : $('#call-thresholds-container');
+    
+    // Always allow removal - users can have empty sections
+    row.remove();
   }
 
   function loadCurrentConfig() {
@@ -646,20 +642,32 @@
     // Collect put thresholds
     const puts = [];
     $('#put-thresholds-container .put-threshold-row').each(function() {
-      const level = parseFloat($(this).find('.threshold-level').val());
-      const botName = $(this).find('.bot-name').val().trim();
-      if (level && botName) {
-        puts.push({ level: level, bot_name: botName });
+      const levelInput = $(this).find('.threshold-level').val();
+      const botNameInput = $(this).find('.bot-name').val();
+      
+      // Only add if both level and bot name are provided
+      if (levelInput && botNameInput) {
+        const level = parseFloat(levelInput);
+        const botName = botNameInput.trim();
+        if (!isNaN(level) && level > 0 && botName.length > 0) {
+          puts.push({ level: level, bot_name: botName });
+        }
       }
     });
     
     // Collect call thresholds
     const calls = [];
     $('#call-thresholds-container .call-threshold-row').each(function() {
-      const level = parseFloat($(this).find('.threshold-level').val());
-      const botName = $(this).find('.bot-name').val().trim();
-      if (level && botName) {
-        calls.push({ level: level, bot_name: botName });
+      const levelInput = $(this).find('.threshold-level').val();
+      const botNameInput = $(this).find('.bot-name').val();
+      
+      // Only add if both level and bot name are provided
+      if (levelInput && botNameInput) {
+        const level = parseFloat(levelInput);
+        const botName = botNameInput.trim();
+        if (!isNaN(level) && level > 0 && botName.length > 0) {
+          calls.push({ level: level, bot_name: botName });
+        }
       }
     });
     
@@ -670,9 +678,17 @@
       return;
     }
     
-    // Validate
+    // Validate - check if we have at least one complete threshold
     if (puts.length === 0 && calls.length === 0) {
-      showNotification('warning', 'Please add at least one threshold (put or call)');
+      // Check if there are any rows with partial data
+      const putRows = $('#put-thresholds-container .put-threshold-row').length;
+      const callRows = $('#call-thresholds-container .call-threshold-row').length;
+      
+      if (putRows > 0 || callRows > 0) {
+        showNotification('warning', 'Please complete at least one threshold by filling in both the level and bot name');
+      } else {
+        showNotification('warning', 'Please add at least one threshold (put or call) using the "Add Put Threshold" or "Add Call Threshold" buttons');
+      }
       return;
     }
     
