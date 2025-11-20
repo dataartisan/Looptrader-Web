@@ -1,5 +1,55 @@
+# Environment and secrets
 .env
 token.json
+
+# Docker compose files (may contain environment-specific configs)
 docker-compose.yml
 docker-compose.standalone.yml
+
+# Configuration files (use .example files instead)
 config/threshold_config.json
+
+# Runtime data files
+data/
+*.pid
+*.log
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

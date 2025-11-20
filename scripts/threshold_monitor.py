@@ -20,6 +20,7 @@ import logging
 import requests
 import signal
 import atexit
+from collections import deque
 from datetime import date, datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
@@ -70,8 +71,12 @@ class ThresholdMonitor:
         self._init_schwab_client()
         self._running = True
         self._last_trigger = None
-        # Track if this is the first check after startup (to trigger on existing conditions)
+        # Track if this is the first check on the current trading day (to trigger on existing conditions)
+        # This is reset when we detect a new trading day
+        self._last_checked_trading_day = None  # Track the last trading day we checked
         self._first_check = True
+        self._throttled = False
+        self.api_call_times = deque(maxlen=5)  # Track timestamps of recent API calls for rate limiting
         
         # Check if today is a trading day (using EST/ET timezone)
         today = self._get_today_est()
@@ -167,6 +172,7 @@ class ThresholdMonitor:
                 with open(state_file, 'r') as f:
                     state = json.load(f)
                 logger.info(f"Loaded state from {state_file}")
+                state.setdefault('throttled', False)
                 return state
             except (json.JSONDecodeError, IOError) as e:
                 logger.warning(f"Error loading state file, creating new one: {e}")
@@ -176,7 +182,8 @@ class ThresholdMonitor:
             'triggered_bots': [],
             'triggered_bots_date': None,  # Date (YYYY-MM-DD) when bots were triggered
             'last_price': None,
-            'last_check': None
+            'last_check': None,
+            'throttled': False
         }
         self._save_state(default_state)
         return default_state
@@ -195,6 +202,37 @@ class ThresholdMonitor:
             logger.debug(f"Saved state to {state_file}")
         except IOError as e:
             logger.error(f"Error saving state: {e}")
+
+    def _sleep_with_interrupt(self, seconds: float) -> None:
+        """Sleep in small increments so we can respond to shutdown signals."""
+        remaining = seconds
+        while self._running and remaining > 0:
+            sleep_time = min(1.0, remaining)
+            time.sleep(sleep_time)
+            remaining -= sleep_time
+
+    def _wait_for_rate_limit(self) -> float:
+        """
+        Ensure we don't exceed 5 API calls per 60 seconds.
+        Returns the number of seconds to wait before next call (0 if ready).
+        """
+        now = time.time()
+        # Remove timestamps older than 60 seconds
+        while self.api_call_times and now - self.api_call_times[0] >= 60:
+            self.api_call_times.popleft()
+        
+        if len(self.api_call_times) < self.api_call_times.maxlen:
+            return 0.0
+        
+        oldest = self.api_call_times[0]
+        elapsed = now - oldest
+        if elapsed < 60:
+            return 60 - elapsed
+        return 0.0
+
+    def _record_api_call(self) -> None:
+        """Record timestamp of an API call for rate limiting."""
+        self.api_call_times.append(time.time())
     
     def _remove_threshold(self, level: float, threshold_type: str) -> None:
         """
@@ -341,6 +379,10 @@ class ThresholdMonitor:
         self._is_trading_day_flag = True
         self._next_trading_day = today
         
+        # Check if this is a new trading day (different from last checked day)
+        is_new_trading_day = (self._last_checked_trading_day is None or 
+                             self._last_checked_trading_day != today)
+        
         if was_waiting:
             logger.info(f"✓ Trading day resumed: {today}")
             # Reset triggered bots for the new trading day
@@ -348,6 +390,13 @@ class ThresholdMonitor:
         
         # Always check if it's a new day (in case we've been running across midnight)
         self._reset_triggered_bots_if_new_day(today)
+        
+        # Reset _first_check flag when entering a new trading day
+        # This prevents triggering stale thresholds when transitioning from non-trading days
+        if is_new_trading_day:
+            self._first_check = True
+            self._last_checked_trading_day = today
+            logger.debug(f"New trading day detected: {today}. First check flag reset.")
         
         return True
     
@@ -430,7 +479,7 @@ class ThresholdMonitor:
             logger.error(f"Error getting SPX price: {e}")
             return None
     
-    def check_thresholds(self, current_price: float) -> List[Tuple[str, float]]:
+    def check_thresholds(self, current_price: float) -> List[Tuple[str, float, str]]:
         """
         Check if any thresholds have been crossed.
         
@@ -441,7 +490,8 @@ class ThresholdMonitor:
             current_price: Current SPX price
             
         Returns:
-            List of (bot_name, threshold_level) tuples for newly triggered bots
+            List of (bot_name, threshold_level, threshold_type) tuples for newly triggered bots
+            threshold_type is either 'put' or 'call'
         """
         # Note: Trading day check is already done in run() loop before calling this method
         triggered = []
@@ -475,7 +525,7 @@ class ThresholdMonitor:
                     logger.info(f"PUT threshold crossed down: {bot_name} at level ${level}, price dropped from ${last_price:.2f} to ${current_price:.2f}")
                 
                 if should_trigger:
-                    triggered.append((bot_name, level))
+                    triggered.append((bot_name, level, 'put'))
                     last_price_str = f"${last_price:.2f}" if last_price is not None else "N/A"
                     logger.info(f"✅ PUT threshold triggered: {bot_name} at level ${level} (current price: ${current_price:.2f}, was: {last_price_str})")
                 else:
@@ -510,7 +560,7 @@ class ThresholdMonitor:
                     logger.info(f"CALL threshold crossed up: {bot_name} at level ${level}, price rose from ${last_price:.2f} to ${current_price:.2f}")
                 
                 if should_trigger:
-                    triggered.append((bot_name, level))
+                    triggered.append((bot_name, level, 'call'))
                     last_price_str = f"${last_price:.2f}" if last_price is not None else "N/A"
                     logger.info(f"✅ CALL threshold triggered: {bot_name} at level ${level} (current price: ${current_price:.2f}, was: {last_price_str})")
                 else:
@@ -610,6 +660,31 @@ class ThresholdMonitor:
                             time.sleep(1)
                         continue
                     
+                    # Enforce API rate limit (max 5 calls per minute)
+                    while self._running:
+                        wait_time = self._wait_for_rate_limit()
+                        if wait_time <= 0:
+                            if self._throttled:
+                                logger.info("✅ API rate limit cleared; resuming normal operations")
+                                self._throttled = False
+                                self.state['throttled'] = False
+                                self._save_state()
+                            break
+                        
+                        if not self._throttled:
+                            logger.warning(f"⚠️  API rate limit reached (max 5 calls/min). Waiting {wait_time:.1f} seconds before next price check.")
+                            self._throttled = True
+                            self.state['throttled'] = True
+                            self._save_state()
+                        self._sleep_with_interrupt(wait_time)
+                        if not self._running:
+                            break
+                    if not self._running:
+                        break
+                    
+                    # Record API call timestamp (even if monitoring-only mode, for consistency)
+                    self._record_api_call()
+                    
                     # Get current price
                     current_price = self.get_spx_price()
                     
@@ -627,20 +702,21 @@ class ThresholdMonitor:
                     # Update last price in state after checking thresholds
                     self.state['last_price'] = current_price
                     self.state['last_check'] = datetime.now(timezone.utc).isoformat()
+                    self.state['throttled'] = self._throttled
                     
                     # Save state immediately after updating price (so UI can display it)
                     self._save_state()
                     
-                    # Mark that first check is complete (only on trading days)
+                    # Mark that first check is complete for this trading day
                     if self._first_check:
                         self._first_check = False
+                        logger.debug(f"First check completed for trading day: {self._last_checked_trading_day}")
                     
                     # Trigger webhooks for newly crossed thresholds
-                    for bot_name, level in triggered:
+                    # Note: threshold_type is included in the tuple from check_thresholds to avoid
+                    # incorrect classification when multiple bots share the same level
+                    for bot_name, level, threshold_type in triggered:
                         logger.info(f"🎯 THRESHOLD TRIGGERED: Bot '{bot_name}' at level ${level} (current price: ${current_price:.2f})")
-                        
-                        # Determine threshold type (put or call) before removing
-                        threshold_type = 'put' if level in [t['level'] for t in self.put_thresholds] else 'call'
                         logger.info(f"   Threshold type: {threshold_type.upper()}, Bot name: '{bot_name}'")
                         
                         success = self.call_webhook(bot_name)

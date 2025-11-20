@@ -3430,6 +3430,7 @@ def threshold_monitor_config():
                 state['triggered_bots'] = []
                 state['triggered_bots_date'] = None
                 state['last_trigger'] = None
+                state['throttled'] = False
                 with open(state_file, 'w') as f:
                     json.dump(state, f, indent=2)
                 logger.info(f"Cleared old triggers from state file after config change")
@@ -3518,6 +3519,7 @@ def threshold_monitor_status():
         
         # Read state file for additional info
         config_modified_after_start = False
+        throttled = False
         if os.path.exists(state_file):
             try:
                 with open(state_file, 'r') as f:
@@ -3526,6 +3528,7 @@ def threshold_monitor_status():
                     triggered_bots = state.get('triggered_bots', [])
                     started_at = state.get('last_check')  # Use last_check as started_at approximation
                     last_trigger = state.get('last_trigger')  # Get last trigger from state file
+                    throttled = state.get('throttled', False)
                     
                     # Check if config file was modified after monitor started
                     # This helps detect if monitor needs restart
@@ -3580,6 +3583,7 @@ def threshold_monitor_status():
             'triggered_bots': triggered_bots,
             'is_trading_day': is_trading_day,
             'next_trading_day': next_trading_day.isoformat() if next_trading_day else None,
+            'throttled': throttled,
             'config_modified_after_start': config_modified_after_start  # Warn if config changed after monitor started
         })
         
