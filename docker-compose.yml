@@ -8,6 +8,9 @@ services:
     volumes:
       - ./token.json:/app/token.json
       - ./src:/app/src
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./scripts:/app/scripts
     env_file:
       - .env
     environment:
@@ -21,6 +24,9 @@ services:
     restart: unless-stopped
     networks:
       - looptrader-pro_default
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
 
 networks:
   looptrader-pro_default:

@@ -45,6 +45,28 @@
           </div>
 
           <div class="col-lg-3 col-6">
+            <div class="info-box mb-3 {% if stats.get('total_pnl', 0) >= 0 %}bg-success{% else %}bg-danger{% endif %}">
+              <span class="info-box-icon"><i class="fas fa-hand-holding-usd"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text">Current P&L</span>
+                <span class="info-box-number" id="current-pnl">
+                  {% if stats.get('total_pnl') is not none %}
+                    {% if stats.total_pnl >= 0 %}+{% endif %}${{ "%.2f"|format(stats.total_pnl) }}
+                    <div class="progress-description" style="font-size: 0.8em;">
+                      {% if stats.total_pnl >= 0 %}+{% endif %}{{ "%.1f"|format(stats.total_pnl_pct) }}%
+                    </div>
+                  {% else %}
+                    $0.00
+                    <div class="progress-description" style="font-size: 0.8em;">
+                      0.0%
+                    </div>
+                  {% endif %}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-lg-3 col-6">
             <div class="info-box mb-3 {% if spx_data.change != 'N/A' and spx_data.change|float >= 0 %}bg-success{% else %}bg-danger{% endif %}">
               <span class="info-box-icon"><i class="fas fa-chart-line"></i></span>
               <div class="info-box-content">
@@ -231,6 +253,23 @@
             ['stat-accounts','total_accounts']
           ];
             map.forEach(([id,key]) => { const el=document.getElementById(id); if(el && key in data){ el.textContent=data[key]; }});
+          
+          // Update P&L display
+          const pnlEl = document.getElementById('current-pnl');
+          const pnlBoxEl = pnlEl?.closest('.info-box');
+          if (pnlEl && 'total_pnl' in data) {
+            const pnl = data.total_pnl;
+            const pnl_pct = data.total_pnl_pct || 0;
+            const sign = pnl >= 0 ? '+' : '';
+            pnlEl.innerHTML = sign + '$' + pnl.toFixed(2) + 
+                             '<div class="progress-description" style="font-size: 0.8em;">' +
+                             sign + pnl_pct.toFixed(1) + '%</div>';
+            
+            // Update box color
+            if (pnlBoxEl) {
+              pnlBoxEl.className = pnlBoxEl.className.replace(/bg-(success|danger)/, pnl >= 0 ? 'bg-success' : 'bg-danger');
+            }
+          }
         })
         .catch(err => console.warn('Stats refresh failed', err));
     }

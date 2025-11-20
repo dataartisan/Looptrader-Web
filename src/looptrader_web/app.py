@@ -9,10 +9,18 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import os
 import requests
 import json
+import logging
+import time
+import signal
+import subprocess
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
 from dotenv import load_dotenv
 import pytz
+
+# Set up logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -22,7 +30,8 @@ from models.database import (
     get_db, Bot, Position, TrailingStopState, Order, OrderLeg, Instrument, BrokerageAccount,
     get_dashboard_stats, get_recent_positions, get_bots_by_account,
     pause_all_bots, resume_all_bots, close_all_positions, close_position_by_bot,
-    SessionLocal, test_connection, update_bot, upsert_trailing_stop, delete_trailing_stop
+    SessionLocal, test_connection, update_bot, upsert_trailing_stop, delete_trailing_stop,
+    build_schwab_cache_for_positions
 )
 from sqlalchemy.orm import joinedload
 from sqlalchemy import text
@@ -599,6 +608,9 @@ def accounts():
         finally:
             db.close()
     except Exception as e:
+        print(f"Error loading accounts: {str(e)}")
+        import traceback
+        traceback.print_exc()
         flash(f'Error loading accounts: {str(e)}', 'danger')
         # Provide empty schwab_accounts in case of error
         schwab_accounts = {'accounts': [], 'error': 'Failed to load Schwab data'}
@@ -608,65 +620,317 @@ def accounts():
 @app.route('/positions')
 @login_required
 def positions():
-    """Display all positions with basic information"""
+    """Display all positions with P&L calculations matching looptrader-pro /positions command"""
     try:
         db = SessionLocal()
         try:
+            from sqlalchemy.orm import joinedload
+            from datetime import datetime, timezone
+            
             # Get filter parameters
             account_filter = request.args.get('account')
             status_filter = request.args.get('status')
             active_only = request.args.get('active_only')
             
-            query = db.query(Position).order_by(Position.opened_datetime.desc())
+            # Query positions using batch query with caching
+            from models.database import get_positions_batch
             
-            if account_filter:
-                query = query.filter(Position.account_id == account_filter)
+            # Normalize active_only parameter
+            active_only_bool = (active_only == 'true') if active_only else True
             
-            if status_filter == 'active' or active_only == 'true':
-                query = query.filter(Position.active == True)
-            elif status_filter == 'closed':
-                query = query.filter(Position.active == False)
+            # Get positions in a single batch query (with caching)
+            all_positions = get_positions_batch(
+                active_only=active_only_bool,
+                account_filter=account_filter,
+                include_closed=(not active_only_bool)
+            )
             
-            positions = query.all()
+            # Get accounts for account name lookup (optimized with dict)
             accounts = db.query(BrokerageAccount).all()
+            account_map = {acc.account_id: acc.name for acc in accounts}
+            
+            # Get bots for bot name lookup (optimized with dict)
             bots = db.query(Bot).all()
+            bot_map = {bot.id: bot for bot in bots}
+            
+            # Collect valid positions and extract data
+            valid_positions = []
+            position_data = []  # Enhanced data with entry/current prices, strikes, etc.
+            
+            for db_position in all_positions:
+                try:
+                    # Apply account filter (already applied in batch query, but double-check)
+                    if account_filter and str(db_position.account_id) != str(account_filter):
+                        continue
+                    
+                    # Validate position has opening order with orderLegCollection and price (matches looptrader-pro)
+                    opening_order = next(
+                        (order for order in db_position.orders if hasattr(order, 'isOpenPosition') and order.isOpenPosition),
+                        None
+                    )
+                    
+                    if opening_order is None or not opening_order.orderLegCollection or opening_order.price is None:
+                        if db_position.active:
+                            bot_name = db_position.bot.name if db_position.bot else f"Bot {db_position.bot_id}"
+                            logger.warning(f"Bot {db_position.bot_id} ({bot_name}) has position {db_position.id} but no valid opening order, skipping")
+                        continue
+                    
+                    # Position is valid, add to list
+                    valid_positions.append(db_position)
+                    
+                    # Extract additional data for display (matching looptrader-pro format)
+                    # Get strikes from symbols
+                    position_strikes = []
+                    for leg in opening_order.orderLegCollection:
+                        if leg.instrument and leg.instrument.symbol:
+                            symbol = leg.instrument.symbol
+                            try:
+                                if len(symbol) >= 7:
+                                    strike_part = symbol[-7:]
+                                    strike_value = float(strike_part) / 1000
+                                    position_strikes.append(f"${strike_value:.0f}")
+                            except (ValueError, IndexError):
+                                continue
+                    
+                    strikes_str = "/".join(position_strikes) if position_strikes else "N/A"
+                    
+                    # Calculate entry price per contract
+                    quantity = opening_order.quantity if opening_order.quantity else opening_order.filledQuantity or 1
+                    entry_price_per_contract = abs(opening_order.price) if opening_order.price else 0.0
+                    
+                    # Calculate duration
+                    duration_text = "Unknown"
+                    entry_time_str = "Unknown"
+                    if db_position.opened_datetime:
+                        entry_time = db_position.opened_datetime
+                        if entry_time.tzinfo is None:
+                            entry_time = entry_time.replace(tzinfo=timezone.utc)
+                        now = datetime.now(timezone.utc)
+                        duration = now - entry_time
+                        hours = int(duration.total_seconds() / 3600)
+                        minutes = int((duration.total_seconds() % 3600) / 60)
+                        duration_text = f"{hours}h {minutes}m"
+                        entry_time_str = entry_time.strftime("%H:%M ET")
+                    
+                    # Get account name (optimized dictionary lookup)
+                    account_name = account_map.get(db_position.account_id, "Unknown")
+                    
+                    # Get bot info (optimized dictionary lookup)
+                    bot = bot_map.get(db_position.bot_id)
+                    bot_id = db_position.bot_id
+                    bot_name = bot.name if bot else f"Bot {bot_id}"
+                    
+                    # Store enhanced position data
+                    position_data.append({
+                        'position': db_position,
+                        'bot_id': bot_id,
+                        'bot_name': bot_name,
+                        'account_name': account_name,
+                        'account_id': db_position.account_id,
+                        'strikes': strikes_str,
+                        'entry_price_per_contract': entry_price_per_contract,
+                        'entry_time': entry_time_str,
+                        'duration': duration_text,
+                        'quantity': quantity
+                    })
+                    
+                except Exception as e:
+                    bot_id = db_position.bot_id
+                    bot_name = db_position.bot.name if db_position.bot else f"Bot {bot_id}"
+                    logger.error(f"Error processing position {db_position.id} for bot {bot_id} ({bot_name}): {e}", exc_info=True)
+                    continue
+            
+            logger.info(f"Found {len(valid_positions)} valid positions")
+            
+            # Build Schwab cache for active positions to get real-time market values
+            # This matches looptrader-pro /positions command approach
+            active_positions = [p for p in valid_positions if p.active]
+            if active_positions:
+                try:
+                    from models.database import build_schwab_cache_for_positions
+                    schwab_cache = build_schwab_cache_for_positions(active_positions)
+                    
+                    # Inject cache into each position for P&L calculation
+                    for position in valid_positions:
+                        position._schwab_cache = schwab_cache
+                except Exception as e:
+                    logger.error(f"Error building Schwab cache: {e}", exc_info=True)
+                    # Continue without cache - positions will use fallback calculation
+            
+            # Calculate per-account and overall summaries (matching looptrader-pro)
+            from collections import defaultdict
+            account_groups = defaultdict(list)
+            for pos_data in position_data:
+                account_name = pos_data['account_name']
+                account_groups[account_name].append(pos_data)
+            
+            account_summaries = {}
+            total_pnl = 0.0
+            total_count = 0
+            total_winning = 0
+            total_losing = 0
+            total_pnl_pct_sum = 0.0  # For calculating average percentage
+            
+            for account_name, positions_list in account_groups.items():
+                account_pnl = 0.0
+                account_positions_active = [p for p in positions_list if p['position'].active]
+                for p in account_positions_active:
+                    try:
+                        account_pnl += p['position'].current_pnl
+                    except Exception as e:
+                        logger.warning(f"Error calculating P&L for position {p['position'].id}: {e}")
+                        continue
+                
+                account_avg_pct = 0.0
+                if account_positions_active:
+                    pct_sum = 0.0
+                    pct_count = 0
+                    for p in account_positions_active:
+                        try:
+                            pct_sum += p['position'].current_pnl_percent
+                            pct_count += 1
+                        except Exception as e:
+                            logger.warning(f"Error calculating P&L % for position {p['position'].id}: {e}")
+                            continue
+                    account_avg_pct = (pct_sum / pct_count) if pct_count > 0 else 0.0
+                
+                account_winning = 0
+                account_losing = 0
+                for p in account_positions_active:
+                    try:
+                        if p['position'].current_pnl > 0:
+                            account_winning += 1
+                        elif p['position'].current_pnl < 0:
+                            account_losing += 1
+                    except Exception as e:
+                        logger.warning(f"Error checking win/loss for position {p['position'].id}: {e}")
+                        continue
+                
+                account_summaries[account_name] = {
+                    'pnl': account_pnl,
+                    'avg_pct': account_avg_pct,
+                    'winning': account_winning,
+                    'losing': account_losing,
+                    'count': len(account_positions_active)
+                }
+                
+                total_pnl += account_pnl
+                total_count += len(account_positions_active)
+                total_winning += account_winning
+                total_losing += account_losing
+                for p in account_positions_active:
+                    try:
+                        total_pnl_pct_sum += p['position'].current_pnl_percent
+                    except Exception as e:
+                        logger.warning(f"Error calculating total P&L % for position {p['position'].id}: {e}")
+                        continue
+            
+            # Calculate overall average P&L percentage
+            avg_pnl_pct = (total_pnl_pct_sum / total_count) if total_count > 0 else 0.0
+            
+            # Sort positions by P&L percentage (worst to best, matching looptrader-pro)
+            def get_sort_key(x):
+                if not x['position'].active:
+                    return float('inf')
+                try:
+                    return x['position'].current_pnl_percent
+                except Exception as e:
+                    logger.warning(f"Error getting P&L % for sorting position {x['position'].id}: {e}")
+                    return 0.0
+            position_data.sort(key=get_sort_key)
             
             # Pass the active_only flag to template for button styling
+            # Ensure active_only is a boolean
+            active_only_bool = (active_only == 'true') if active_only else False
+            
             return render_template('positions/list.html', 
-                                 positions=positions, 
+                                 positions=valid_positions,
+                                 position_data=position_data,  # Enhanced data
                                  accounts=accounts, 
                                  bots=bots,
-                                 active_only=(active_only == 'true'))
+                                 account_summaries=account_summaries,
+                                 total_pnl=total_pnl,
+                                 total_count=total_count,
+                                 total_winning=total_winning,
+                                 total_losing=total_losing,
+                                 avg_pnl_pct=avg_pnl_pct,
+                                 active_only=active_only_bool)
         finally:
             db.close()
     except Exception as e:
-        import traceback
-        print(f"Error in positions route: {str(e)}")
-        print(traceback.format_exc())
+        logger.error(f"Error in positions route: {str(e)}", exc_info=True)
         flash(f'Error loading positions: {str(e)}', 'danger')
-        return render_template('positions/list.html', positions=[], accounts=[], bots=[], active_only=False)
+        return render_template('positions/list.html', 
+                             positions=[], 
+                             position_data=[],
+                             accounts=[], 
+                             bots=[],
+                             account_summaries={},
+                             total_pnl=0.0,
+                             total_count=0,
+                             total_winning=0,
+                             total_losing=0,
+                             avg_pnl_pct=0.0,
+                             active_only=False)
 
 @app.route('/risk')
 @login_required
 def risk():
-    """Display portfolio-level risk metrics"""
+    """Display portfolio-level risk metrics matching looptrader-pro's /risk command"""
     try:
         db = SessionLocal()
         try:
             from sqlalchemy.orm import joinedload
             
-            # Eagerly load orders with their legs and instruments
-            active_positions = db.query(Position).options(
-                joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument)
-            ).filter_by(active=True).all()
+            # Query positions using batch query with caching
+            from models.database import get_positions_batch
             
-            all_positions = db.query(Position).all()
-            bots = db.query(Bot).all()
+            # Get accounts for account metrics grouping
             accounts = db.query(BrokerageAccount).all()
             
-            position_count = len(active_positions)
+            # Get all active positions in a single batch query (with caching)
+            all_positions = get_positions_batch(active_only=True)
             
-            print(f"Risk page: Found {position_count} active positions out of {len(all_positions)} total")
+            # Collect valid active positions (filter out those without valid opening orders)
+            active_positions = []
+            for db_position in all_positions:
+                try:
+                    if not db_position.active:
+                        continue
+                    
+                    # Validate position has opening order with orderLegCollection (matches looptrader-pro)
+                    opening_order = next(
+                        (order for order in db_position.orders if hasattr(order, 'isOpenPosition') and order.isOpenPosition),
+                        None
+                    )
+                    
+                    if opening_order is None or not opening_order.orderLegCollection:
+                        bot_name = db_position.bot.name if db_position.bot else f"Bot {db_position.bot_id}"
+                        logger.warning(f"Bot {db_position.bot_id} ({bot_name}) has position {db_position.id} but no valid opening order, skipping")
+                        continue
+                    
+                    # Position is valid, add to list
+                    active_positions.append(db_position)
+                    
+                except Exception as e:
+                    bot_name = db_position.bot.name if db_position.bot else f"Bot {db_position.bot_id}"
+                    logger.error(f"Error processing bot {db_position.bot_id} ({bot_name}): {e}", exc_info=True)
+                    continue
+            
+            position_count = len(active_positions)
+            logger.info(f"Found {position_count} valid active positions (from batch query with caching)")
+            
+            # Build Schwab cache to avoid multiple API calls
+            if position_count > 0:
+                from models.database import build_schwab_cache_for_positions
+                schwab_cache = build_schwab_cache_for_positions(active_positions)
+                logger.debug(f"Schwab cache built with {len(schwab_cache)} position entries")
+                
+                # Inject cache into each position
+                for position in active_positions:
+                    position._schwab_cache = schwab_cache
+            else:
+                schwab_cache = {}
             
             # Initialize Schwab client once for all positions
             schwab_client = None
@@ -686,39 +950,94 @@ def risk():
                     
                     if api_key and app_secret:
                         schwab_client = client_from_token_file(token_path, api_key, app_secret)
-                        print("Risk page: Schwab client initialized for live Greeks")
+                        logger.debug("Schwab client initialized for live Greeks")
                     else:
-                        print("Risk page: Missing SCHWAB credentials")
+                        logger.warning("Missing SCHWAB credentials")
                 else:
-                    print(f"Risk page: No token.json found at {token_path}")
+                    logger.warning(f"No token.json found at {token_path}")
             except Exception as e:
-                print(f"Risk page: Failed to initialize Schwab client: {e}")
+                logger.error(f"Failed to initialize Schwab client: {e}", exc_info=True)
             
-            # Calculate totals using live broker Greeks
-            total_premium = 0.0
+            # Initialize aggregates matching looptrader-pro's /risk command
             total_delta = 0.0
             total_gamma = 0.0
             total_theta = 0.0
             total_vega = 0.0
+            total_notional_risk = 0.0  # Max risk from spread widths (matches looptrader-pro)
+            total_premium_open = 0.0  # Current market value (cost to close)
             total_pnl = 0.0
+            total_cost_basis = 0.0  # Initial investment (for percentage)
             
             best_position = None
             worst_position = None
             best_pnl_pct = float('-inf')
             worst_pnl_pct = float('inf')
             
+            # Underlying concentration: track count per underlying (matches looptrader-pro)
             underlying_concentration = {}
+            
+            # Batch fetch Greeks for all positions in a single API call
+            from models.database import get_greeks_for_all_positions
+            greeks_cache = get_greeks_for_all_positions(active_positions, schwab_client)
+            logger.info(f"Fetched Greeks for {len(greeks_cache)} positions in batched API call")
             
             for pos in active_positions:
                 try:
-                    # Premium
-                    premium = pos.initial_premium_sold
-                    print(f"Position {pos.id}: Premium = ${premium:.2f}")
-                    total_premium += premium
+                    # Get opening order (already validated above)
+                    opening_order = next(
+                        (o for o in pos.orders if hasattr(o, 'isOpenPosition') and o.isOpenPosition),
+                        None
+                    )
                     
-                    # Greeks from live broker quotes
-                    greeks = pos.get_greeks_from_broker(schwab_client)
-                    print(f"Position {pos.id}: Greeks = Δ{greeks['delta']:.2f}, Γ{greeks['gamma']:.3f}, Θ{greeks['theta']:.2f}, V{greeks['vega']:.2f}")
+                    if not opening_order or not opening_order.orderLegCollection:
+                        logger.warning(f"Position {pos.id} missing opening order, skipping")
+                        continue
+                    
+                    # Initial premium (signed: positive for credit, negative for debit)
+                    initial_premium = pos.initial_premium_sold
+                    # Current market value (cost to close position)
+                    current_open_premium = pos.current_open_premium
+                    # Cost basis for percentage calculation (always positive)
+                    cost_basis = abs(initial_premium)
+                    
+                    total_premium_open += current_open_premium
+                    total_cost_basis += cost_basis
+                    
+                    # Calculate notional risk (spread width * quantity * 100) matching looptrader-pro
+                    # Extract strikes from order legs to calculate spread width
+                    # Note: Instrument model doesn't have strikePrice, so we parse from symbol
+                    strikes = []
+                    for leg in opening_order.orderLegCollection:
+                        if leg.instrument and leg.instrument.symbol:
+                            # Parse strike from symbol: SPX_12345678C00500000 -> 5000.0
+                            # Format: SYMBOL_YYYYMMDDCPPPPPPPP where PPPPPPPP is strike * 1000
+                            symbol = leg.instrument.symbol
+                            try:
+                                if len(symbol) >= 7:
+                                    strike_part = symbol[-7:]  # Last 7 characters
+                                    strike_value = float(strike_part) / 1000
+                                    strikes.append(strike_value)
+                            except (ValueError, IndexError):
+                                # If parsing fails, try to get from description or skip
+                                logger.warning(f"Could not parse strike from symbol {symbol}")
+                                continue
+                    
+                    position_notional_risk = 0.0
+                    if len(strikes) >= 2:
+                        # For spreads, max risk is the width of the spread
+                        spread_width = abs(max(strikes) - min(strikes))
+                        quantity = opening_order.quantity if opening_order.quantity else opening_order.filledQuantity or 1
+                        position_notional_risk = spread_width * quantity * 100
+                    elif len(strikes) == 1:
+                        # For single legs (naked options), use strike as notional
+                        quantity = opening_order.quantity if opening_order.quantity else opening_order.filledQuantity or 1
+                        position_notional_risk = strikes[0] * quantity * 100
+                    
+                    total_notional_risk += position_notional_risk
+                    
+                    # Greeks from batched API call (already fetched above)
+                    greeks = greeks_cache.get(pos.id, {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0})
+                    logger.debug(f"Position {pos.id}: Greeks = Δ{greeks['delta']:.2f}, Γ{greeks['gamma']:.3f}, Θ{greeks['theta']:.2f}, V{greeks['vega']:.2f}, Notional=${position_notional_risk:.2f}")
                     
                     total_delta += greeks['delta']
                     total_gamma += greeks['gamma']
@@ -739,46 +1058,90 @@ def risk():
                         worst_pnl_pct = pnl_pct
                         worst_position = (pos.bot.name if pos.bot else f"Position {pos.id}", pnl, pnl_pct)
                     
-                    # Underlying concentration
-                    opening_order = next((o for o in pos.orders if hasattr(o, 'isOpenPosition') and o.isOpenPosition), None)
-                    if opening_order and hasattr(opening_order, 'orderLegCollection'):
-                        for leg in opening_order.orderLegCollection:
-                            if leg.instrument and leg.instrument.underlyingSymbol:
-                                underlying = leg.instrument.underlyingSymbol
-                                if underlying not in underlying_concentration:
-                                    underlying_concentration[underlying] = {
-                                        'delta': 0.0,
-                                        'premium': 0.0,
-                                        'positions': 0
-                                    }
-                                underlying_concentration[underlying]['delta'] += greeks['delta']
-                                underlying_concentration[underlying]['premium'] += premium
-                                underlying_concentration[underlying]['positions'] += 1
+                    # Underlying concentration (matches looptrader-pro: just count positions)
+                    # Determine underlying symbol from first leg
+                    underlying_symbol = "UNKNOWN"
+                    if opening_order.orderLegCollection:
+                        first_leg = opening_order.orderLegCollection[0]
+                        if first_leg.instrument:
+                            # Extract underlying from symbol (remove option suffixes)
+                            symbol = first_leg.instrument.symbol if hasattr(first_leg.instrument, 'symbol') else ""
+                            if symbol:
+                                # Symbol format: SPX_12345678C00500000 -> SPX
+                                underlying_symbol = symbol.split("_")[0] if "_" in symbol else symbol
+                    
+                    if underlying_symbol not in underlying_concentration:
+                        underlying_concentration[underlying_symbol] = 0
+                    underlying_concentration[underlying_symbol] += 1
                     
                 except Exception as e:
-                    print(f"Error calculating metrics for position {pos.id}: {e}")
-                    import traceback
-                    traceback.print_exc()
+                    logger.error(f"Error calculating metrics for position {pos.id}: {e}", exc_info=True)
+                    continue  # Skip this position but continue with others
             
-            print(f"Risk page: Total premium = ${total_premium:.2f}, Total Greeks: Δ{total_delta:.2f}, Γ{total_gamma:.3f}, Θ{total_theta:.2f}, V{total_vega:.2f}")
+            logger.debug(f"Total premium_open = ${total_premium_open:.2f}, Cost_basis = ${total_cost_basis:.2f}, Total Greeks: Δ{total_delta:.2f}, Γ{total_gamma:.3f}, Θ{total_theta:.2f}, V{total_vega:.2f}")
             
-            # Group by account
+            # Group by account (for aggregate mode)
             account_metrics = {}
             for account in accounts:
                 account_positions = [p for p in active_positions if p.account_id == account.account_id]
-                account_premium = 0.0
+                account_premium_open = 0.0
+                account_cost_basis = 0.0
+                account_notional_risk = 0.0
                 account_delta = 0.0
                 account_gamma = 0.0
                 account_theta = 0.0
                 account_vega = 0.0
                 account_pnl = 0.0
+                account_underlyings = {}  # Track underlying concentration per account
                 
                 for p in account_positions:
                     try:
-                        prem = p.initial_premium_sold
-                        account_premium += prem
+                        # Use the same pattern as portfolio totals
+                        initial_prem = p.initial_premium_sold
+                        current_open = p.current_open_premium
+                        account_premium_open += current_open
+                        account_cost_basis += abs(initial_prem)
                         
-                        greeks = p.get_greeks_from_broker(schwab_client)
+                        # Calculate notional risk for this position
+                        opening_order = next(
+                            (o for o in p.orders if hasattr(o, 'isOpenPosition') and o.isOpenPosition),
+                            None
+                        )
+                        if opening_order and opening_order.orderLegCollection:
+                            strikes = []
+                            for leg in opening_order.orderLegCollection:
+                                if leg.instrument and leg.instrument.symbol:
+                                    # Parse strike from symbol (same as portfolio totals)
+                                    symbol = leg.instrument.symbol
+                                    try:
+                                        if len(symbol) >= 7:
+                                            strike_part = symbol[-7:]
+                                            strike_value = float(strike_part) / 1000
+                                            strikes.append(strike_value)
+                                    except (ValueError, IndexError):
+                                        continue
+                            
+                            if len(strikes) >= 2:
+                                spread_width = abs(max(strikes) - min(strikes))
+                                quantity = opening_order.quantity if opening_order.quantity else opening_order.filledQuantity or 1
+                                account_notional_risk += spread_width * quantity * 100
+                            elif len(strikes) == 1:
+                                quantity = opening_order.quantity if opening_order.quantity else opening_order.filledQuantity or 1
+                                account_notional_risk += strikes[0] * quantity * 100
+                            
+                            # Track underlying concentration for this account
+                            if opening_order.orderLegCollection:
+                                first_leg = opening_order.orderLegCollection[0]
+                                if first_leg.instrument:
+                                    symbol = first_leg.instrument.symbol if hasattr(first_leg.instrument, 'symbol') else ""
+                                    if symbol:
+                                        underlying_symbol = symbol.split("_")[0] if "_" in symbol else symbol
+                                        if underlying_symbol not in account_underlyings:
+                                            account_underlyings[underlying_symbol] = 0
+                                        account_underlyings[underlying_symbol] += 1
+                        
+                        # Use cached Greeks to avoid duplicate broker calls
+                        greeks = greeks_cache.get(p.id, {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0})
                         account_delta += greeks['delta']
                         account_gamma += greeks['gamma']
                         account_theta += greeks['theta']
@@ -786,69 +1149,51 @@ def risk():
                         
                         account_pnl += p.current_pnl
                     except Exception as e:
-                        print(f"Error calculating account metrics for position {p.id}: {e}")
+                        logger.error(f"Error calculating account metrics for position {p.id}: {e}", exc_info=True)
                 
-                print(f"Account {account.name}: {len(account_positions)} positions, ${account_premium:.2f} premium, Δ{account_delta:.2f}")
-                
-                # Get underlying concentration for this account
-                account_underlyings = {}
-                for p in account_positions:
-                    opening_order = next((o for o in p.orders if hasattr(o, 'isOpenPosition') and o.isOpenPosition), None)
-                    if opening_order and hasattr(opening_order, 'orderLegCollection'):
-                        for leg in opening_order.orderLegCollection:
-                            if leg.instrument and leg.instrument.underlyingSymbol:
-                                underlying = leg.instrument.underlyingSymbol
-                                if underlying not in account_underlyings:
-                                    account_underlyings[underlying] = {'delta': 0.0, 'positions': 0}
-                                p_greeks = p.get_greeks_from_broker(schwab_client)
-                                account_underlyings[underlying]['delta'] += p_greeks['delta']
-                                account_underlyings[underlying]['positions'] += 1
+                logger.debug(f"Account {account.name}: {len(account_positions)} positions, open=${account_premium_open:.2f}, cost_basis=${account_cost_basis:.2f}, notional=${account_notional_risk:.2f}, Δ{account_delta:.2f}")
                 
                 account_metrics[account.account_id] = {
                     'name': account.name,
                     'position_count': len(account_positions),
-                    'premium': account_premium,
+                    'premium_open': account_premium_open,
+                    'cost_basis': account_cost_basis,
                     'delta': account_delta,
                     'gamma': account_gamma,
                     'theta': account_theta,
                     'vega': account_vega,
-                    'notional_risk': abs(account_premium),  # Simplified: use premium as notional
+                    'notional_risk': account_notional_risk,  # Actual notional risk (spread width)
                     'pnl': account_pnl,
-                    'cost_basis': account_premium,
                     'underlying_concentration': account_underlyings
                 }
             
-            # Calculate total P&L percentage
-            total_pnl_pct = (total_pnl / abs(total_premium)) * 100 if abs(total_premium) > 0.01 else 0.0
+            # Calculate total P&L percentage using cost basis (following looptrader-pro pattern)
+            total_pnl_pct = (total_pnl / total_cost_basis) * 100 if total_cost_basis > 0.01 else 0.0
             
-            # Format underlying concentration
-            underlying_list = [
-                {
-                    'symbol': symbol,
-                    'delta': data['delta'],
-                    'premium': data['premium'],
-                    'positions': data['positions']
-                }
-                for symbol, data in underlying_concentration.items()
-            ]
-            underlying_list.sort(key=lambda x: abs(x['delta']), reverse=True)
+            # Format underlying concentration for template (matches looptrader-pro: just count)
+            # Template expects list of tuples: [(symbol, count), ...]
+            underlying_list = sorted(underlying_concentration.items(), key=lambda x: x[1], reverse=True)
             
             warnings = []
-            if position_count > 0 and total_premium == 0:
-                warnings.append('Warning: Positions found but premium is $0 - check order data')
+            if position_count > 0 and total_cost_basis == 0:
+                warnings.append('Warning: Positions found but cost basis is $0 - check order data')
             if schwab_client is None:
                 warnings.append('Warning: Greeks fetched from broker API may be unavailable - check Schwab credentials')
             
+            # Read aggregate parameter from request (for per-account breakdown toggle)
+            aggregate = request.args.get('aggregate') == 'true'
+            
             return render_template(
                 'risk/risk.html',
-                aggregate=False,
+                aggregate=aggregate,
                 position_count=position_count,
                 total_delta=total_delta,
                 total_gamma=total_gamma,
                 total_theta=total_theta,
                 total_vega=total_vega,
-                total_notional_risk=abs(total_premium),
-                total_premium=total_premium,
+                total_notional_risk=total_notional_risk,  # Use actual notional risk (spread width)
+                total_premium=total_premium_open,
+                total_cost_basis=total_cost_basis,
                 total_pnl=total_pnl,
                 total_pnl_pct=total_pnl_pct,
                 best_position=best_position,
@@ -861,9 +1206,11 @@ def risk():
             db.close()
     except Exception as e:
         import traceback
-        print(f"Error in risk route: {str(e)}")
-        print(traceback.format_exc())
+        error_trace = traceback.format_exc()
+        logger.error(f"Error in risk route: {str(e)}", exc_info=True)
         flash(f'Error loading risk data: {str(e)}', 'danger')
+        
+        # Return template with error information instead of silently showing "no positions"
         return render_template(
             'risk/risk.html',
             aggregate=False,
@@ -874,12 +1221,13 @@ def risk():
             total_vega=0.0,
             total_notional_risk=0.0,
             total_premium=0.0,
+            total_cost_basis=0.0,
             total_pnl=0.0,
             total_pnl_pct=0.0,
             best_position=None,
             worst_position=None,
             underlying_concentration=[],
-            warnings=[],
+            warnings=[f'Error loading risk data: {str(e)}'],  # Show error in warnings
             account_metrics={}
         )
 
@@ -1073,11 +1421,11 @@ def analytics_gex():
         # Sort and limit to top 50 strikes
         sorted_strikes = sorted(gex_data.items(), key=lambda x: abs(x[1]['call'] + x[1]['put']), reverse=True)[:50]
         
-        # Build chart data
+        # Build chart data and identify key strikes
         chart_data = []
         total_gex = 0
-        max_call_wall = {'strike': 0, 'exposure': 0}
-        max_put_wall = {'strike': 0, 'exposure': 0}
+        strikes_above_spot = []  # Strikes above current price
+        strikes_below_spot = []  # Strikes below current price
         
         for strike, exposure in sorted_strikes:
             net_gex = exposure['call'] + exposure['put']
@@ -1087,10 +1435,21 @@ def analytics_gex():
                 'exposure': net_gex
             })
             
-            if exposure['call'] > max_call_wall['exposure']:
-                max_call_wall = {'strike': strike, 'exposure': exposure['call']}
-            if abs(exposure['put']) > abs(max_put_wall['exposure']):
-                max_put_wall = {'strike': strike, 'exposure': exposure['put']}
+            # Separate strikes above and below spot for proper identification
+            if strike > spot_price:
+                strikes_above_spot.append({'strike': strike, 'exposure': net_gex})
+            elif strike < spot_price:
+                strikes_below_spot.append({'strike': strike, 'exposure': net_gex})
+        
+        # Find resistance: Strike ABOVE spot with highest absolute GEX (typically positive)
+        max_resistance_strike = {'strike': 0, 'exposure': 0}
+        if strikes_above_spot:
+            max_resistance_strike = max(strikes_above_spot, key=lambda x: abs(x['exposure']))
+        
+        # Find support: Strike BELOW spot with highest absolute GEX (typically negative)
+        max_support_strike = {'strike': 0, 'exposure': 0}
+        if strikes_below_spot:
+            max_support_strike = max(strikes_below_spot, key=lambda x: abs(x['exposure']))
         
         # Sort chart data by strike
         chart_data.sort(key=lambda x: x['strike'])
@@ -1120,12 +1479,13 @@ def analytics_gex():
         if zero_gex_strike:
             interpretation.append(f"🎯 Zero GEX flip point at ${zero_gex_strike:.0f}")
         
-        if max_call_wall['exposure'] > 0:
-            interpretation.append(f"📞 Strongest call wall at ${max_call_wall['strike']:.0f} (${max_call_wall['exposure']/1e9:.2f}B GEX)")
+        if max_resistance_strike['strike'] > 0:
+            gex_sign = "positive" if max_resistance_strike['exposure'] > 0 else "negative"
+            interpretation.append(f"📈 Key resistance level at ${max_resistance_strike['strike']:.0f} (${abs(max_resistance_strike['exposure'])/1e9:.2f}B {gex_sign} GEX)")
         
-        if max_put_wall['exposure'] < 0:
-            interpretation.append(f"📉 Strongest put wall at ${max_put_wall['strike']:.0f} (${abs(max_put_wall['exposure'])/1e9:.2f}B GEX)")
-        
+        if max_support_strike['strike'] > 0:
+            gex_sign = "positive" if max_support_strike['exposure'] > 0 else "negative"
+            interpretation.append(f"📉 Key support level at ${max_support_strike['strike']:.0f} (${abs(max_support_strike['exposure'])/1e9:.2f}B {gex_sign} GEX)")
         # 2. Market Regime Context
         if zero_gex_strike:
             if spot_price > zero_gex_strike:
@@ -1138,10 +1498,10 @@ def analytics_gex():
                 interpretation.append(f"📈 If spot breaks above ${zero_gex_strike:.0f}, volatility may compress in positive gamma zone")
         
         # 3. Expected Volatility and Range
-        if max_call_wall['strike'] > 0 and max_put_wall['strike'] > 0:
-            range_width = abs(max_call_wall['strike'] - max_put_wall['strike'])
-            upper_bound = max(max_call_wall['strike'], max_put_wall['strike'])
-            lower_bound = min(max_call_wall['strike'], max_put_wall['strike'])
+        if max_resistance_strike['strike'] > 0 and max_support_strike['strike'] > 0:
+            range_width = abs(max_resistance_strike['strike'] - max_support_strike['strike'])
+            upper_bound = max(max_resistance_strike['strike'], max_support_strike['strike'])
+            lower_bound = min(max_resistance_strike['strike'], max_support_strike['strike'])
             
             interpretation.append(f"📊 Expected intraday range: ${lower_bound:.0f}–${upper_bound:.0f} ({range_width:.0f} pts)")
             
@@ -1151,21 +1511,21 @@ def analytics_gex():
                 interpretation.append(f"📏 Wide range ({range_width:.0f} pts) allows for directional movement")
         
         # 4. Liquidity and Pinning Zones
-        if max_call_wall['strike'] > 0 and max_put_wall['strike'] > 0:
-            if abs(spot_price - max_call_wall['strike']) < 30:
-                interpretation.append(f"📍 Price near call wall (${max_call_wall['strike']:.0f}) — watch for pinning effects and resistance")
-            elif abs(spot_price - max_put_wall['strike']) < 30:
-                interpretation.append(f"📍 Price near put wall (${max_put_wall['strike']:.0f}) — watch for pinning effects and support")
+        if max_resistance_strike['strike'] > 0 and max_support_strike['strike'] > 0:
+            if abs(spot_price - max_resistance_strike['strike']) < 30:
+                interpretation.append(f"📍 Price near resistance (${max_resistance_strike['strike']:.0f}) — watch for pinning effects and upside caps")
+            elif abs(spot_price - max_support_strike['strike']) < 30:
+                interpretation.append(f"📍 Price near support (${max_support_strike['strike']:.0f}) — watch for pinning effects and downside protection")
             else:
-                interpretation.append(f"🎯 Price between walls — high dealer gamma exposure creates liquidity magnets at extremes")
+                interpretation.append(f"🎯 Price between support/resistance — high dealer gamma exposure creates liquidity magnets at extremes")
         
         # 5. Trading Implications
         interpretation.append("💡 TRADING IMPLICATIONS:")
         
         if zero_gex_strike and spot_price > zero_gex_strike:
             # Positive gamma regime
-            if max_call_wall['strike'] > 0 and abs(spot_price - max_call_wall['strike']) < 50:
-                interpretation.append(f"• Directional Bias: Neutral-to-slightly bearish (capped by call wall at ${max_call_wall['strike']:.0f})")
+            if max_resistance_strike['strike'] > 0 and abs(spot_price - max_resistance_strike['strike']) < 50:
+                interpretation.append(f"• Directional Bias: Neutral-to-slightly bearish (capped by resistance at ${max_resistance_strike['strike']:.0f})")
             else:
                 interpretation.append("• Directional Bias: Neutral (positive gamma supports mean reversion)")
             
@@ -1180,14 +1540,14 @@ def analytics_gex():
             interpretation.append("• Risk Management: Wider stops to accommodate volatility expansion")
         
         # 6. Summary
-        if max_call_wall['strike'] > 0 and max_put_wall['strike'] > 0 and zero_gex_strike:
+        if max_resistance_strike['strike'] > 0 and max_support_strike['strike'] > 0 and zero_gex_strike:
             summary = f"📋 SUMMARY: "
             if spot_price > zero_gex_strike:
                 summary += f"Positive gamma regime with controlled volatility. "
             else:
                 summary += f"Negative gamma regime with elevated volatility. "
             
-            summary += f"Price expected to gravitate between ${min(max_call_wall['strike'], max_put_wall['strike']):.0f}–${max(max_call_wall['strike'], max_put_wall['strike']):.0f}. "
+            summary += f"Price expected to gravitate between ${min(max_resistance_strike['strike'], max_support_strike['strike']):.0f}–${max(max_resistance_strike['strike'], max_support_strike['strike']):.0f}. "
             
             if total_gex > 0:
                 summary += f"Net positive GEX (${total_gex/1e9:.2f}B) suggests downside support."
@@ -2360,7 +2720,93 @@ def add_trailing_stops():
                 action = request.form.get('action')
                 selected_bots = request.form.getlist('selected_bots')
                 
-                if not selected_bots:
+                if action == 'smarttrail':
+                    # Handle smarttrail action
+                    from services.smarttrail import SmartTrailService
+                    
+                    # Parse form data
+                    smarttrail_target = request.form.get('smarttrail_target', 'all')
+                    tier_thresholds = request.form.getlist('tier_thresholds[]')
+                    trailing_percentage = request.form.get('smarttrail_trailing_percentage', type=float, default=10.0)
+                    strategy_group_name = request.form.get('strategy_group_name', '').strip()
+                    
+                    # Validate inputs
+                    if not tier_thresholds:
+                        flash('Please enter at least one tier activation threshold', 'danger')
+                    else:
+                        try:
+                            tier_activation_thresholds = [float(t) for t in tier_thresholds]
+                            
+                            # Validate tier thresholds
+                            for threshold in tier_activation_thresholds:
+                                if not (0 <= threshold <= 200):
+                                    flash(f'Activation thresholds must be between 0 and 200%. Got: {threshold}%', 'danger')
+                                    return redirect(url_for('add_trailing_stops'))
+                            
+                            # Validate trailing percentage
+                            if not (0 < trailing_percentage <= 100):
+                                flash(f'Trailing percentage must be between 0 and 100%. Got: {trailing_percentage}%', 'danger')
+                                return redirect(url_for('add_trailing_stops'))
+                            
+                            # Determine target parameters
+                            bot_id = None
+                            selected_bot_ids = None
+                            strategy_group = None
+                            
+                            if smarttrail_target == 'selected':
+                                if not selected_bots:
+                                    flash('Please select at least one bot for Smart Trail', 'danger')
+                                    return redirect(url_for('add_trailing_stops'))
+                                selected_bot_ids = [int(bid) for bid in selected_bots]
+                            elif smarttrail_target == 'strategy':
+                                if not strategy_group_name:
+                                    flash('Please enter a strategy group name', 'danger')
+                                    return redirect(url_for('add_trailing_stops'))
+                                strategy_group = [strategy_group_name]
+                            
+                            # Apply smarttrail
+                            service = SmartTrailService()
+                            result = service.apply_tiered_trails(
+                                tier_activation_thresholds=tier_activation_thresholds,
+                                trailing_percentage=trailing_percentage,
+                                bot_id=bot_id,
+                                selected_bot_ids=selected_bot_ids,
+                                strategy_group=strategy_group
+                            )
+                            
+                            if result['success']:
+                                # Build success message
+                                tier_summary_lines = []
+                                if result.get('tier_summary'):
+                                    for tier_key, count in sorted(result['tier_summary'].items()):
+                                        tier_summary_lines.append(f"{tier_key}: {count} position(s)")
+                                
+                                message = f"✅ Smart Trail applied successfully!\n\n"
+                                message += f"Positions processed: {result['positions_processed']}\n"
+                                message += f"Total positions found: {result.get('total_positions', 0)}\n"
+                                
+                                if tier_summary_lines:
+                                    message += f"\nTier distribution:\n"
+                                    message += "\n".join(f"  • {line}" for line in tier_summary_lines)
+                                
+                                if result.get('errors'):
+                                    message += f"\n\n⚠️ Errors: {len(result['errors'])} position(s) failed"
+                                
+                                flash(message, 'success')
+                            else:
+                                flash(f"❌ Smart Trail failed: {result.get('message', 'Unknown error')}", 'danger')
+                            
+                            # Redirect back to prevent form resubmission
+                            return redirect(url_for('add_trailing_stops'))
+                            
+                        except ValueError as e:
+                            flash(f'Invalid input: {str(e)}', 'danger')
+                        except Exception as e:
+                            flash(f'Error applying Smart Trail: {str(e)}', 'danger')
+                            import traceback
+                            print(traceback.format_exc())
+                
+                elif not selected_bots:
                     flash('Please select at least one bot', 'warning')
                 elif action == 'add':
                     # Handle bulk trailing stop creation
@@ -2442,6 +2888,708 @@ def add_trailing_stops():
         flash(f'Error loading manage trailing stops page: {str(e)}', 'danger')
         return render_template('trailing_stops/add.html', bots=[])
 
+# Webhook endpoints (no authentication required - internal use only)
+@app.route('/api/webhook/unpause-bot', methods=['POST'])
+def webhook_unpause_bot():
+    """
+    Webhook endpoint to unpause a bot by name.
+    
+    Accepts bot name via JSON body or query parameter.
+    No authentication required - for internal use only.
+    
+    Request formats:
+    - JSON: {"bot_name": "BotName"}
+    - Query: ?bot_name=BotName
+    
+    Returns JSON response with success/error status.
+    """
+    try:
+        # Extract bot name from request (JSON body or query parameter)
+        bot_name = None
+        
+        # Try JSON body first
+        if request.is_json:
+            data = request.get_json()
+            bot_name = data.get('bot_name') if data else None
+        
+        # Fall back to query parameter if not in body
+        if not bot_name:
+            bot_name = request.args.get('bot_name')
+        
+        # Validate bot name is provided
+        if not bot_name:
+            logger.warning("Webhook unpause-bot called without bot_name parameter")
+            return jsonify({
+                'success': False,
+                'message': 'bot_name parameter is required',
+                'error': 'MISSING_PARAMETER'
+            }), 400
+        
+        # Trim whitespace
+        bot_name = bot_name.strip()
+        if not bot_name:
+            return jsonify({
+                'success': False,
+                'message': 'bot_name cannot be empty',
+                'error': 'INVALID_PARAMETER'
+            }), 400
+        
+        # Query database for bot by name (case-insensitive)
+        db = SessionLocal()
+        try:
+            # Log all available bot names for debugging
+            all_bots = db.query(Bot).all()
+            all_bot_names = [b.name for b in all_bots]
+            logger.info(f"Webhook unpause-bot: Searching for bot '{bot_name}'. Available bots: {all_bot_names}")
+            
+            # Use ilike for case-insensitive matching (PostgreSQL)
+            # For other databases, use lower() comparison
+            from sqlalchemy import func
+            bot = db.query(Bot).filter(func.lower(Bot.name) == func.lower(bot_name)).first()
+            
+            if not bot:
+                logger.warning(f"Webhook unpause-bot: Bot '{bot_name}' not found. Available bots: {all_bot_names}")
+                return jsonify({
+                    'success': False,
+                    'message': f"Bot '{bot_name}' not found",
+                    'error': 'NOT_FOUND',
+                    'available_bots': all_bot_names
+                }), 404
+            
+            # Track what changed for logging
+            was_enabled = bot.enabled
+            was_paused = bot.paused
+            changes = []
+            
+            # Enable bot if it's disabled (bots must be enabled to start)
+            if not bot.enabled:
+                bot.enabled = True
+                changes.append('enabled')
+                logger.info(f"Webhook unpause-bot: Bot '{bot.name}' was disabled, enabling it")
+            
+            # Unpause bot (matching looptrader-pro /resume command behavior)
+            # Note: /resume command only updates paused flag, it does NOT change the state
+            if bot.paused:
+                bot.paused = False
+                changes.append('unpaused')
+            
+            # Commit changes
+            db.commit()
+            
+            # Build status message
+            if changes:
+                status_msg = f"Bot '{bot.name}' {' and '.join(changes)} successfully"
+            else:
+                status_msg = f"Bot '{bot.name}' is already enabled and unpaused"
+            
+            logger.info(f"Webhook unpause-bot: Bot '{bot.name}' (ID: {bot.id}) - Enabled: {bot.enabled} (was: {was_enabled}), Paused: {bot.paused} (was: {was_paused}), State: {bot.state}")
+            
+            return jsonify({
+                'success': True,
+                'message': status_msg,
+                'bot_id': bot.id,
+                'bot_name': bot.name,
+                'enabled': bot.enabled,
+                'paused': bot.paused,
+                'state': bot.state,
+                'was_enabled': was_enabled,
+                'was_paused': was_paused,
+                'changes': changes,
+                'note': 'Bot will start automatically within 30 seconds if not already running (matches /resume command behavior)'
+            }), 200
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Webhook unpause-bot error: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': f'Internal server error: {str(e)}',
+            'error': 'INTERNAL_ERROR'
+        }), 500
+
+# Smart Monitor (Threshold Monitor) Routes
+@app.route('/smart-monitor')
+@login_required
+def smart_monitor():
+    """Display the Smart Monitor Trigger page."""
+    try:
+        import json
+        import os
+        
+        # Load threshold configuration
+        config_path = '/app/config/threshold_config.json'
+        thresholds_data = None
+        check_interval_minutes = 5  # Default: 5 minutes
+        
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    thresholds_data = config.get('thresholds', {})
+                    # Convert check_interval_seconds to minutes for display
+                    check_interval_seconds = config.get('check_interval_seconds', 300)
+                    check_interval_minutes = check_interval_seconds / 60.0
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Could not load threshold config: {e}")
+        
+        return render_template('smart_monitor/index.html', 
+                             thresholds=thresholds_data,
+                             check_interval_minutes=check_interval_minutes)
+    except Exception as e:
+        logger.error(f"Error loading smart monitor trigger page: {e}", exc_info=True)
+        flash(f'Error loading Smart Monitor Trigger page: {str(e)}', 'danger')
+        return redirect(url_for('dashboard'))
+
+@app.route('/api/threshold-monitor/start', methods=['POST'])
+@login_required
+def threshold_monitor_start():
+    """Start the threshold monitor script."""
+    import subprocess
+    import os
+    
+    try:
+        script_path = '/app/scripts/threshold_monitor.py'
+        config_path = '/app/config/threshold_config.json'
+        pid_file = '/app/data/threshold_monitor.pid'
+        
+        # Check if already running
+        if os.path.exists(pid_file):
+            try:
+                with open(pid_file, 'r') as f:
+                    pid = int(f.read().strip())
+                # Check if process is actually running
+                os.kill(pid, 0)  # Signal 0 doesn't kill, just checks
+                return jsonify({
+                    'success': False,
+                    'message': f'Monitor is already running (PID: {pid})'
+                }), 400
+            except (OSError, ProcessLookupError, ValueError):
+                # Stale PID file, remove it
+                os.remove(pid_file)
+        
+        # Check if config file exists
+        if not os.path.exists(config_path):
+            return jsonify({
+                'success': False,
+                'message': f'Config file not found: {config_path}. Please create it from threshold_config.json.example'
+            }), 400
+        
+        # Start the script as background process
+        # Use start_new_session=True to detach from parent process
+        # Redirect stdout/stderr to log files for debugging
+        log_dir = '/app/data'
+        os.makedirs(log_dir, exist_ok=True)
+        stdout_log = open(os.path.join(log_dir, 'threshold_monitor_stdout.log'), 'a')
+        stderr_log = open(os.path.join(log_dir, 'threshold_monitor_stderr.log'), 'a')
+        
+        try:
+            process = subprocess.Popen(
+                ['python', script_path, '--config', config_path],
+                stdout=stdout_log,
+                stderr=stderr_log,
+                cwd='/app',
+                start_new_session=True  # Detach from parent
+            )
+            
+            # Give it a moment to write PID file and initialize
+            time.sleep(2)
+            
+            # Check if process is still running
+            if process.poll() is not None:
+                # Process already exited (crashed)
+                stdout_log.close()
+                stderr_log.close()
+                error_msg = "Process exited immediately"
+                try:
+                    with open(os.path.join(log_dir, 'threshold_monitor_stderr.log'), 'r') as f:
+                        error_content = f.read()
+                        if error_content:
+                            error_msg = f"Process crashed: {error_content[-500:]}"  # Last 500 chars
+                except:
+                    pass
+                return jsonify({
+                    'success': False,
+                    'message': f'Monitor process crashed on startup: {error_msg}'
+                }), 500
+            
+            # Read PID from file (preferred over process.pid since script writes its own PID)
+            pid = None
+            if os.path.exists(pid_file):
+                try:
+                    with open(pid_file, 'r') as f:
+                        pid = int(f.read().strip())
+                    # Verify the PID file matches a running process
+                    try:
+                        os.kill(pid, 0)
+                    except (OSError, ProcessLookupError):
+                        # PID file exists but process doesn't - might be stale
+                        logger.warning(f"PID file exists but process {pid} not found")
+                        pid = None
+                except (ValueError, IOError) as e:
+                    logger.warning(f"Could not read PID file: {e}")
+            
+            # Use PID from file if available, otherwise use process.pid
+            final_pid = pid or process.pid
+            
+            logger.info(f"Started threshold monitor (PID: {final_pid})")
+            return jsonify({
+                'success': True,
+                'pid': final_pid,
+                'message': 'Threshold monitor started successfully'
+            })
+            
+        except Exception as e:
+            stdout_log.close()
+            stderr_log.close()
+            raise
+        
+    except Exception as e:
+        logger.error(f"Error starting threshold monitor: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': f'Failed to start monitor: {str(e)}'
+        }), 500
+
+@app.route('/api/threshold-monitor/stop', methods=['POST'])
+@login_required
+def threshold_monitor_stop():
+    """Stop the threshold monitor script."""
+    import signal
+    import os
+    
+    try:
+        pid_file = '/app/data/threshold_monitor.pid'
+        
+        if not os.path.exists(pid_file):
+            return jsonify({
+                'success': False,
+                'message': 'Monitor is not running (no PID file found)'
+            }), 400
+        
+        try:
+            with open(pid_file, 'r') as f:
+                pid = int(f.read().strip())
+        except (ValueError, IOError) as e:
+            os.remove(pid_file)
+            return jsonify({
+                'success': False,
+                'message': f'Invalid PID file: {str(e)}'
+            }), 400
+        
+        # Check if process is running
+        try:
+            os.kill(pid, 0)  # Check if process exists
+        except (OSError, ProcessLookupError):
+            # Process doesn't exist, remove stale PID file
+            os.remove(pid_file)
+            return jsonify({
+                'success': False,
+                'message': f'Process {pid} is not running'
+            }), 400
+        
+        # Send SIGTERM for graceful shutdown
+        try:
+            os.kill(pid, signal.SIGTERM)
+            logger.info(f"Sent SIGTERM to threshold monitor (PID: {pid})")
+            
+            # Wait a moment for graceful shutdown
+            import time
+            time.sleep(2)
+            
+            # Check if still running, force kill if needed
+            try:
+                os.kill(pid, 0)
+                # Still running, force kill
+                os.kill(pid, signal.SIGKILL)
+                logger.warning(f"Force killed threshold monitor (PID: {pid})")
+            except (OSError, ProcessLookupError):
+                # Process stopped gracefully
+                pass
+            
+            # Wait a bit more to ensure process is fully stopped
+            time.sleep(1)
+            
+            # Verify process is actually stopped
+            try:
+                os.kill(pid, 0)
+                # Still running somehow
+                logger.warning(f"Process {pid} still running after kill attempt")
+            except (OSError, ProcessLookupError):
+                # Process is stopped, good
+                pass
+            
+            # Remove PID file
+            if os.path.exists(pid_file):
+                try:
+                    os.remove(pid_file)
+                    logger.info(f"Removed PID file: {pid_file}")
+                except Exception as e:
+                    logger.warning(f"Could not remove PID file: {e}")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Threshold monitor stopped (PID: {pid})'
+            })
+            
+        except Exception as e:
+            logger.error(f"Error stopping monitor: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Failed to stop monitor: {str(e)}'
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Error stopping threshold monitor: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+@app.route('/api/threshold-monitor/config', methods=['POST'])
+@login_required
+def threshold_monitor_config():
+    """Save threshold configuration."""
+    import json
+    import os
+    
+    try:
+        config_path = '/app/config/threshold_config.json'
+        
+        # Get data from request
+        data = request.get_json()
+        if not data or 'thresholds' not in data:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid request: thresholds data required'
+            }), 400
+        
+        thresholds = data['thresholds']
+        
+        # Validate thresholds structure - allow either puts or calls (or both)
+        # Ensure thresholds is a dict with puts and/or calls arrays
+        if not isinstance(thresholds, dict):
+            return jsonify({
+                'success': False,
+                'message': 'Invalid thresholds structure: must be an object with "puts" and/or "calls" arrays'
+            }), 400
+        
+        # Ensure at least one threshold type is provided
+        puts_list = thresholds.get('puts', [])
+        calls_list = thresholds.get('calls', [])
+        
+        if not puts_list and not calls_list:
+            return jsonify({
+                'success': False,
+                'message': 'At least one threshold (put or call) must be configured'
+            }), 400
+        
+        # Normalize to ensure both arrays exist (even if empty)
+        if 'puts' not in thresholds:
+            thresholds['puts'] = []
+        if 'calls' not in thresholds:
+            thresholds['calls'] = []
+        
+        # Validate that all bot names exist in database
+        # Add retry logic for database connection issues
+        from sqlalchemy.exc import OperationalError, DisconnectionError
+        
+        max_retries = 3
+        retry_delay = 1.0  # seconds
+        
+        all_bot_names = {}
+        db = None
+        
+        for attempt in range(max_retries):
+            db = None
+            try:
+                db = SessionLocal()
+                from sqlalchemy import func
+                all_bots = db.query(Bot).all()
+                all_bot_names = {b.name.lower(): b.name for b in all_bots}  # Case-insensitive lookup
+                db.close()
+                db = None
+                break  # Success, exit retry loop
+            except (OperationalError, DisconnectionError) as e:
+                # Close and clean up the failed session
+                if db:
+                    try:
+                        db.rollback()  # Rollback any pending transaction
+                    except:
+                        pass
+                    try:
+                        db.close()  # Close the session (SQLAlchemy will handle connection pool cleanup)
+                    except:
+                        pass
+                    db = None
+                
+                if attempt < max_retries - 1:
+                    logger.warning(f"Database connection error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {retry_delay}s...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    logger.error(f"Database connection error after {max_retries} attempts: {e}", exc_info=True)
+                    return jsonify({
+                        'success': False,
+                        'message': 'Database connection error. Please try again in a moment.',
+                        'error': 'DATABASE_CONNECTION_ERROR'
+                    }), 500
+            except Exception as e:
+                if db:
+                    try:
+                        db.rollback()
+                        db.close()
+                    except:
+                        pass
+                    db = None
+                logger.error(f"Error validating bot names: {e}", exc_info=True)
+                return jsonify({
+                    'success': False,
+                    'message': f'Error validating bot names: {str(e)}',
+                    'error': 'VALIDATION_ERROR'
+                }), 500
+        
+        # Collect all bot names from thresholds
+        bot_names_to_check = []
+        for threshold in thresholds.get('puts', []):
+            bot_name = threshold.get('bot_name')
+            if bot_name:
+                bot_names_to_check.append(bot_name)
+        for threshold in thresholds.get('calls', []):
+            bot_name = threshold.get('bot_name')
+            if bot_name:
+                bot_names_to_check.append(bot_name)
+        
+        # Check which bots don't exist
+        missing_bots = []
+        for bot_name in bot_names_to_check:
+            if bot_name.lower() not in all_bot_names:
+                missing_bots.append(bot_name)
+        
+        if missing_bots:
+            logger.warning(f"Threshold config save: Missing bots: {missing_bots}. Available bots: {list(all_bot_names.values())}")
+            return jsonify({
+                'success': False,
+                'message': f"One or more bot names not found in database: {', '.join(missing_bots)}",
+                'missing_bots': missing_bots,
+                'available_bots': list(all_bot_names.values())
+            }), 400
+        
+        logger.info(f"Threshold config save: All {len(bot_names_to_check)} bot names validated successfully")
+        
+        # Get check_interval_minutes from request (convert to seconds)
+        check_interval_minutes = data.get('check_interval_minutes', 5)
+        try:
+            check_interval_minutes = float(check_interval_minutes)
+            if check_interval_minutes <= 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'Check interval must be greater than 0 minutes'
+                }), 400
+            check_interval_seconds = int(check_interval_minutes * 60)
+        except (ValueError, TypeError):
+            return jsonify({
+                'success': False,
+                'message': 'Invalid check_interval_minutes value'
+            }), 400
+        
+        # Load existing config or create new
+        config = {}
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
+        
+        # Update thresholds and check interval
+        config['thresholds'] = thresholds
+        config['check_interval_seconds'] = check_interval_seconds
+        
+        # Ensure other required fields exist
+        config.setdefault('webhook_url', 'http://localhost:5000/api/webhook/unpause-bot')
+        config.setdefault('token_path', '/app/token.json')
+        config.setdefault('state_file', '/app/data/threshold_state.json')
+        config.setdefault('pid_file', '/app/data/threshold_monitor.pid')
+        config.setdefault('symbol', 'SPX')
+        
+        # Save config file
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=2)
+        
+        # Clear old triggers from state file since config changed
+        # This prevents showing stale triggers from old config
+        state_file = config.get('state_file', '/app/data/threshold_state.json')
+        if os.path.exists(state_file):
+            try:
+                with open(state_file, 'r') as f:
+                    state = json.load(f)
+                # Clear old triggers but keep last_price and last_check
+                state['triggered_bots'] = []
+                state['triggered_bots_date'] = None
+                state['last_trigger'] = None
+                with open(state_file, 'w') as f:
+                    json.dump(state, f, indent=2)
+                logger.info(f"Cleared old triggers from state file after config change")
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Could not clear state file: {e}")
+        
+        logger.info(f"Saved threshold configuration: {len(thresholds.get('puts', []))} puts, {len(thresholds.get('calls', []))} calls, check_interval: {check_interval_minutes:.1f} minutes ({check_interval_seconds} seconds)")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Threshold configuration saved successfully. Please restart the monitor for changes to take effect.'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error saving threshold configuration: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': f'Error saving configuration: {str(e)}'
+        }), 500
+
+@app.route('/api/threshold-monitor/status', methods=['GET'])
+@login_required
+def threshold_monitor_status():
+    """Get threshold monitor status."""
+    import os
+    import json
+    from datetime import date, timedelta
+    
+    def _is_market_holiday(check_date):
+        """Check if date is a market holiday (weekend or US stock market holiday)."""
+        # Check weekend
+        weekday = check_date.weekday()
+        if weekday >= 5:  # Saturday = 5, Sunday = 6
+            return True
+        
+        # US Stock Market Holidays for 2025
+        holidays_2025 = [
+            date(2025, 1, 1),   # New Year's Day
+            date(2025, 1, 20),  # MLK Day
+            date(2025, 2, 17),  # Presidents' Day
+            date(2025, 4, 18),  # Good Friday
+            date(2025, 5, 26),  # Memorial Day
+            date(2025, 6, 19),  # Juneteenth
+            date(2025, 7, 4),   # Independence Day
+            date(2025, 9, 1),   # Labor Day
+            date(2025, 11, 27), # Thanksgiving
+            date(2025, 12, 25), # Christmas
+        ]
+        
+        return check_date in holidays_2025
+    
+    def _get_next_trading_day(start_date):
+        """Get the next trading day after start_date."""
+        next_day = start_date + timedelta(days=1)
+        while _is_market_holiday(next_day):
+            next_day += timedelta(days=1)
+        return next_day
+    
+    try:
+        pid_file = '/app/data/threshold_monitor.pid'
+        state_file = '/app/data/threshold_state.json'
+        
+        running = False
+        pid = None
+        started_at = None
+        last_trigger = None
+        last_price = None
+        triggered_bots = []
+        
+        # Check PID file
+        if os.path.exists(pid_file):
+            try:
+                with open(pid_file, 'r') as f:
+                    pid = int(f.read().strip())
+                
+                # Check if process is actually running
+                try:
+                    os.kill(pid, 0)  # Signal 0 doesn't kill, just checks
+                    running = True
+                except (OSError, ProcessLookupError):
+                    # Process doesn't exist, remove stale PID file
+                    os.remove(pid_file)
+                    pid = None
+            except (ValueError, IOError):
+                pass
+        
+        # Read state file for additional info
+        config_modified_after_start = False
+        if os.path.exists(state_file):
+            try:
+                with open(state_file, 'r') as f:
+                    state = json.load(f)
+                    last_price = state.get('last_price')
+                    triggered_bots = state.get('triggered_bots', [])
+                    started_at = state.get('last_check')  # Use last_check as started_at approximation
+                    last_trigger = state.get('last_trigger')  # Get last trigger from state file
+                    
+                    # Check if config file was modified after monitor started
+                    # This helps detect if monitor needs restart
+                    config_path = '/app/config/threshold_config.json'
+                    if running and os.path.exists(config_path):
+                        config_mtime = os.path.getmtime(config_path)
+                        if started_at:
+                            try:
+                                from dateutil import parser
+                                start_time = parser.parse(started_at).timestamp()
+                                if config_mtime > start_time:
+                                    config_modified_after_start = True
+                            except (ValueError, TypeError):
+                                pass
+            except (json.JSONDecodeError, IOError):
+                pass
+        
+        # Check current trading day status (using EST/ET timezone)
+        # Get today's date in EST/ET timezone for accurate trading day detection
+        now_est = datetime.now(pytz.timezone('America/New_York'))
+        today = now_est.date()
+        is_trading_day = not _is_market_holiday(today)
+        next_trading_day = _get_next_trading_day(today) if not is_trading_day else None
+        
+        # Ensure last_price is properly converted (handle both int and float)
+        if last_price is not None:
+            try:
+                last_price = float(last_price)
+            except (ValueError, TypeError):
+                last_price = None
+        
+        # Get check interval from config
+        config_path = '/app/config/threshold_config.json'
+        check_interval_minutes = 5  # Default
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    check_interval_seconds = config.get('check_interval_seconds', 300)
+                    check_interval_minutes = check_interval_seconds / 60.0
+            except (json.JSONDecodeError, IOError):
+                pass
+        
+        return jsonify({
+            'success': True,
+            'running': running,
+            'pid': pid,
+            'started_at': started_at,
+            'last_trigger': last_trigger,  # Will be None unless we read from process
+            'check_interval_minutes': check_interval_minutes,
+            'last_price': last_price,
+            'triggered_bots': triggered_bots,
+            'is_trading_day': is_trading_day,
+            'next_trading_day': next_trading_day.isoformat() if next_trading_day else None,
+            'config_modified_after_start': config_modified_after_start  # Warn if config changed after monitor started
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting threshold monitor status: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
 # API endpoints for AJAX calls
 @app.route('/api/stats')
 @login_required
@@ -2488,13 +3636,27 @@ def update_trailing_stop():
     try:
         bot_id = request.form.get('bot_id', type=int)
         activation_threshold = request.form.get('activation_threshold', type=float)
+        trailing_mode = request.form.get('trailing_mode', 'percentage')
         trailing_percentage = request.form.get('trailing_percentage', type=float)
+        trailing_dollar_amount = request.form.get('trailing_dollar_amount', type=float)
         
-        if not bot_id or activation_threshold is None or trailing_percentage is None:
+        if not bot_id or activation_threshold is None:
             return jsonify({'success': False, 'message': 'Missing required parameters'})
         
+        # Validate mode-specific requirements
+        if trailing_mode == 'percentage' and trailing_percentage is None:
+            return jsonify({'success': False, 'message': 'Trailing percentage required for percentage mode'})
+        if trailing_mode == 'dollar' and trailing_dollar_amount is None:
+            return jsonify({'success': False, 'message': 'Trailing dollar amount required for dollar mode'})
+        
         # Don't pass is_active parameter - let the database function handle activation state
-        ok, msg = upsert_trailing_stop(bot_id, activation_threshold, trailing_percentage)
+        ok, msg = upsert_trailing_stop(
+            bot_id, 
+            activation_threshold, 
+            trailing_percentage=trailing_percentage if trailing_mode == 'percentage' else None,
+            trailing_dollar_amount=trailing_dollar_amount if trailing_mode == 'dollar' else None,
+            trailing_mode=trailing_mode
+        )
         return jsonify({'success': ok, 'message': msg})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)})
@@ -3053,14 +4215,40 @@ def calculate_total_premium_opened():
     finally:
         db.close()
 
-def calculate_account_premium_metrics(account_number):
-    """Calculate premium metrics for a specific account"""
+def calculate_account_premium_metrics(account_number, liquidation_value=None):
+    """Calculate premium metrics for a specific account matching looptrader-pro logic
+    
+    Args:
+        account_number: Account number string
+        liquidation_value: Optional account Net Liquidation Value for percentage calculation
+    """
     try:
         db = SessionLocal()
         
-        # Find the account_id for this account number
-        account = db.query(BrokerageAccount).filter(BrokerageAccount.name.contains(str(account_number))).first()
+        # Find the account_id for this account number using the same pattern as build_schwab_cache_for_positions
+        # Match by checking if account_id is contained in or at the end of account_number
+        account = None
+        all_accounts = db.query(BrokerageAccount).all()
+        account_number_str = str(account_number)
+        
+        # First try to find exact/endswith matches (more specific)
+        for broker_account in all_accounts:
+            account_id_str = str(broker_account.account_id)
+            # Prefer endswith matches (more specific) over contains matches
+            if account_number_str.endswith(account_id_str):
+                account = broker_account
+                break
+        
+        # If no endswith match, try contains match (less specific, but matches build_schwab_cache pattern)
         if not account:
+            for broker_account in all_accounts:
+                account_id_str = str(broker_account.account_id)
+                if account_id_str in account_number_str:
+                    account = broker_account
+                    break
+        
+        if not account:
+            print(f"calculate_account_premium_metrics: No BrokerageAccount found for account_number {account_number}")
             return {
                 'premium_opened': 0.0,
                 'current_open_premium': 0.0,
@@ -3068,34 +4256,59 @@ def calculate_account_premium_metrics(account_number):
                 'profit_loss_percent': 0.0
             }
         
-        # Get active positions for this account
+        # Get active positions for this account with eager loading
         from sqlalchemy.orm import joinedload
         active_positions = db.query(Position).options(
-            joinedload(Position.orders)
+            joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument),
+            joinedload(Position.bot)
         ).filter(
             Position.active == True,
             Position.account_id == account.account_id
         ).all()
         
+        # Build Schwab cache for accurate real-time P&L calculation (matches looptrader-pro)
+        # This cache provides current market values from Schwab API, ensuring accuracy
+        from models.database import build_schwab_cache_for_positions
+        schwab_cache = build_schwab_cache_for_positions(active_positions)
+        
+        # Inject cache into positions BEFORE accessing current_open_premium or current_pnl
+        # This ensures position.current_open_premium uses real-time quotes when available
+        for position in active_positions:
+            position._schwab_cache = schwab_cache
+        
         premium_opened = 0.0
         current_open_premium = 0.0
+        total_pnl = 0.0
         
+        # Calculate using looptrader-pro logic (matches /positions command calculation)
+        # CRITICAL: Use direct summation, NOT derived calculation
+        # Use abs() for premium_opened to get cost basis (always positive) - matches looptrader-pro
         for position in active_positions:
-            premium_opened += position.initial_premium_sold
-            current_open_premium += position.current_open_premium
+            premium_opened += abs(position.initial_premium_sold)  # Cost basis (always positive)
+            current_open_premium += position.current_open_premium  # Direct summation
+            total_pnl += position.current_pnl  # Uses looptrader-pro calculation (matches /positions)
         
-        profit_loss = premium_opened - current_open_premium
-        profit_loss_percent = (profit_loss / premium_opened * 100) if premium_opened > 0 else 0
+        # Calculate percentage based on account NLV if provided, otherwise use premium
+        if liquidation_value and liquidation_value > 0.01:
+            # Use NLV as the base for percentage calculation
+            profit_loss_percent = (total_pnl / liquidation_value * 100)
+        elif premium_opened > 0.01:
+            # Fallback to premium-based calculation if NLV not available
+            profit_loss_percent = (total_pnl / premium_opened * 100)
+        else:
+            profit_loss_percent = 0.0
         
         return {
             'premium_opened': premium_opened,
-            'current_open_premium': current_open_premium,
-            'profit_loss': profit_loss,
+            'current_open_premium': current_open_premium,  # Direct summation, not derived
+            'profit_loss': total_pnl,
             'profit_loss_percent': profit_loss_percent
         }
         
     except Exception as e:
         print(f"Error calculating account premium metrics for {account_number}: {e}")
+        import traceback
+        traceback.print_exc()
         return {
             'premium_opened': 0.0,
             'current_open_premium': 0.0,
@@ -3164,7 +4377,14 @@ def get_schwab_account_positions(account_hash):
         return None
 
 def calculate_current_open_premium_from_schwab():
-    """Calculate current open premium using real Schwab API market values"""
+    """Calculate current open premium using real Schwab API market values
+    
+    IMPORTANT: Matches looptrader-pro spread calculation logic by keeping signed values.
+    For spreads, Schwab reports:
+    - Short legs: negative market value (liability)
+    - Long legs: positive market value (asset)
+    - Net spread value = sum of both legs (preserves spread mechanics)
+    """
     try:
         # Load Schwab token
         token_data = load_schwab_token()
@@ -3206,16 +4426,21 @@ def calculate_current_open_premium_from_schwab():
                     securities_account = account_data.get('securitiesAccount', {})
                     positions = securities_account.get('positions', [])
                     
+                    # Sum all option market values (keeping signs for spread calculation)
+                    account_net_value = 0.0
                     for position in positions:
                         instrument = position.get('instrument', {})
                         
                         # Check if this is an option position
                         if instrument.get('assetType') == 'OPTION':
                             market_value = float(position.get('marketValue', 0))
-                            # For short positions, market value is negative (cost to close)
-                            # For long positions, market value is positive (current value)
-                            # We want the absolute value as the cost to close
-                            total_option_market_value += abs(market_value)
+                            # Keep sign: negative for shorts, positive for longs
+                            # This allows spreads to net properly
+                            account_net_value += market_value
+                    
+                    # After netting all positions (spreads properly calculated),
+                    # take absolute value for "cost to close"
+                    total_option_market_value += abs(account_net_value)
         
         return total_option_market_value
         
@@ -3326,13 +4551,15 @@ def get_schwab_accounts_detail():
                     short_market_value = current_balances.get('shortMarketValue', 0)
                     
                     # Calculate options-based P&L for this account
-                    account_metrics = calculate_account_premium_metrics(account_number)
+                    # Pass liquidation_value so percentage is calculated based on NLV
+                    account_liquidation_value = float(liquidation_value) if liquidation_value else 0
+                    account_metrics = calculate_account_premium_metrics(account_number, liquidation_value=account_liquidation_value)
                     
                     detailed_accounts.append({
                         'account_hash': account_hash,
                         'account_number': account_number,
                         'account_type': account_type,
-                        'liquidation_value': float(liquidation_value) if liquidation_value else 0,
+                        'liquidation_value': account_liquidation_value,
                         'cash_balance': float(cash_balance) if cash_balance else 0,
                         'buying_power': float(buying_power) if buying_power else 0,
                         'todays_pnl': account_metrics['profit_loss'],
@@ -3349,11 +4576,31 @@ def get_schwab_accounts_detail():
         # Calculate totals
         total_value = sum(acc['liquidation_value'] for acc in detailed_accounts)
         
-        # Calculate the new premium metrics
-        total_premium_opened = calculate_total_premium_opened()
-        current_open_premium = calculate_current_open_premium()
-        current_profit_loss = total_premium_opened - current_open_premium
-        current_profit_loss_percent = (current_profit_loss / total_premium_opened * 100) if total_premium_opened > 0 else 0
+        # Calculate totals matching looptrader-pro's /positions command calculation
+        # This ensures the accounts page shows the same values as the Telegram command
+        db = SessionLocal()
+        active_positions = db.query(Position).filter_by(active=True).all()
+        
+        # Build Schwab cache for accurate real-time P&L calculation (matches looptrader-pro)
+        # This cache provides current market values from Schwab API, ensuring accuracy
+        schwab_cache = build_schwab_cache_for_positions(active_positions)
+        
+        # Inject Schwab cache into positions BEFORE accessing current_open_premium or current_pnl
+        # This ensures position.current_open_premium uses real-time quotes when available
+        for pos in active_positions:
+            pos._schwab_cache = schwab_cache
+        
+        # Calculate totals by summing from each position (matches looptrader-pro's approach)
+        # Total premium opened: use abs() for cost basis (always positive)
+        # This matches how looptrader-pro calculates entry_credit for credit spreads
+        total_premium_opened = sum(abs(pos.initial_premium_sold) for pos in active_positions)
+        current_open_premium = sum(pos.current_open_premium for pos in active_positions)
+        current_profit_loss = sum(pos.current_pnl for pos in active_positions)
+        db.close()
+        
+        # Calculate percentage using total account NLV instead of premium
+        # This shows P&L as a percentage of total account value
+        current_profit_loss_percent = (current_profit_loss / total_value * 100) if total_value > 0.01 else 0.0
         
         return {
             'accounts': detailed_accounts,

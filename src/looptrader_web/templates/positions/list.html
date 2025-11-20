@@ -10,6 +10,67 @@
 {% endblock %}
 
 {% block content %}
+<!-- Overall P&L Summary (matching looptrader-pro /positions command) -->
+{% if total_count > 0 %}
+<div class="row">
+  <div class="col-12">
+    <div class="card bg-{% if total_pnl >= 0 %}success{% else %}danger{% endif %}">
+      <div class="card-body">
+        <h4 class="mb-0">
+          <i class="fas fa-dollar-sign mr-2"></i>
+          <strong>Overall P&L:</strong>
+          <span class="float-right">
+            {% if total_pnl >= 0 %}+{% endif %}${{ "%.2f"|format(total_pnl) }}
+            (avg: {% if avg_pnl_pct >= 0 %}+{% endif %}{{ "%.1f"|format(avg_pnl_pct) }}%)
+          </span>
+        </h4>
+        <p class="mb-0 mt-2">
+          <strong>{{ total_count }}</strong> active position{{ 's' if total_count != 1 else '' }} | 
+          Winning: <strong>{{ total_winning }}</strong> | Losing: <strong>{{ total_losing }}</strong>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Per-Account Summaries (if multiple accounts) -->
+{% if account_summaries|length > 1 %}
+<div class="row">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-chart-pie mr-2"></i>By Account</h3>
+      </div>
+      <div class="card-body">
+        <div class="row">
+          {% for account_name, summary in account_summaries.items() %}
+          <div class="col-md-6 mb-3">
+            <div class="info-box bg-{% if summary.pnl >= 0 %}success{% else %}danger{% endif %}">
+              <span class="info-box-icon"><i class="fas fa-wallet"></i></span>
+              <div class="info-box-content">
+                <span class="info-box-text"><strong>{{ account_name }}</strong></span>
+                <span class="info-box-number">
+                  {% if summary.pnl >= 0 %}+{% endif %}${{ "%.2f"|format(summary.pnl) }}
+                  ({% if summary.avg_pct >= 0 %}+{% endif %}{{ "%.1f"|format(summary.avg_pct) }}%)
+                </span>
+                <div class="progress">
+                  <div class="progress-bar" style="width: {{ (summary.winning / summary.count * 100) if summary.count > 0 else 0 }}%"></div>
+                </div>
+                <span class="progress-description">
+                  {{ summary.count }} pos | W:{{ summary.winning }} L:{{ summary.losing }}
+                </span>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+
 <div class="row">
   <div class="col-12">
     <div class="card">
@@ -19,10 +80,10 @@
         </h3>
         <div class="card-tools">
           <div class="btn-group">
-            <a href="{{ url_for('positions', active_only='false') }}" class="btn btn-sm btn-outline-primary {% if active_only == False %}active{% endif %}">
+            <a href="{{ url_for('positions', active_only='false') }}" class="btn btn-sm btn-outline-primary {% if not active_only %}active{% endif %}">
               All
             </a>
-            <a href="{{ url_for('positions', active_only='true') }}" class="btn btn-sm btn-outline-success {% if active_only != False %}active{% endif %}">
+            <a href="{{ url_for('positions', active_only='true') }}" class="btn btn-sm btn-outline-success {% if active_only %}active{% endif %}">
               Active Only
             </a>
           </div>
@@ -33,36 +94,45 @@
       </div>
       <!-- /.card-header -->
       <div class="card-body">
-        {% if positions %}
+        {% if position_data %}
         <div class="table-responsive">
           <table class="table table-striped table-hover data-table">
             <thead>
               <tr>
-                <th>ID</th>
                 <th>Bot</th>
+                <th>Account</th>
+                <th>Strikes</th>
                 <th>Status</th>
-                <th>Opened</th>
-                <th>Closed</th>
+                <th>Entry Time</th>
                 <th>Duration</th>
-                <th>Orders</th>
-                <th>Initial Premium Sold</th>
-                <th>Current Open Premium</th>
-                <th>Current P&L</th>
+                <th>Entry Price</th>
+                <th>Current Price</th>
+                <th>Cost to Close</th>
+                <th>P&L</th>
                 <th>P&L %</th>
               </tr>
             </thead>
             <tbody>
-              {% for position in positions %}
+              {% set current_account = None %}
+              {% for pos_data in position_data %}
+                {% if pos_data.account_name != current_account and account_summaries|length > 1 %}
+                  {% set current_account = pos_data.account_name %}
+                  <tr class="table-info">
+                    <td colspan="11" style="background-color: #d1ecf1;">
+                      <strong><i class="fas fa-wallet mr-2"></i>{{ current_account }} Account</strong>
+                    </td>
+                  </tr>
+                {% endif %}
+                {% set position = pos_data.position %}
               <tr>
-                <td>{{ position.id }}</td>
                 <td>
-                  {% if position.bot %}
-                    <a href="{{ url_for('bot_detail', bot_id=position.bot.id) }}">
-                      {{ position.bot.name }}
-                    </a>
-                  {% else %}
-                    <span class="text-muted">N/A</span>
-                  {% endif %}
+                  <strong>#{{ pos_data.bot_id }}: {{ pos_data.bot_name }}</strong>
+                </td>
+                <td>
+                  <span class="badge badge-info">{{ pos_data.account_name }}</span>
+                </td>
+                <td>
+                  <code>{{ pos_data.strikes }}</code>
                 </td>
                 <td>
                   <span class="badge badge-{{ position.status_badge_class }}">
@@ -70,44 +140,52 @@
                   </span>
                 </td>
                 <td>
-                  {% if position.opened_datetime %}
-                    {{ position.opened_datetime | to_est }}
-                  {% else %}
-                    <span class="text-muted">N/A</span>
-                  {% endif %}
+                  <small>{{ pos_data.entry_time }}</small>
                 </td>
                 <td>
-                  {% if position.closed_datetime %}
-                    {{ position.closed_datetime | to_est }}
+                  <small>{{ pos_data.duration }}</small>
+                </td>
+                <td>
+                  <span class="text-success font-weight-bold">
+                    ${{ "%.2f"|format(pos_data.entry_price_per_contract) }}
+                  </span>
+                </td>
+                <td>
+                  {% if position.active %}
+                    {% set current_price_per_contract = (position.current_open_premium / (pos_data.quantity * 100)) if pos_data.quantity > 0 else 0 %}
+                    <span class="text-warning font-weight-bold">
+                      ${{ "%.2f"|format(current_price_per_contract) }}
+                    </span>
                   {% else %}
                     <span class="text-muted">-</span>
                   {% endif %}
                 </td>
-                <td>{{ position.duration_text }}</td>
                 <td>
-                  <span class="badge badge-secondary">
-                    {{ position.orders|length }}
-                  </span>
+                  {% if position.active %}
+                    <span class="{% if position.current_open_premium > 0 %}text-warning{% else %}text-muted{% endif %} font-weight-bold">
+                      {{ position.formatted_current_open_premium }}
+                    </span>
+                  {% else %}
+                    <span class="text-muted">-</span>
+                  {% endif %}
                 </td>
                 <td>
-                  <span class="text-success font-weight-bold">
-                    {{ position.formatted_initial_premium_sold }}
-                  </span>
+                  {% if position.active %}
+                    <span class="{% if position.current_pnl > 0 %}text-success{% elif position.current_pnl < 0 %}text-danger{% else %}text-muted{% endif %} font-weight-bold">
+                      {{ position.formatted_current_pnl }}
+                    </span>
+                  {% else %}
+                    <span class="text-muted">{{ position.formatted_current_pnl }}</span>
+                  {% endif %}
                 </td>
                 <td>
-                  <span class="{% if position.current_open_premium > 0 %}text-warning{% else %}text-muted{% endif %} font-weight-bold">
-                    {{ position.formatted_current_open_premium }}
-                  </span>
-                </td>
-                <td>
-                  <span class="{% if position.current_pnl > 0 %}text-success{% elif position.current_pnl < 0 %}text-danger{% else %}text-muted{% endif %} font-weight-bold">
-                    {{ position.formatted_current_pnl }}
-                  </span>
-                </td>
-                <td>
-                  <span class="{% if position.current_pnl_percent > 0 %}text-success{% elif position.current_pnl_percent < 0 %}text-danger{% else %}text-muted{% endif %} font-weight-bold">
-                    {{ position.formatted_current_pnl_percent }}
-                  </span>
+                  {% if position.active %}
+                    <span class="{% if position.current_pnl_percent > 0 %}text-success{% elif position.current_pnl_percent < 0 %}text-danger{% else %}text-muted{% endif %} font-weight-bold">
+                      {{ position.formatted_current_pnl_percent }}
+                    </span>
+                  {% else %}
+                    <span class="text-muted">{{ position.formatted_current_pnl_percent }}</span>
+                  {% endif %}
                 </td>
               </tr>
               {% endfor %}

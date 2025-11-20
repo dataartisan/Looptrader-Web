@@ -1,0 +1,30 @@
+{
+  "webhook_url": "http://localhost:5000/api/webhook/unpause-bot",
+  "check_interval_seconds": 300,
+  "token_path": "/app/token.json",
+  "state_file": "/app/data/threshold_state.json",
+  "pid_file": "/app/data/threshold_monitor.pid",
+  "symbol": "SPX",
+  "thresholds": {
+    "puts": [
+      {
+        "level": 6694,
+        "bot_name": "putbot1"
+      },
+      {
+        "level": 6663,
+        "bot_name": "putbot2"
+      }
+    ],
+    "calls": [
+      {
+        "level": 6820,
+        "bot_name": "callbot1"
+      },
+      {
+        "level": 6850,
+        "bot_name": "callbot2"
+      }
+    ]
+  }
+}

@@ -222,10 +222,15 @@ class Position(Base):
     def initial_premium_sold(self):
         """Calculate the net initial premium from the opening order.
         
-        In LoopTrader Pro, order.price is the NET price of the entire multi-leg order:
+        Matches looptrader-pro's calculate_entry_value() logic:
         - For credit spreads (NET_CREDIT): price is positive (we receive credit)
         - For debit spreads (NET_DEBIT): price is negative (we pay debit)
+        - Handles partial fills by using filledQuantity when available
         - Formula: premium = price * filledQuantity * 100
+        
+        Note: This matches looptrader-pro's calc_entry_value() behavior.
+        If orderActivityCollection were available, we would calculate weighted
+        average across partial fills, but the database schema doesn't include it.
         """
         try:
             # Find the opening order (marked with isOpenPosition=True)
@@ -255,13 +260,17 @@ class Position(Base):
                 print(f"Position {self.id}: Opening order has no price")
                 return 0.0
             
-            # Use filledQuantity if available, otherwise fall back to quantity
+            # Use filledQuantity if available (handles partial fills), otherwise fall back to quantity
+            # This matches looptrader-pro's calc_entry_value() which uses orderActivityCollection
+            # for accurate partial fill handling, but falls back to order.price * quantity
             quantity = opening_order.filledQuantity if opening_order.filledQuantity else opening_order.quantity
             if not quantity:
                 print(f"Position {self.id}: Opening order has no quantity")
                 return 0.0
             
             # Calculate total premium: price is already the net price per contract
+            # For credit spreads: price > 0, returns positive value (credit received)
+            # For debit spreads: price < 0, returns negative value (debit paid)
             # Multiply by quantity and 100 (option multiplier)
             total_premium = float(opening_order.price) * float(quantity) * 100
             
@@ -348,7 +357,10 @@ class Position(Base):
             if schwab_cache and self.id in schwab_cache:
                 market_value = schwab_cache[self.id]
                 print(f"Position {self.id}: Using cached market value ${market_value:,.2f}")
-                return market_value if market_value > 0 else None
+                # Return absolute value (cost to close is always positive)
+                # Schwab returns negative market values for short positions
+                # Note: 0 is a valid market value (position at break-even), so return it
+                return abs(market_value)
             
             # No cache provided, fetch data directly (slower path)
             print(f"Position {self.id}: No cache provided, fetching from Schwab API")
@@ -459,21 +471,26 @@ class Position(Base):
             
             print(f"Position {self.id}: Found {len(positions)} total positions in Schwab account")
             
-            # Sum up the absolute market value of all option positions
-            # This represents the cost to close all option positions in the account
-            total_option_market_value = 0.0
+            # Sum up the signed market values first (to properly net spreads), then take absolute
+            # For spreads: Short legs have negative market_value, long legs have positive
+            # Net market value = sum of signed values (e.g., -$800 + $100 = -$700 for spread)
+            # Cost to close = abs(net market value) = $700
+            net_option_market_value = 0.0
             option_count = 0
             for position in positions:
                 instrument = position.get('instrument', {})
                 
                 # Check if this is an option position
                 if instrument.get('assetType') == 'OPTION':
-                    market_value = position.get('marketValue', 0)
+                    market_value = float(position.get('marketValue', 0))
                     option_count += 1
                     print(f"Position {self.id}: Option {option_count} - Symbol: {instrument.get('symbol', 'N/A')}, Market Value: ${market_value:,.2f}")
-                    # Use absolute value because we want the cost to close
-                    # Negative market value means we owe money to close (short positions)
-                    total_option_market_value += abs(float(market_value))
+                    # Sum signed values first (negative for shorts, positive for longs)
+                    # This allows spreads to net correctly
+                    net_option_market_value += market_value
+            
+            # After netting all positions (spreads properly calculated), take absolute value
+            total_option_market_value = abs(net_option_market_value)
             
             print(f"Position {self.id}: Total option market value: ${total_option_market_value:,.2f} from {option_count} options")
             
@@ -509,115 +526,264 @@ class Position(Base):
             if not self.active:
                 return 0.0
             
-            position_details = self.get_net_position_details()
+            # Don't rely on get_net_position_details() for is_closed check
+            # If position.active is True, we should always calculate a cost to close
+            # The get_net_position_details() function has issues with orderType vs instruction
             
-            # If position is effectively closed, return 0
-            if position_details['is_closed']:
-                return 0.0
+            # First, try precise quotes-based valuation per leg (mimics looptrader-pro /positions)
+            # Skip direct API calls here - rely on cache instead to avoid blocking
+            # Direct API calls should only happen in build_schwab_cache_for_positions
+            # try:
+            #     quotes_value = self.get_current_value_from_quotes()
+            #     if quotes_value is not None:
+            #         return abs(quotes_value)
+            # except Exception as _:
+            #     # Fall through to Schwab cache method
+            #     pass
             
-            # Try to get real market value first
-            # Check if a Schwab cache was injected into this object
+            # Try to get real market value from cache only (no direct API calls here)
+            # API calls should only happen in build_schwab_cache_for_positions
             schwab_cache = getattr(self, '_schwab_cache', None)
-            market_value = self.get_current_market_value(schwab_cache=schwab_cache)
-            if market_value is not None:
-                print(f"Position {self.id}: Using real market value ${market_value:,.2f} for current open premium")
-                return market_value
-            else:
-                print(f"Position {self.id}: Real market value not available, using fallback calculation")
+            if schwab_cache and self.id in schwab_cache:
+                # Cache has value for this position
+                # Note: If cache has this position ID, the value was matched from Schwab (even if 0)
+                market_value = schwab_cache[self.id]
+                return abs(market_value)  # Ensure it's positive (cost to close)
             
-            # Enhanced fallback calculation
-            net_contracts = position_details['net_contracts']
-            total_cost_basis = position_details['total_cost_basis']
+            # Enhanced fallback calculation using opening order price
+            # This provides realistic estimates when real-time quotes aren't available
+            opening_order = None
+            for order in self.orders:
+                if hasattr(order, 'isOpenPosition') and order.isOpenPosition and order.price is not None:
+                    opening_order = order
+                    break
             
-            if abs(net_contracts) < 0.01:
+            if not opening_order or opening_order.price is None:
                 return 0.0
             
-            # For more accurate estimation, let's analyze the order pattern
-            # to determine if this is likely a credit spread, debit spread, or naked position
-            orders = position_details['orders']
+            # Get entry price per contract from opening order
+            entry_price_per_contract = abs(opening_order.price)
+            quantity = opening_order.quantity if opening_order.quantity else opening_order.filledQuantity or 1
             
-            # If we have both buys and sells, this might be a spread
-            has_buys = any(order['type'] == 'BUY' for order in orders)
-            has_sells = any(order['type'] == 'SELL' for order in orders)
+            # Calculate position age for time decay
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            opened = self.opened_datetime
             
-            if has_buys and has_sells:
-                # This is likely a spread - use a more conservative approach
-                # The current cost should be closer to the net premium paid/received
-                avg_net_premium_per_contract = total_cost_basis / (abs(net_contracts) * 100) if net_contracts != 0 else 0
+            # Ensure both datetimes are timezone-aware
+            if opened.tzinfo is None:
+                # If opened_datetime is naive, assume it's UTC
+                opened = opened.replace(tzinfo=timezone.utc)
+            
+            position_age_hours = (now - opened).total_seconds() / 3600
+            
+            # Determine if this is a credit spread (positive entry price) or debit spread (negative)
+            # For credit spreads: entry is positive, cost to close should decrease over time (profitable)
+            # For debit spreads: entry is negative, cost to close should increase over time (losing)
+            # We'll use the absolute entry price and apply realistic decay
+            
+            # Check if it's a spread by looking at order legs
+            is_spread = False
+            if opening_order.orderLegCollection and len(opening_order.orderLegCollection) >= 2:
+                is_spread = True
+            
+            if is_spread:
+                # For spreads, use a more realistic decay model
+                # Credit spreads (positive entry) typically decay favorably
+                # Debit spreads (negative entry) typically decay unfavorably
+                # We'll estimate based on time and typical spread behavior
                 
-                # For spreads, use 50% of the net premium as a reasonable estimate
-                # This accounts for partial moves in underlying price
-                estimated_close_cost = abs(avg_net_premium_per_contract * 0.5)
-                return abs(net_contracts) * estimated_close_cost * 100
+                if entry_price_per_contract > 0:  # Credit spread
+                    # Credit spreads typically become cheaper to close (more profitable) over time
+                    # Use decay factors that reduce the cost to close
+                    if position_age_hours <= 6:
+                        decay_factor = 0.98  # 2% reduction (slight improvement)
+                    elif position_age_hours <= 24:
+                        decay_factor = 0.90  # 10% reduction (profitable)
+                    elif position_age_hours <= 72:
+                        decay_factor = 0.75  # 25% reduction (more profitable)
+                    elif position_age_hours <= 168:  # 1 week
+                        decay_factor = 0.60  # 40% reduction
+                    else:
+                        decay_factor = 0.40  # 60% reduction for old positions
+                else:  # Debit spread (shouldn't happen with abs(), but just in case)
+                    entry_price_per_contract = abs(entry_price_per_contract)
+                    # Debit spreads typically become more expensive to close (losing) over time
+                    if position_age_hours <= 6:
+                        decay_factor = 1.05  # 5% increase
+                    elif position_age_hours <= 24:
+                        decay_factor = 1.15  # 15% increase
+                    elif position_age_hours <= 72:
+                        decay_factor = 1.30  # 30% increase
+                    elif position_age_hours <= 168:
+                        decay_factor = 1.50  # 50% increase
+                    else:
+                        decay_factor = 2.00  # 100% increase for old positions
                 
-            elif position_details['is_short']:  # Pure short position
-                # For naked short positions, use a more conservative time decay
-                avg_sell_price = total_cost_basis / (abs(net_contracts) * 100) if net_contracts != 0 else 0
+                estimated_price_per_contract = entry_price_per_contract * decay_factor
+                # Ensure minimum value (spreads rarely go to zero)
+                estimated_price_per_contract = max(estimated_price_per_contract, entry_price_per_contract * 0.10)
                 
-                # Calculate position age in hours for more granular decay
-                from datetime import datetime, timezone
-                position_age_hours = (datetime.now(timezone.utc) - self.opened_datetime).total_seconds() / 3600
+            else:
+                # Single leg position (naked option)
+                # For short options (credit received), value decreases over time
+                # For long options (debit paid), value decreases over time (theta decay)
                 
-                # More realistic decay model for short options
-                if position_age_hours <= 6:  # First 6 hours
-                    decay_factor = 0.95  # 5% decay
-                elif position_age_hours <= 24:  # First day
-                    decay_factor = 0.85  # 15% decay
-                elif position_age_hours <= 168:  # First week
-                    decay_factor = 0.60  # 40% decay
-                elif position_age_hours <= 720:  # First month
-                    decay_factor = 0.30  # 70% decay
+                # Determine if short or long by checking first leg instruction
+                is_short = False
+                if opening_order.orderLegCollection:
+                    first_leg = opening_order.orderLegCollection[0]
+                    if hasattr(first_leg, 'instruction'):
+                        instruction = str(first_leg.instruction).upper()
+                        is_short = 'SELL' in instruction
+                
+                if is_short:
+                    # Short options: premium received, cost to close decreases over time (profitable)
+                    if position_age_hours <= 6:
+                        decay_factor = 0.98
+                    elif position_age_hours <= 24:
+                        decay_factor = 0.90
+                    elif position_age_hours <= 168:
+                        decay_factor = 0.70
+                    else:
+                        decay_factor = 0.50
                 else:
-                    decay_factor = 0.10  # 90% decay for very old positions
+                    # Long options: premium paid, value decreases over time (losing)
+                    if position_age_hours <= 6:
+                        decay_factor = 0.95
+                    elif position_age_hours <= 24:
+                        decay_factor = 0.80
+                    elif position_age_hours <= 168:
+                        decay_factor = 0.50
+                    else:
+                        decay_factor = 0.20
                 
-                estimated_current_price = max(avg_sell_price * decay_factor, avg_sell_price * 0.02)
-                return abs(net_contracts) * estimated_current_price * 100
-                
-            elif position_details['is_long']:  # Pure long position
-                # For long positions, more aggressive decay since options lose value over time
-                avg_buy_price = abs(total_cost_basis) / (abs(net_contracts) * 100) if net_contracts != 0 else 0
-                
-                from datetime import datetime, timezone
-                position_age_hours = (datetime.now(timezone.utc) - self.opened_datetime).total_seconds() / 3600
-                
-                # Aggressive decay for long options
-                if position_age_hours <= 6:  # First 6 hours
-                    decay_factor = 0.90  # 10% decay
-                elif position_age_hours <= 24:  # First day
-                    decay_factor = 0.70  # 30% decay
-                elif position_age_hours <= 168:  # First week
-                    decay_factor = 0.40  # 60% decay
-                elif position_age_hours <= 720:  # First month
-                    decay_factor = 0.15  # 85% decay
-                else:
-                    decay_factor = 0.05  # 95% decay for very old positions
-                
-                estimated_current_price = max(avg_buy_price * decay_factor, avg_buy_price * 0.01)
-                return abs(net_contracts) * estimated_current_price * 100
+                estimated_price_per_contract = entry_price_per_contract * decay_factor
+                estimated_price_per_contract = max(estimated_price_per_contract, entry_price_per_contract * 0.05)
             
-            return 0.0
+            # Calculate total cost to close
+            total_cost_to_close = estimated_price_per_contract * quantity * 100
+            
+            return total_cost_to_close
                 
         except Exception as e:
             print(f"Error calculating current open premium for position {self.id}: {e}")
             return 0.0
+
+    def get_current_value_from_quotes(self, schwab_client=None):
+        """Calculate current market value using live quotes per order leg.
+
+        This mirrors looptrader-pro's /positions command logic:
+        - For each leg, compute mid price
+        - Short legs (SELL*) subtract value; Long legs (BUY*) add value
+        - Multiply by leg.quantity and 100 options multiplier
+
+        Returns:
+            float | None: Signed current value (negative for net short, positive for net long) or None if unavailable
+        """
+        try:
+            # Find opening order with legs
+            opening_order = None
+            for order in self.orders:
+                if hasattr(order, 'isOpenPosition') and order.isOpenPosition:
+                    opening_order = order
+                    break
+            if not opening_order or not hasattr(opening_order, 'orderLegCollection') or not opening_order.orderLegCollection:
+                return None
+
+            # Extract symbols
+            symbols = [leg.instrument.symbol for leg in opening_order.orderLegCollection if leg.instrument and leg.instrument.symbol]
+            if not symbols:
+                return None
+
+            # Ensure Schwab client
+            if schwab_client is None:
+                import os
+                import schwab
+                from schwab.auth import client_from_token_file
+
+                token_path = os.path.join('/app', 'token.json')
+                if not os.path.exists(token_path):
+                    app_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                    token_path = os.path.join(app_root, 'token.json')
+                if not os.path.exists(token_path):
+                    return None
+
+                api_key = os.getenv('SCHWAB_API_KEY')
+                app_secret = os.getenv('SCHWAB_APP_SECRET')
+                if not api_key or not app_secret:
+                    return None
+
+                schwab_client = client_from_token_file(token_path, api_key, app_secret)
+
+            # Fetch quotes (sync client expected here)
+            quotes_resp = schwab_client.get_quotes(symbols)
+            if not quotes_resp or quotes_resp.status_code != 200:
+                return None
+
+            quotes_data = quotes_resp.json()
+
+            current_value = 0.0
+            for leg in opening_order.orderLegCollection:
+                if not leg.instrument or not leg.instrument.symbol:
+                    continue
+                symbol = leg.instrument.symbol
+                q = quotes_data.get(symbol, {}).get('quote', {})
+                if not q:
+                    continue
+
+                bid = q.get('bid')
+                ask = q.get('ask')
+                last = q.get('lastPrice')
+                # Choose a mid-like price
+                if bid is not None and ask is not None and bid > 0 and ask > 0:
+                    mid = (bid + ask) / 2
+                elif last is not None:
+                    mid = last
+                else:
+                    # As a fallback, skip this leg
+                    continue
+
+                qty = leg.quantity or 0
+                leg_value = mid * qty * 100
+                # SELL legs are liabilities (negative), BUY legs are assets (positive)
+                if leg.instruction and str(leg.instruction).upper().startswith('SELL'):
+                    current_value -= leg_value
+                else:
+                    current_value += leg_value
+
+            return current_value
+        except Exception:
+            return None
     
     @property
     def current_pnl(self):
-        """Calculate current profit/loss
+        """Calculate current profit/loss matching looptrader-pro's /positions command logic.
         
-        Formula: Initial Premium (net credit/debit) - Current Cost to Close
+        This calculation matches looptrader-pro's position_command() P&L calculation:
+        - For credit spreads (initial_premium_sold > 0):
+          P&L = entry_credit - cost_to_close
+          Example: Sold for $285, costs $250 to close = $35 profit
         
-        Example for a credit spread:
-        - Sold options for $1000, bought options for $300 = $700 net credit (initial_premium_sold)
-        - Current cost to close is $200 (current_open_premium)
-        - P&L = $700 - $200 = $500 profit
+        - For debit spreads (initial_premium_sold < 0):
+          Uses same formula: P&L = initial - current
+          Since initial is negative and current is positive (cost to close),
+          this correctly calculates the P&L
+          Example: Paid $150, costs $200 to close = -$350 (loss if closing)
         
-        Example for a debit spread:
-        - Sold options for $300, bought options for $1000 = -$700 net debit (initial_premium_sold is negative)
-        - Current value to sell is $500 (current_open_premium)
-        - P&L = -$700 - $500 = -$1200 loss (or $500 - $700 = -$200 if position reversed)
+        The key is that initial_premium_sold preserves the sign from the order price,
+        and current_open_premium is always the absolute cost to close (positive).
         """
-        return self.initial_premium_sold - self.current_open_premium
+        initial = self.initial_premium_sold
+        current = self.current_open_premium
+        
+        # Unified formula works for both credit and debit spreads
+        # For credits: positive - positive = profit if current < initial
+        # For debits: negative - positive = loss (more negative = bigger loss)
+        pnl = initial - current
+        
+        print(f"Position {self.id}: P&L = ${initial:.2f} (initial) - ${current:.2f} (current) = ${pnl:.2f}")
+        return pnl
     
     @property
     def current_pnl_percent(self):
@@ -759,6 +925,187 @@ class Position(Base):
             traceback.print_exc()
             return greeks
 
+
+def get_greeks_for_all_positions(positions, schwab_client=None):
+    """Get Greeks for all positions in a single batched API call.
+    
+    This function batches all option symbols from all positions and makes a single
+    get_quotes() API call, then distributes the results to each position. This is
+    much faster than calling get_greeks_from_broker() individually for each position.
+    
+    Args:
+        positions: List of Position objects
+        schwab_client: Optional pre-initialized Schwab client
+        
+    Returns:
+        Dictionary mapping position.id -> {'delta': float, 'gamma': float, 'theta': float, 'vega': float}
+    """
+    from typing import Dict, List
+    
+    result = {}
+    
+    if not positions:
+        return result
+    
+    try:
+        # Initialize Schwab client if not provided
+        if schwab_client is None:
+            import os
+            import schwab
+            from schwab.auth import client_from_token_file
+            
+            token_path = os.path.join('/app', 'token.json')
+            if not os.path.exists(token_path):
+                app_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                token_path = os.path.join(app_root, 'token.json')
+            
+            if not os.path.exists(token_path):
+                print("get_greeks_for_all_positions: No token.json found, cannot get Greeks from broker")
+                return {pos.id: {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0} for pos in positions}
+            
+            api_key = os.getenv('SCHWAB_API_KEY')
+            app_secret = os.getenv('SCHWAB_APP_SECRET')
+            
+            if not api_key or not app_secret:
+                print("get_greeks_for_all_positions: Missing SCHWAB credentials")
+                return {pos.id: {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0} for pos in positions}
+            
+            schwab_client = client_from_token_file(token_path, api_key, app_secret)
+        
+        # Collect all symbols from all positions
+        position_symbols_map = {}  # position_id -> list of symbols
+        all_symbols_set = set()
+        
+        for pos in positions:
+            try:
+                # Find the opening order
+                opening_order = None
+                for order in pos.orders:
+                    if hasattr(order, 'isOpenPosition') and order.isOpenPosition:
+                        opening_order = order
+                        break
+                
+                if not opening_order:
+                    continue
+                
+                # Check if orderLegCollection exists
+                if not hasattr(opening_order, 'orderLegCollection') or not opening_order.orderLegCollection:
+                    continue
+                
+                # Extract symbols for this position
+                symbols = [leg.instrument.symbol for leg in opening_order.orderLegCollection if leg.instrument and leg.instrument.symbol]
+                if symbols:
+                    position_symbols_map[pos.id] = {
+                        'symbols': symbols,
+                        'order': opening_order
+                    }
+                    all_symbols_set.update(symbols)
+            except Exception as e:
+                print(f"Error collecting symbols for position {pos.id}: {e}")
+                continue
+        
+        if not all_symbols_set:
+            print("get_greeks_for_all_positions: No symbols found in any positions")
+            return {pos.id: {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0} for pos in positions}
+        
+        # Convert to list for API call
+        all_symbols = list(all_symbols_set)
+        print(f"get_greeks_for_all_positions: Fetching quotes for {len(all_symbols)} unique symbols from {len(position_symbols_map)} positions")
+        
+        # Schwab API may have limits, so batch if needed (e.g., 100 symbols per request)
+        MAX_SYMBOLS_PER_REQUEST = 100
+        all_quotes_data = {}
+        
+        if len(all_symbols) <= MAX_SYMBOLS_PER_REQUEST:
+            # Single batch
+            try:
+                import asyncio
+                if asyncio.iscoroutinefunction(schwab_client.get_quotes):
+                    quotes_resp = asyncio.run(schwab_client.get_quotes(all_symbols))
+                else:
+                    quotes_resp = schwab_client.get_quotes(all_symbols)
+                
+                if quotes_resp and quotes_resp.status_code == 200:
+                    all_quotes_data = quotes_resp.json()
+                else:
+                    print(f"get_greeks_for_all_positions: Failed to get quotes, status code: {quotes_resp.status_code if quotes_resp else 'None'}")
+            except Exception as e:
+                print(f"get_greeks_for_all_positions: Error fetching quotes: {e}")
+        else:
+            # Multiple batches
+            print(f"get_greeks_for_all_positions: Splitting {len(all_symbols)} symbols into batches of {MAX_SYMBOLS_PER_REQUEST}")
+            for i in range(0, len(all_symbols), MAX_SYMBOLS_PER_REQUEST):
+                batch_symbols = all_symbols[i:i + MAX_SYMBOLS_PER_REQUEST]
+                try:
+                    import asyncio
+                    if asyncio.iscoroutinefunction(schwab_client.get_quotes):
+                        quotes_resp = asyncio.run(schwab_client.get_quotes(batch_symbols))
+                    else:
+                        quotes_resp = schwab_client.get_quotes(batch_symbols)
+                    
+                    if quotes_resp and quotes_resp.status_code == 200:
+                        batch_data = quotes_resp.json()
+                        all_quotes_data.update(batch_data)
+                    else:
+                        print(f"get_greeks_for_all_positions: Failed to get quotes for batch {i//MAX_SYMBOLS_PER_REQUEST + 1}, status code: {quotes_resp.status_code if quotes_resp else 'None'}")
+                except Exception as e:
+                    print(f"get_greeks_for_all_positions: Error fetching batch {i//MAX_SYMBOLS_PER_REQUEST + 1}: {e}")
+        
+        # Calculate Greeks for each position using the batched quotes
+        for pos_id, pos_data in position_symbols_map.items():
+            greeks = {
+                'delta': 0.0,
+                'gamma': 0.0,
+                'theta': 0.0,
+                'vega': 0.0
+            }
+            
+            opening_order = pos_data['order']
+            
+            # Sum Greeks across legs (matching LoopTrader Pro's logic)
+            for leg in opening_order.orderLegCollection:
+                if not leg.instrument:
+                    continue
+                
+                symbol = leg.instrument.symbol
+                quote_info = all_quotes_data.get(symbol, {}).get('quote', {})
+                
+                if not quote_info:
+                    continue
+                
+                quantity = leg.quantity if leg.quantity else 0
+                
+                # Determine sign based on instruction (SELL = negative, BUY = positive)
+                multiplier = -quantity if leg.instruction and 'SELL' in leg.instruction.upper() else quantity
+                
+                # Extract Greeks from quote and multiply by 100 (per-contract multiplier)
+                delta = quote_info.get('delta', 0.0)
+                gamma = quote_info.get('gamma', 0.0)
+                theta = quote_info.get('theta', 0.0)
+                vega = quote_info.get('vega', 0.0)
+                
+                greeks['delta'] += multiplier * delta * 100
+                greeks['gamma'] += multiplier * gamma * 100
+                greeks['theta'] += multiplier * theta * 100
+                greeks['vega'] += multiplier * vega * 100
+            
+            result[pos_id] = greeks
+        
+        # Fill in missing positions with zeros
+        for pos in positions:
+            if pos.id not in result:
+                result[pos.id] = {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0}
+        
+        print(f"get_greeks_for_all_positions: Successfully calculated Greeks for {len(result)} positions")
+        return result
+        
+    except Exception as e:
+        print(f"Error in get_greeks_for_all_positions: {e}")
+        import traceback
+        traceback.print_exc()
+        # Return zeros for all positions on error
+        return {pos.id: {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0} for pos in positions}
+
 class TrailingStopState(Base):
     """Trailing stop state model"""
     __tablename__ = "TrailingStopState"
@@ -769,6 +1116,7 @@ class TrailingStopState(Base):
     trailing_percentage = mapped_column(Float, nullable=True)  # Nullable when using dollar mode
     is_active = mapped_column(Boolean, default=False)
     high_water_mark = mapped_column(Float, nullable=True)
+    below_activation_notified = mapped_column(Boolean, default=False, nullable=False)  # Track if we've sent the "below activation" warning
     created_at = mapped_column(DateTime, default=datetime.utcnow)
     updated_at = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -783,6 +1131,17 @@ class TrailingStopState(Base):
         status = "Active" if self.is_active else "Inactive"
         mode = f"{self.trailing_mode.upper()}" if self.trailing_mode else "PERCENTAGE"
         return f"<TrailingStop Bot:{self.bot_id} ({status}, {mode})>"
+    
+    def validate(self):
+        """Validate that the appropriate trailing value is set based on mode"""
+        if self.trailing_mode == 'dollar':
+            if self.trailing_dollar_amount is None or self.trailing_dollar_amount <= 0:
+                raise ValueError("trailing_dollar_amount must be set and positive when trailing_mode is 'dollar'")
+        elif self.trailing_mode == 'percentage':
+            if self.trailing_percentage is None or self.trailing_percentage <= 0:
+                raise ValueError("trailing_percentage must be set and positive when trailing_mode is 'percentage'")
+        else:
+            raise ValueError(f"Invalid trailing_mode: {self.trailing_mode}. Must be 'percentage' or 'dollar'")
     
     @property
     def status_badge_class(self):
@@ -906,6 +1265,16 @@ class Instrument(Base):
         return None
 
 # Analytics helper functions
+# Simple in-memory cache for Schwab API calls to reduce rate limiting
+_schwab_cache_store = {}
+_schwab_cache_timestamp = {}
+CACHE_TTL_SECONDS = 30  # Cache for 30 seconds
+
+# Positions cache for batch queries
+_positions_cache = {}
+_positions_cache_timestamp = {}
+POSITIONS_CACHE_TTL_SECONDS = int(os.getenv('POSITIONS_CACHE_TTL', 45))  # Default 45 seconds, configurable
+
 def build_schwab_cache_for_positions(positions):
     """Build a cache of Schwab account data with position-level matching
     
@@ -919,6 +1288,16 @@ def build_schwab_cache_for_positions(positions):
     import os
     import schwab
     import json
+    from datetime import datetime, timezone
+    
+    # Check if we have a recent cache
+    cache_key = tuple(sorted([p.id for p in positions if p.active]))
+    current_time = datetime.now(timezone.utc).timestamp()
+    
+    if cache_key in _schwab_cache_store:
+        cache_age = current_time - _schwab_cache_timestamp.get(cache_key, 0)
+        if cache_age < CACHE_TTL_SECONDS:
+            return _schwab_cache_store[cache_key].copy()
     
     cache = {}
     
@@ -930,7 +1309,6 @@ def build_schwab_cache_for_positions(positions):
             token_path = os.path.join(app_root, 'token.json')
         
         if not os.path.exists(token_path):
-            print("build_schwab_cache: Token file not found")
             return cache
         
         # Load and validate token
@@ -939,7 +1317,6 @@ def build_schwab_cache_for_positions(positions):
         
         token_info = token_data.get('token', token_data)
         if not all(key in token_info for key in ['access_token', 'refresh_token']):
-            print("build_schwab_cache: Token file missing required fields")
             return cache
         
         # Create Schwab client
@@ -953,12 +1330,9 @@ def build_schwab_cache_for_positions(positions):
         # Get all unique account_ids from positions
         account_ids = set(pos.account_id for pos in positions if pos.account_id and pos.active)
         
-        print(f"build_schwab_cache: Processing {len(account_ids)} unique accounts for {len(positions)} positions")
-        
-        # Get account numbers from Schwab
+        # Get account numbers from Schwab (only if not cached)
         accounts_response = client.get_account_numbers()
         if accounts_response.status_code != 200:
-            print(f"build_schwab_cache: Failed to get account numbers")
             return cache
         
         accounts_data = accounts_response.json()
@@ -988,7 +1362,6 @@ def build_schwab_cache_for_positions(positions):
                 # Get account positions from Schwab
                 account_response = client.get_account(account_hash, fields=['positions'])
                 if account_response.status_code != 200:
-                    print(f"build_schwab_cache: Failed to get positions for account {account_id}")
                     continue
                 
                 account_data_resp = account_response.json()
@@ -996,21 +1369,22 @@ def build_schwab_cache_for_positions(positions):
                 schwab_positions = securities_account.get('positions', [])
                 
                 # Build a list of option positions with details
+                # CRITICAL: Keep market_value signed (negative for shorts, positive for longs)
+                # This allows proper spread calculation where net = short + long
                 option_positions = []
                 for schwab_pos in schwab_positions:
                     instrument = schwab_pos.get('instrument', {})
                     if instrument.get('assetType') == 'OPTION':
+                        market_value = float(schwab_pos.get('marketValue', 0))
                         option_positions.append({
                             'symbol': instrument.get('symbol', ''),
                             'underlying': instrument.get('underlyingSymbol', ''),
                             'description': instrument.get('description', ''),
-                            'market_value': abs(float(schwab_pos.get('marketValue', 0))),
+                            'market_value': market_value,  # Keep sign: negative = short, positive = long
                             'quantity': schwab_pos.get('longQuantity', 0) - schwab_pos.get('shortQuantity', 0),
                             'short_quantity': schwab_pos.get('shortQuantity', 0),
                             'long_quantity': schwab_pos.get('longQuantity', 0)
                         })
-                
-                print(f"build_schwab_cache: Account {account_id} has {len(option_positions)} option positions")
                 
                 # Match our positions to Schwab option positions
                 db_positions = [p for p in positions if p.account_id == account_id and p.active]
@@ -1018,7 +1392,6 @@ def build_schwab_cache_for_positions(positions):
                 for db_pos in db_positions:
                     # Get bot name to extract underlying symbol
                     bot_name = db_pos.bot.name if db_pos.bot else ""
-                    print(f"build_schwab_cache: Matching position {db_pos.id} with bot '{bot_name}'")
                     
                     # Extract underlying symbol from bot name (e.g., "short SPX Put" -> "SPX")
                     underlying_symbol = None
@@ -1030,37 +1403,32 @@ def build_schwab_cache_for_positions(positions):
                     if not underlying_symbol:
                         # Try to extract from description or default to SPX
                         underlying_symbol = 'SPX'
-                        print(f"build_schwab_cache: Could not extract underlying from '{bot_name}', defaulting to SPX")
-                    
-                    # Get net position details to understand if we're long or short
-                    position_details = db_pos.get_net_position_details()
-                    net_contracts = position_details.get('net_contracts', 0)
                     
                     # Match Schwab positions by underlying symbol
                     matched_value = 0.0
+                    matched_count = 0  # Track if we actually found matching positions
                     for opt_pos in option_positions:
                         if opt_pos['underlying'] == underlying_symbol:
                             matched_value += opt_pos['market_value']
-                            print(f"build_schwab_cache: Matched {opt_pos['symbol']} - ${opt_pos['market_value']:,.2f}")
+                            matched_count += 1
                     
-                    # If only one DB position for this underlying, assign all matched value to it
-                    # Otherwise, split proportionally
-                    same_underlying_positions = [p for p in db_positions 
-                                                 if p.bot and underlying_symbol in p.bot.name.upper()]
-                    
-                    if len(same_underlying_positions) == 1:
-                        cache[db_pos.id] = matched_value
-                        print(f"build_schwab_cache: Position {db_pos.id} gets full value ${matched_value:,.2f}")
-                    else:
-                        # Split proportionally based on initial premium
-                        total_premium = sum(p.initial_premium_sold for p in same_underlying_positions if p.initial_premium_sold > 0)
-                        if total_premium > 0 and db_pos.initial_premium_sold > 0:
-                            proportion = db_pos.initial_premium_sold / total_premium
-                            allocated_value = matched_value * proportion
-                            cache[db_pos.id] = allocated_value
-                            print(f"build_schwab_cache: Position {db_pos.id} gets {proportion*100:.1f}% = ${allocated_value:,.2f}")
+                    # Only cache if we actually found matching positions in Schwab
+                    # matched_count > 0 means we found positions (matched_value could be 0 for break-even spreads)
+                    if matched_count > 0:
+                        # If only one DB position for this underlying, assign all matched value to it
+                        # Otherwise, split proportionally
+                        same_underlying_positions = [p for p in db_positions 
+                                                     if p.bot and underlying_symbol in p.bot.name.upper()]
+                        
+                        if len(same_underlying_positions) == 1:
+                            cache[db_pos.id] = matched_value
                         else:
-                            cache[db_pos.id] = 0.0
+                            # Split proportionally based on initial premium
+                            total_premium = sum(p.initial_premium_sold for p in same_underlying_positions if p.initial_premium_sold > 0)
+                            if total_premium > 0 and db_pos.initial_premium_sold > 0:
+                                proportion = db_pos.initial_premium_sold / total_premium
+                                allocated_value = matched_value * proportion
+                                cache[db_pos.id] = allocated_value
         
         finally:
             db.close()
@@ -1070,12 +1438,122 @@ def build_schwab_cache_for_positions(positions):
         import traceback
         traceback.print_exc()
     
+    # Store in cache for future use
+    if cache_key:
+        _schwab_cache_store[cache_key] = cache.copy()
+        _schwab_cache_timestamp[cache_key] = current_time
+    
     return cache
 
-def get_dashboard_stats():
-    """Get dashboard statistics"""
+def get_positions_batch(active_only=True, account_filter=None, include_closed=False):
+    """Get positions in a single batch query with caching.
+    
+    Uses SQLAlchemy ORM subquery to get one position per bot (most recent).
+    Database-agnostic implementation for portability.
+    
+    Args:
+        active_only: If True, only return active positions
+        account_filter: Optional account_id to filter by
+        include_closed: If True, include closed positions (only relevant if active_only=False)
+        
+    Returns:
+        List of Position objects with all relationships loaded
+    """
+    import time
+    import copy
+    from sqlalchemy import func, and_
+    from sqlalchemy.orm import joinedload
+    
+    # Normalize account_filter
+    if account_filter == '':
+        account_filter = None
+    if account_filter is not None:
+        try:
+            account_filter = int(account_filter)
+        except (ValueError, TypeError):
+            account_filter = None
+    
+    # Check cache first
+    cache_key = (active_only, account_filter, include_closed)
+    if cache_key in _positions_cache:
+        cache_age = time.time() - _positions_cache_timestamp.get(cache_key, 0)
+        if cache_age < POSITIONS_CACHE_TTL_SECONDS:
+            # Return deep copy to avoid mutations
+            return copy.deepcopy(_positions_cache[cache_key])
+    
     db = SessionLocal()
     try:
+        # Subquery: Get most recent position per bot_id
+        subq = db.query(
+            Position.bot_id,
+            func.max(Position.opened_datetime).label('max_date')
+        )
+        
+        if active_only:
+            subq = subq.filter(Position.active == True)
+        
+        if account_filter:
+            subq = subq.filter(Position.account_id == account_filter)
+        
+        subq = subq.group_by(Position.bot_id).subquery()
+        
+        # Main query: Join subquery to get full Position objects
+        query = db.query(Position).options(
+            joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument),
+            joinedload(Position.bot)
+        ).join(
+            subq,
+            and_(
+                Position.bot_id == subq.c.bot_id,
+                Position.opened_datetime == subq.c.max_date
+            )
+        )
+        
+        if active_only:
+            query = query.filter(Position.active == True)
+        
+        if account_filter:
+            query = query.filter(Position.account_id == account_filter)
+        
+        result = query.all()
+        
+        # Cache result (store original, return copy)
+        _positions_cache[cache_key] = result
+        _positions_cache_timestamp[cache_key] = time.time()
+        
+        return result
+    finally:
+        db.close()
+
+
+def get_dashboard_stats():
+    """Get dashboard statistics with P&L calculation matching looptrader-pro logic"""
+    db = SessionLocal()
+    try:
+        # Get all active positions with schwab cache for P&L calculation
+        active_positions = db.query(Position).options(
+            joinedload(Position.orders).joinedload(Order.orderLegCollection).joinedload(OrderLeg.instrument)
+        ).filter(Position.active == True).all()
+        
+        # Build schwab cache for all active positions
+        schwab_cache = build_schwab_cache_for_positions(active_positions)
+        
+        # Calculate total P&L (following risk page pattern)
+        total_pnl = 0.0
+        total_cost_basis = 0.0
+        
+        for position in active_positions:
+            # Inject cache into position
+            position._schwab_cache = schwab_cache
+            
+            # Use the consistent P&L calculation from the Position model
+            total_pnl += position.current_pnl
+            # Cost basis for percentage calculation (always positive) - matches risk page pattern
+            total_cost_basis += abs(position.initial_premium_sold)
+        
+        # Calculate P&L percentage using cost basis (matches risk page pattern)
+        total_pnl_pct = (total_pnl / total_cost_basis * 100) if total_cost_basis > 0.01 else 0.0
+        
         stats = {
             'total_bots': db.query(Bot).count(),
             'active_bots': db.query(Bot).filter(Bot.enabled == True, Bot.paused == False).count(),
@@ -1084,6 +1562,9 @@ def get_dashboard_stats():
             'total_accounts': db.query(BrokerageAccount).count(),
             'trailing_stops': db.query(TrailingStopState).count(),
             'active_trailing_stops': db.query(TrailingStopState).filter(TrailingStopState.is_active == True).count(),
+            'total_pnl': total_pnl,
+            'total_pnl_pct': total_pnl_pct,
+            'total_cost_basis': total_cost_basis,
         }
         return stats
     finally:
@@ -1289,6 +1770,11 @@ def upsert_trailing_stop(bot_id: int, activation_threshold: float, trailing_perc
                 trailing_mode=trailing_mode,
                 is_active=is_active if is_active is not None else False
             )
+            # Validate before adding
+            try:
+                ts.validate()
+            except ValueError as e:
+                return False, str(e)
             db.add(ts)
         else:
             ts.activation_threshold = activation_threshold
@@ -1298,10 +1784,140 @@ def upsert_trailing_stop(bot_id: int, activation_threshold: float, trailing_perc
             # Only set is_active if explicitly provided (preserve existing state when just updating config)
             if is_active is not None:
                 ts.is_active = bool(is_active)
+            # Validate before committing
+            try:
+                ts.validate()
+            except ValueError as e:
+                return False, str(e)
         db.commit()
         return True, "Trailing stop saved"
     except Exception as e:
         return False, str(e)
+    finally:
+        db.close()
+
+def upsert_trailing_stops_batch(trailing_stop_configs: List[dict]) -> tuple[bool, int, List[dict]]:
+    """Create or update trailing stop configurations for multiple bots in a single atomic transaction.
+    
+    Args:
+        trailing_stop_configs: List of dictionaries with keys:
+            - bot_id: int
+            - activation_threshold: float
+            - trailing_percentage: Optional[float]
+            - trailing_dollar_amount: Optional[float]
+            - trailing_mode: str (default 'percentage')
+    
+    Returns:
+        Tuple of (success: bool, success_count: int, errors: List[dict]) where errors contains:
+            - bot_id: int
+            - error: str
+    """
+    db = SessionLocal()
+    try:
+        errors = []
+        success_count = 0
+        
+        # Validate all configurations before applying any changes (fail-fast)
+        for config in trailing_stop_configs:
+            bot_id = config.get("bot_id")
+            activation_threshold = config.get("activation_threshold")
+            trailing_percentage = config.get("trailing_percentage")
+            trailing_dollar_amount = config.get("trailing_dollar_amount")
+            trailing_mode = config.get("trailing_mode", "percentage")
+            
+            # Validate bot_id
+            if bot_id is None:
+                errors.append({"bot_id": bot_id, "error": "bot_id cannot be None"})
+                continue
+            
+            # Check if bot exists
+            bot = db.query(Bot).filter(Bot.id == bot_id).first()
+            if not bot:
+                errors.append({"bot_id": bot_id, "error": "Bot not found"})
+                continue
+            
+            # Validate mode and corresponding value
+            if trailing_mode == 'percentage' and trailing_percentage is None:
+                errors.append({
+                    "bot_id": bot_id,
+                    "error": "trailing_percentage required for percentage mode"
+                })
+                continue
+            if trailing_mode == 'dollar' and trailing_dollar_amount is None:
+                errors.append({
+                    "bot_id": bot_id,
+                    "error": "trailing_dollar_amount required for dollar mode"
+                })
+                continue
+        
+        # If any validation errors, return early without making any changes
+        if errors:
+            db.rollback()
+            return False, 0, errors
+        
+        # Apply all updates in a single transaction
+        for config in trailing_stop_configs:
+            bot_id = config["bot_id"]
+            activation_threshold = config["activation_threshold"]
+            trailing_percentage = config.get("trailing_percentage")
+            trailing_dollar_amount = config.get("trailing_dollar_amount")
+            trailing_mode = config.get("trailing_mode", "percentage")
+            
+            bot = db.query(Bot).filter(Bot.id == bot_id).first()
+            if not bot:
+                # Should not happen after validation, but handle gracefully
+                errors.append({"bot_id": bot_id, "error": "Bot not found during update"})
+                continue
+            
+            ts = bot.trailing_stop_state
+            if ts is None:
+                ts = TrailingStopState(
+                    bot_id=bot.id,
+                    activation_threshold=activation_threshold,
+                    trailing_percentage=trailing_percentage,
+                    trailing_dollar_amount=trailing_dollar_amount,
+                    trailing_mode=trailing_mode,
+                    is_active=False
+                )
+                # Validate before adding
+                try:
+                    ts.validate()
+                except ValueError as e:
+                    errors.append({"bot_id": bot_id, "error": str(e)})
+                    continue
+                db.add(ts)
+            else:
+                ts.activation_threshold = activation_threshold
+                ts.trailing_percentage = trailing_percentage
+                ts.trailing_dollar_amount = trailing_dollar_amount
+                ts.trailing_mode = trailing_mode
+                ts.is_active = False  # Reset activation
+                # Validate before committing
+                try:
+                    ts.validate()
+                except ValueError as e:
+                    errors.append({"bot_id": bot_id, "error": str(e)})
+                    continue
+            
+            success_count += 1
+        
+        # If any errors occurred during update, rollback
+        if errors:
+            db.rollback()
+            return False, 0, errors
+        
+        # Commit all changes at once
+        db.commit()
+        return True, success_count, []
+        
+    except Exception as e:
+        db.rollback()
+        # Return all configs as errors since transaction failed
+        errors = [
+            {"bot_id": config.get("bot_id"), "error": f"Transaction failed: {str(e)}"}
+            for config in trailing_stop_configs
+        ]
+        return False, 0, errors
     finally:
         db.close()
 

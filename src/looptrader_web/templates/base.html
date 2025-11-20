@@ -208,6 +208,14 @@
               </li>
             </ul>
           </li>
+          
+          <!-- Smart Monitor Trigger -->
+          <li class="nav-item">
+            <a href="{{ url_for('smart_monitor') }}" class="nav-link {% if request.endpoint == 'smart_monitor' %}active{% endif %}">
+              <i class="nav-icon fas fa-chart-line"></i>
+              <p>Smart Monitor Trigger</p>
+            </a>
+          </li>
 
           <!-- Get Prices -->
           <li class="nav-item">
@@ -316,25 +324,50 @@
 
   // Initialize DataTables
   document.addEventListener('DOMContentLoaded', function(){
-    $('.data-table').DataTable({
-      responsive:true,
-      lengthChange:false,
-      autoWidth:false,
-      pageLength:25,
-      language:{ search:'Search:', paginate:{ next:'Next', previous:'Previous' } }
-    });
+    try {
+      $('.data-table').each(function(){
+        try {
+          if ($(this).find('tbody tr').length > 0) {
+            $(this).DataTable({
+              responsive:true,
+              lengthChange:false,
+              autoWidth:false,
+              pageLength:25,
+              language:{ search:'Search:', paginate:{ next:'Next', previous:'Previous' } },
+              order: [] // Disable initial sorting to avoid errors
+            });
+          }
+        } catch(e) {
+          console.error('Error initializing DataTable:', e);
+          // Continue with other tables even if one fails
+        }
+      });
+    } catch(e) {
+      console.error('Error in DataTable initialization:', e);
+    }
   });
   // Global JS error capture
   (function(){
     const overlay = document.getElementById('globalErrorOverlay');
     const text = document.getElementById('globalErrorText');
+    if (!overlay || !text) return;
+    
+    // Add close button functionality
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = 'Close';
+    closeBtn.style.cssText = 'position:absolute;top:10px;right:10px;padding:10px 20px;background:#fff;color:#000;border:none;cursor:pointer;z-index:20001;';
+    closeBtn.onclick = function() {
+      overlay.style.display = 'none';
+    };
+    overlay.appendChild(closeBtn);
+    
     window.addEventListener('error', function(e){
-      if(!overlay || !text) return;
+      console.error('JS Error:', e);
       overlay.style.display='flex';
       text.textContent = 'JS Error: '+ e.message +'\n'+ (e.filename||'') + ':' + (e.lineno||'') + '\n' + (e.error && e.error.stack ? e.error.stack : '');
     });
     window.addEventListener('unhandledrejection', function(e){
-      if(!overlay || !text) return;
+      console.error('Unhandled Promise Rejection:', e);
       overlay.style.display='flex';
       text.textContent = 'Unhandled Promise Rejection: '+ (e.reason && e.reason.message ? e.reason.message : e.reason);
     });

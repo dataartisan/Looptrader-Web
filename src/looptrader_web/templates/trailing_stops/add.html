@@ -44,6 +44,12 @@
                     <strong>Remove Trailing Stops</strong> - Remove trailing stops from selected bots
                   </label>
                 </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="action" id="action_smarttrail" value="smarttrail">
+                  <label class="form-check-label" for="action_smarttrail">
+                    <strong>Smart Trail</strong> - Apply tiered trailing stops based on distance to spot
+                  </label>
+                </div>
               </div>
             </div>
           </div>
@@ -83,6 +89,86 @@
                   <input type="number" step="0.01" id="trailing_dollar_amount" name="trailing_dollar_amount" 
                          class="form-control" placeholder="e.g., 50.00">
                   <small class="form-text text-muted">Dollar amount below high water mark</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Smart Trail Settings (only shown for SmartTrail action) -->
+          <div id="smarttrail-settings" style="display: none;">
+            <div class="alert alert-info">
+              <h5><i class="fas fa-info-circle"></i> How Smart Trail Works</h5>
+              <p class="mb-0">
+                Smart Trail sorts all active positions by their distance to the current spot price (closest first for short positions),
+                then divides them into tiers. Each tier gets a different activation threshold, with positions closest to spot getting
+                lower thresholds (tighter protection). All tiers use the same trailing percentage (10%).
+              </p>
+            </div>
+            
+            <div class="row">
+              <div class="col-md-12">
+                <div class="form-group">
+                  <label>Target Selection:</label>
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="smarttrail_target" id="target_all" value="all" checked>
+                    <label class="form-check-label" for="target_all">
+                      <strong>All Bots</strong> - Apply to all bots with active positions
+                    </label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="smarttrail_target" id="target_selected" value="selected">
+                    <label class="form-check-label" for="target_selected">
+                      <strong>Selected Bots</strong> - Apply only to selected bots below
+                    </label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="smarttrail_target" id="target_strategy" value="strategy">
+                    <label class="form-check-label" for="target_strategy">
+                      <strong>Strategy Group</strong> - Apply to bots matching strategy group
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row" id="strategy-group-input" style="display: none;">
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label for="strategy_group_name">Strategy Group Name</label>
+                  <input type="text" id="strategy_group_name" name="strategy_group_name" 
+                         class="form-control" placeholder="e.g., SPX">
+                  <small class="form-text text-muted">Enter the strategy group name to filter bots</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="row">
+              <div class="col-md-12">
+                <div class="form-group">
+                  <label for="tier_thresholds">Tier Activation Thresholds (%)</label>
+                  <div id="tier-inputs-container">
+                    <!-- Dynamic tier inputs will be added here -->
+                  </div>
+                  <button type="button" class="btn btn-sm btn-secondary mt-2" id="add-tier-btn">
+                    <i class="fas fa-plus"></i> Add Tier
+                  </button>
+                  <button type="button" class="btn btn-sm btn-danger mt-2" id="remove-tier-btn" style="display: none;">
+                    <i class="fas fa-minus"></i> Remove Last Tier
+                  </button>
+                  <small class="form-text text-muted d-block mt-2">
+                    Enter activation thresholds for each tier. Positions will be divided evenly into tiers based on distance to spot.
+                  </small>
+                </div>
+              </div>
+            </div>
+
+            <div class="row">
+              <div class="col-md-3">
+                <div class="form-group">
+                  <label for="smarttrail_trailing_percentage">Trailing Percentage (%)</label>
+                  <input type="number" step="0.01" id="smarttrail_trailing_percentage" name="smarttrail_trailing_percentage" 
+                         class="form-control" value="10.0" min="0.01" max="100" required>
+                  <small class="form-text text-muted">Trailing percentage used for all tiers (default: 10%)</small>
                 </div>
               </div>
             </div>
@@ -170,6 +256,9 @@
           <button type="submit" class="btn btn-danger btn-lg" id="remove-btn" style="display: none;">
             <i class="fas fa-trash-alt"></i> Remove Trailing Stops from Selected Bots
           </button>
+          <button type="submit" class="btn btn-primary btn-lg" id="smarttrail-btn" style="display: none;">
+            <i class="fas fa-magic"></i> Apply Smart Trail
+          </button>
           <div class="float-right">
             <span id="selected-count" class="text-muted">0 bots selected</span>
           </div>
@@ -200,14 +289,81 @@ $(document).ready(function() {
         }
     });
 
+    // Initialize tier inputs with 3 default tiers
+    function initializeTierInputs() {
+        const container = $('#tier-inputs-container');
+        container.empty();
+        const defaultTiers = [30, 40, 50];
+        defaultTiers.forEach((tier, index) => {
+            addTierInput(tier, index);
+        });
+        updateRemoveTierButton();
+    }
+
+    function addTierInput(value = '', index = null) {
+        const container = $('#tier-inputs-container');
+        const inputId = index !== null ? `tier_${index}` : `tier_${Date.now()}`;
+        const inputHtml = `
+            <div class="input-group mb-2 tier-input-group">
+                <div class="input-group-prepend">
+                    <span class="input-group-text">Tier ${container.children().length + 1}</span>
+                </div>
+                <input type="number" step="0.01" class="form-control tier-threshold-input" 
+                       name="tier_thresholds[]" id="${inputId}" value="${value}" 
+                       placeholder="e.g., 30" min="0" max="200" required>
+                <div class="input-group-append">
+                    <span class="input-group-text">%</span>
+                </div>
+            </div>
+        `;
+        container.append(inputHtml);
+        updateRemoveTierButton();
+    }
+
+    function updateRemoveTierButton() {
+        const count = $('#tier-inputs-container .tier-input-group').length;
+        if (count > 1) {
+            $('#remove-tier-btn').show();
+        } else {
+            $('#remove-tier-btn').hide();
+        }
+    }
+
+    $('#add-tier-btn').click(function() {
+        addTierInput();
+    });
+
+    $('#remove-tier-btn').click(function() {
+        $('#tier-inputs-container .tier-input-group').last().remove();
+        updateRemoveTierButton();
+        // Renumber tiers
+        $('#tier-inputs-container .tier-input-group').each(function(index) {
+            $(this).find('.input-group-prepend span').text(`Tier ${index + 1}`);
+        });
+    });
+
+    // Handle smarttrail target selection
+    $('input[name="smarttrail_target"]').change(function() {
+        const target = $(this).val();
+        if (target === 'strategy') {
+            $('#strategy-group-input').show();
+            $('#strategy_group_name').prop('required', true);
+        } else {
+            $('#strategy-group-input').hide();
+            $('#strategy_group_name').prop('required', false);
+        }
+    });
+
     // Handle action radio button changes
     $('input[name="action"]').change(function() {
         const action = $(this).val();
         
         if (action === 'add') {
             $('#trailing-stop-settings').show();
+            $('#smarttrail-settings').hide();
             $('#add-btn').show();
             $('#remove-btn').hide();
+            $('#smarttrail-btn').hide();
             $('#activation_threshold').prop('required', true);
             // Set required on the appropriate trailing field based on mode
             const mode = $('#trailing_mode').val();
@@ -216,13 +372,31 @@ $(document).ready(function() {
             } else {
                 $('#trailing_dollar_amount').prop('required', true);
             }
+            // Clear smarttrail requirements
+            $('.tier-threshold-input').prop('required', false);
+            $('#strategy_group_name').prop('required', false);
         } else if (action === 'remove') {
             $('#trailing-stop-settings').hide();
+            $('#smarttrail-settings').hide();
             $('#add-btn').hide();
             $('#remove-btn').show();
+            $('#smarttrail-btn').hide();
             $('#activation_threshold, #trailing_percentage, #trailing_dollar_amount').prop('required', false);
+            $('.tier-threshold-input').prop('required', false);
+            $('#strategy_group_name').prop('required', false);
+        } else if (action === 'smarttrail') {
+            $('#trailing-stop-settings').hide();
+            $('#smarttrail-settings').show();
+            $('#add-btn').hide();
+            $('#remove-btn').hide();
+            $('#smarttrail-btn').show();
+            $('#activation_threshold, #trailing_percentage, #trailing_dollar_amount').prop('required', false);
+            $('.tier-threshold-input').prop('required', true);
         }
     });
+
+    // Initialize tier inputs on page load
+    initializeTierInputs();
 
     // Handle select all checkbox
     $('#select_all').change(function() {
@@ -257,48 +431,114 @@ $(document).ready(function() {
 
     // Form validation
     $('form').submit(function(e) {
-        const selectedBots = $('.bot-checkbox:checked').length;
         const action = $('input[name="action"]:checked').val();
         
-        if (selectedBots === 0) {
-            e.preventDefault();
-            alert('Please select at least one bot.');
-            return false;
-        }
-
-        let confirmMessage;
-        if (action === 'add') {
-            const threshold = $('#activation_threshold').val();
-            const mode = $('#trailing_mode').val();
-            let trailingValue;
-            let trailingLabel;
+        if (action === 'smarttrail') {
+            const target = $('input[name="smarttrail_target"]:checked').val();
             
-            if (mode === 'percentage') {
-                trailingValue = $('#trailing_percentage').val();
-                trailingLabel = 'percentage';
-                if (!threshold || !trailingValue) {
+            // Validate target selection
+            if (target === 'selected') {
+                const selectedBots = $('.bot-checkbox:checked').length;
+                if (selectedBots === 0) {
                     e.preventDefault();
-                    alert('Please enter both activation threshold and trailing percentage.');
+                    alert('Please select at least one bot for Smart Trail.');
                     return false;
                 }
-            } else {
-                trailingValue = $('#trailing_dollar_amount').val();
-                trailingLabel = 'dollar amount';
-                if (!threshold || !trailingValue) {
+            } else if (target === 'strategy') {
+                const strategyGroup = $('#strategy_group_name').val().trim();
+                if (!strategyGroup) {
                     e.preventDefault();
-                    alert('Please enter both activation threshold and trailing dollar amount.');
+                    alert('Please enter a strategy group name.');
                     return false;
                 }
             }
             
-            confirmMessage = `Add/update trailing stops for ${selectedBots} selected bot(s) with ${threshold}% activation threshold and ${trailingValue}${mode === 'percentage' ? '%' : '$'} trailing ${trailingLabel}?`;
+            // Validate tier thresholds
+            const tierInputs = $('.tier-threshold-input');
+            const tierValues = [];
+            let hasError = false;
+            
+            tierInputs.each(function() {
+                const value = parseFloat($(this).val());
+                if (isNaN(value) || value < 0 || value > 200) {
+                    hasError = true;
+                    return false;
+                }
+                tierValues.push(value);
+            });
+            
+            if (hasError || tierValues.length === 0) {
+                e.preventDefault();
+                alert('Please enter valid tier activation thresholds (0-200%).');
+                return false;
+            }
+            
+            const trailingPercentage = parseFloat($('#smarttrail_trailing_percentage').val());
+            if (isNaN(trailingPercentage) || trailingPercentage <= 0 || trailingPercentage > 100) {
+                e.preventDefault();
+                alert('Trailing percentage must be between 0 and 100%.');
+                return false;
+            }
+            
+            const tiersStr = tierValues.join('%, ');
+            let targetDesc = '';
+            if (target === 'all') {
+                targetDesc = 'all bots';
+            } else if (target === 'selected') {
+                targetDesc = `${$('.bot-checkbox:checked').length} selected bot(s)`;
+            } else {
+                targetDesc = `strategy group "${$('#strategy_group_name').val()}"`;
+            }
+            
+            const confirmMessage = `Apply Smart Trail to ${targetDesc}?\n\nTiers: ${tiersStr}%\nTrailing: ${trailingPercentage}%\n\nPositions will be sorted by distance to spot and divided into ${tierValues.length} tier(s).`;
+            
+            if (!confirm(confirmMessage)) {
+                e.preventDefault();
+                return false;
+            }
         } else {
-            confirmMessage = `Remove trailing stops from ${selectedBots} selected bot(s)? This action cannot be undone.`;
-        }
+            const selectedBots = $('.bot-checkbox:checked').length;
+            
+            if (selectedBots === 0) {
+                e.preventDefault();
+                alert('Please select at least one bot.');
+                return false;
+            }
 
-        if (!confirm(confirmMessage)) {
-            e.preventDefault();
-            return false;
+            let confirmMessage;
+            if (action === 'add') {
+                const threshold = $('#activation_threshold').val();
+                const mode = $('#trailing_mode').val();
+                let trailingValue;
+                let trailingLabel;
+                
+                if (mode === 'percentage') {
+                    trailingValue = $('#trailing_percentage').val();
+                    trailingLabel = 'percentage';
+                    if (!threshold || !trailingValue) {
+                        e.preventDefault();
+                        alert('Please enter both activation threshold and trailing percentage.');
+                        return false;
+                    }
+                } else {
+                    trailingValue = $('#trailing_dollar_amount').val();
+                    trailingLabel = 'dollar amount';
+                    if (!threshold || !trailingValue) {
+                        e.preventDefault();
+                        alert('Please enter both activation threshold and trailing dollar amount.');
+                        return false;
+                    }
+                }
+                
+                confirmMessage = `Add/update trailing stops for ${selectedBots} selected bot(s) with ${threshold}% activation threshold and ${trailingValue}${mode === 'percentage' ? '%' : '$'} trailing ${trailingLabel}?`;
+            } else {
+                confirmMessage = `Remove trailing stops from ${selectedBots} selected bot(s)? This action cannot be undone.`;
+            }
+
+            if (!confirm(confirmMessage)) {
+                e.preventDefault();
+                return false;
+            }
         }
     });
 
